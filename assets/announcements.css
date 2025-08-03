@@ -1,0 +1,246 @@
+
+.announcements-container {
+  padding: 2rem;
+  margin-left: var(--sidebar-width);
+  width: calc(100% - var(--sidebar-width));
+  box-sizing: border-box;
+  min-height: 100vh;
+}
+
+.page-header {
+  margin-bottom: 2rem;
+}
+
+.page-header h1 {
+  color: var(--prc-red);
+  font-size: 2.2rem;
+  margin-bottom: 0.5rem;
+}
+
+.page-header p {
+  color: #666;
+  font-size: 1.1rem;
+}
+
+.announcements-content {
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+  padding: 2rem;
+}
+
+.announcements-toolbar {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.search-box {
+  display: flex;
+  flex: 1;
+  min-width: 250px;
+  max-width: 400px;
+}
+
+.search-box input {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  border: 1px solid #ddd;
+  border-radius: 6px 0 0 6px;
+  font-size: 1rem;
+}
+
+.search-box button {
+  background: var(--prc-red);
+  color: white;
+  border: none;
+  border-radius: 0 6px 6px 0;
+  padding: 0 1.25rem;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+.search-box button:hover {
+  background: var(--prc-blue);
+}
+
+.filter-dropdown {
+  position: relative;
+  min-width: 200px;
+}
+
+.filter-dropdown select {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  padding-right: 2.5rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 1rem;
+  appearance: none;
+  background: white;
+}
+
+.filter-dropdown i {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #666;
+  pointer-events: none;
+}
+
+.announcements-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.announcement-item {
+  border: 1px solid #eee;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.announcement-item:hover {
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.announcement-item.urgent {
+  border-left: 4px solid var(--prc-red);
+}
+
+.announcement-header {
+  padding: 1.25rem;
+  background: #f8f9fa;
+  border-bottom: 1px solid #eee;
+}
+
+.announcement-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.announcement-date {
+  color: #6c757d;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.announcement-title {
+  color: var(--prc-red);
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.announcement-body {
+  padding: 1.5rem;
+  line-height: 1.7;
+  color: #444;
+}
+
+.announcement-footer {
+  padding: 1rem 1.5rem;
+  background: #f8f9fa;
+  border-top: 1px solid #eee;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.save-btn {
+  background: transparent;
+  border: 1px solid #ddd;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #666;
+}
+
+.save-btn:hover {
+  background: #f1f1f1;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.urgent-badge {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 4rem 2rem;
+}
+
+.empty-state i {
+  font-size: 5rem;
+  color: #e0e0e0;
+  margin-bottom: 1.5rem;
+}
+
+.empty-state h3 {
+  color: #6c757d;
+  margin-bottom: 1rem;
+  font-weight: 500;
+}
+
+.empty-state p {
+  color: #9a9a9a;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+/* Responsive Design */
+@media (max-width: 992px) {
+  .announcements-toolbar {
+    flex-direction: column;
+  }
+  
+  .search-box {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .announcements-container {
+    margin-left: 70px;
+    width: calc(100% - 70px);
+    padding: 1rem;
+  }
+}
+
+@media (max-width: 576px) {
+  .announcements-container {
+    margin-left: 0;
+    width: 100%;
+  }
+  
+  .announcements-content {
+    padding: 1.5rem;
+  }
+  
+  .announcement-header,
+  .announcement-body,
+  .announcement-footer {
+    padding: 1rem;
+  }
+}
