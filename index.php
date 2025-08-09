@@ -39,7 +39,7 @@
         </div>
         <div class="announcement-container">
             <div class="announcement-card">
-                <div class="announcement-image" style="background-image: url('assets/images/announcement1.jpg');"></div>
+                <div class="announcement-image" style="background-image: url('assets/blood-drive.jpg');"></div>
                 <div class="announcement-content">
                     <h3>New Blood Donation Campaign</h3>
                     <p>Join our nationwide blood donation drive this July. Help save lives in your community.</p>
@@ -47,7 +47,7 @@
                 </div>
             </div>
             <div class="announcement-card">
-                <div class="announcement-image" style="background-image: url('assets/images/announcement2.jpg');"></div>
+                <div class="announcement-image" style="background-image: url('assets/hero.jpeg');"></div>
                 <div class="announcement-content">
                     <h3>Disaster Preparedness Training</h3>
                     <p>Sign up for our free disaster preparedness workshops happening this month.</p>
@@ -72,6 +72,7 @@
                     <div class="event-details">
                         <h3>First Aid Training Workshop</h3>
                         <p>9:00 AM - 4:00 PM | PRC Manila Chapter</p>
+                        <div class="event-image" style="background-image: url('assets/first-aid.jpg');"></div>
                         <a href="#" class="btn btn-event">Register Now</a>
                     </div>
                 </div>
@@ -83,6 +84,7 @@
                     <div class="event-details">
                         <h3>Community Blood Drive</h3>
                         <p>8:00 AM - 5:00 PM | SM Megamall</p>
+                        <div class="event-image" style="background-image: url('assets/blood.jpg');"></div>
                         <a href="#" class="btn btn-event">Register Now</a>
                     </div>
                 </div>
@@ -97,7 +99,7 @@
         </div>
         <div class="news-container">
             <div class="news-card">
-                <div class="news-image" style="background-image: url('assets/images/news1.jpg');"></div>
+                <div class="news-image" style="background-image: url('assets/update.png');"></div>
                 <div class="news-content">
                     <div class="news-icon">
                         <i class="fas fa-star"></i>
@@ -108,7 +110,7 @@
                 </div>
             </div>
             <div class="news-card">
-                <div class="news-image" style="background-image: url('assets/images/news2.jpg');"></div>
+                <div class="news-image" style="background-image: url('assets/maintenance.png');"></div>
                 <div class="news-content">
                     <div class="news-icon">
                         <i class="fas fa-tools"></i>
@@ -119,7 +121,7 @@
                 </div>
             </div>
             <div class="news-card">
-                <div class="news-image" style="background-image: url('assets/images/news3.jpg');"></div>
+                <div class="news-image" style="background-image: url('assets/blood-update.png');"></div>
                 <div class="news-content">
                     <div class="news-icon">
                         <i class="fas fa-hands-helping"></i>
@@ -132,20 +134,39 @@
         </div>
     </section>
 
-    <section class="parallax gallery-section">
-        <div class="content-section">
-            <div class="section-title">
-                <h2><i class="fas fa-images"></i> Photo Gallery</h2>
-                <p>Moments from our humanitarian activities</p>
-            </div>
-            <div class="gallery-container">
-                <div class="gallery-item" style="background-image: url('assets/images/gallery1.jpg');"></div>
-                <div class="gallery-item" style="background-image: url('assets/images/gallery2.jpg');"></div>
-                <div class="gallery-item" style="background-image: url('assets/images/gallery3.jpg');"></div>
-                <div class="gallery-item" style="background-image: url('assets/images/gallery4.jpg');"></div>
-            </div>
+<section class="parallax gallery-section">
+    <div class="content-section">
+        <div class="section-title">
+            <h2><i class="fas fa-images"></i> Photo Gallery</h2>
+            <p>Moments from our humanitarian activities</p>
         </div>
-    </section>
+        <div class="slider">
+            <div class="list">
+                <div class="item"><img src="assets/training.jpg" alt="Training"></div>
+                <div class="item"><img src="assets/feeding.jpg" alt="Feeding program"></div>
+                <div class="item"><img src="assets/blood-drive-pic.jpg" alt="Blood drive"></div>
+            </div>
+         <div class="buttons">
+    <button id="prev">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M15.41 16.59L10.83 12l4.58-4.59L14 6l-6 6 6 6 1.41-1.41z"/>
+        </svg>
+    </button>
+    <button id="next">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+        </svg>
+    </button>
+</div>
+            <ul class="dots">
+                <li class="active"></li>
+                <li></li>
+                <li></li>
+                <li></li>
+            </ul>
+        </div>
+    </div>
+</section>
 
     <footer class="system-footer">
         <div class="footer-content">
@@ -185,6 +206,49 @@
                 });
             });
         });
+        document.addEventListener('DOMContentLoaded', function() {
+    const slider = document.querySelector('.slider .list');
+    const items = document.querySelectorAll('.slider .list .item');
+    const next = document.getElementById('next');
+    const prev = document.getElementById('prev');
+    const dots = document.querySelectorAll('.slider .dots li');
+    let lengthItems = items.length - 1;
+    let active = 0;
+
+    next.onclick = function() {
+        active = active + 1 <= lengthItems ? active + 1 : 0;
+        reloadSlider();
+    };
+
+    prev.onclick = function() {
+        active = active - 1 >= 0 ? active - 1 : lengthItems;
+        reloadSlider();
+    };
+
+    let refreshInterval = setInterval(() => { next.click(); }, 3000);
+
+    function reloadSlider() {
+        slider.style.left = -items[active].offsetLeft + 'px';
+
+        const lastActiveDot = document.querySelector('.slider .dots li.active');
+        lastActiveDot.classList.remove('active');
+        dots[active].classList.add('active');
+
+        clearInterval(refreshInterval);
+        refreshInterval = setInterval(() => { next.click(); }, 3000);
+    }
+
+    dots.forEach((li, key) => {
+        li.addEventListener('click', () => {
+            active = key;
+            reloadSlider();
+        });
+    });
+
+    window.onresize = function() {
+        reloadSlider();
+    };
+});
     </script>
 </body>
 </html>

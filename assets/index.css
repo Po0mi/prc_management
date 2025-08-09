@@ -15,6 +15,7 @@ body {
     padding: 0;
     flex-direction: column;
     min-height: 100vh;
+    overflow-x: hidden;
 }
 
 /* Header Styles */
@@ -75,10 +76,10 @@ body {
     padding: 10rem 2rem 10rem;
     text-align: center;
     background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), 
-                url('red-cross.jpg') no-repeat center top / cover;
+                url('front.jpeg') no-repeat center top / cover;
     background-attachment: fixed;
     color: white;
-    min-height: 60vh;
+    min-height: 70vh;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -90,7 +91,7 @@ body {
 
 
 .hero-content h2 {
-    font-size: 2.5rem;
+    font-size: 4rem;    
     margin-bottom: 1.5rem;
     text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
 }
@@ -122,6 +123,8 @@ body {
     justify-content: center;
     gap: 8px;
     text-decoration: none;
+    height: 30px;
+    width: 100px;
 }
 
 .btn-login {
@@ -148,8 +151,9 @@ body {
 /* Content Sections */
 .content-section {
     padding: var(--section-padding);
-    max-width: 1200px;
+    max-width: 100%;
     margin: 0 auto;
+    margin-bottom: 50px;
 }
 
 .section-title {
@@ -182,17 +186,17 @@ body {
     background: white;
     border-radius: 8px;
     overflow: hidden;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
     transition: transform 0.3s, box-shadow 0.3s;
 }
 
 .announcement-card:hover {
     transform: translateY(-5px);
-    box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+    box-shadow: 0 6px 12px rgba(0,0,0,0.3);
 }
 
 .announcement-image {
-    height: 200px;
+    height: 300px;
     background-size: cover;
     background-position: center;
 }
@@ -227,11 +231,12 @@ body {
 
 /* Events Section with Parallax */
 .events-section {
-    background: linear-gradient(#0000005b, #00000054), 
-                url('events.jpg') no-repeat center center;
+    background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('events.jpeg');
     background-size: cover;
     background-attachment: fixed;
     color: white;
+    height: 100vh;
+    margin: 0 auto;
 }
 
 .events-container {
@@ -241,12 +246,14 @@ body {
 }
 
 .event-card {
-    background: rgba(255, 255, 255, 0.9);
+     background: rgba(255, 255, 255, 0.9);
     border-radius: 8px;
     overflow: hidden;
     display: flex;
+    flex-direction: column; /* Add this */
     transition: transform 0.3s;
     color: #333;
+    height: auto; /* Change from 300% to auto */
 }
 
 .event-card:hover {
@@ -292,11 +299,22 @@ body {
     color: #666;
 }
 
+.event-image{
+    height: 300px;
+    background-size: cover;
+    background-position: center;
+    flex-shrink: 0; 
+}
+
 .btn-event {
     background-color: var(--prc-red);
     color: white;
-    padding: 0.5rem 1rem;
     font-size: 0.9rem;
+    justify-self: center;
+    position: static; 
+    margin-top: auto; 
+    width: calc(100% - 3rem); 
+    margin: 1.5rem; 
 }
 
 .btn-event:hover {
@@ -371,32 +389,100 @@ body {
 .news-content a:hover {
     text-decoration: underline;
 }
-
 .gallery-section {
-    background: linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), 
-                url('assets/images/gallery-bg.jpg') no-repeat center center;
-    background-size: cover;
-    background-attachment: fixed;
-    color: white;
+    position: relative;
+    padding: 2rem 0; /* Add padding around the slider */
 }
 
-.gallery-container {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 1.5rem;
+
+.slider {
+    height: 1000px; /* Fixed height for the slider */
+    max-width: 100%; /* Maximum width */
+    width: 100%; /* Responsive width */
+    margin: 0 auto; /* Center the slider */
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3); /* Optional: subtle shadow */
 }
 
-.gallery-item {
-    height: 200px;
-    background-size: cover;
-    background-position: center;
-    border-radius: 8px;
-    transition: transform 0.3s;
+.slider .list {
+    position: absolute;
+    width: max-content;
+    height: 100%;
+    left: 0;
+    top: 0;
+    display: flex;
+    transition: 1s;
+}
+
+.slider .buttons {
+    position: absolute;
+    top: 45%;
+    left: 5%;
+    width: 90%;
+    display: flex;
+    justify-content: space-between;
+    z-index: 10; /* Ensure buttons are above the slider */
+}
+
+
+.slider .buttons button {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: rgba(160, 0, 0, 0.8); /* PRC red color */
+    color: #fff;
+    border: none;
+    font-family: monospace;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.slider .buttons button:hover {
+    background-color: rgba(160, 0, 0, 1);
+    transform: scale(1.1);
+}
+
+.slider .buttons button svg {
+    width: 20px;
+    height: 20px;
+    fill: white;
+}
+
+.slider .buttons button:hover svg {
+    fill: #000;
+}
+
+.slider .dots {
+    position: absolute;
+    bottom: 20px;
+    left: 0;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    z-index: 10;
+    margin: 0;
+    padding: 0;
+}
+
+.slider .dots li {
+    list-style: none;
+    width: 10px;
+    height: 10px;
+    background-color: rgba(255, 255, 255, 0.5);
+    margin: 10px;
+    border-radius: 20px;
+    transition: 0.5s;
     cursor: pointer;
 }
 
-.gallery-item:hover {
-    transform: scale(1.05);
+.slider .dots li.active {
+    width: 30px;
+    background-color: white;
 }
 
 /* Footer */
