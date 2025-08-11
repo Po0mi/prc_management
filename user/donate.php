@@ -90,11 +90,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_donation'])) {
   <title>Make a Donation - PRC Portal</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="../assets/styles.css">
-  <link rel="stylesheet" href="../assets/sidebar.css">
+  <link rel="stylesheet" href="../assets/sidebar.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/donate.css?v=<?php echo time(); ?>">
+  <link rel="stylesheet" href="../assets/dashboard.css?v=<?php echo time(); ?>">
 </head>
 <body>
   <?php include 'sidebar.php'; ?>
+    <div class="main-content">
+    <?php include 'header.php'; ?>
   
   <div class="main-content">
     <div class="donation-container">
@@ -280,5 +283,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_donation'])) {
   </div>
   
   <script src="js/donate.js"></script>
+    <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>

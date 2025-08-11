@@ -206,7 +206,7 @@
                 });
             });
         });
-        document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', function() {
     const slider = document.querySelector('.slider .list');
     const items = document.querySelectorAll('.slider .list .item');
     const next = document.getElementById('next');

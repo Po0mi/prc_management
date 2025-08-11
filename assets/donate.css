@@ -1,12 +1,13 @@
-
 .donation-container {
-  padding: 2rem;
   margin-left: var(--sidebar-width);
   width: calc(100% - var(--sidebar-width));
   box-sizing: border-box;
   min-height: 100vh;
+  padding: 2rem;
+  transition: margin-left 0.3s ease;
 }
 
+/* Rest of your existing CSS remains completely unchanged */
 .donation-header {
   margin-bottom: 2rem;
   text-align: center;
@@ -173,37 +174,6 @@ textarea {
   border-left: 4px solid #2e7d32;
 }
 
-/* Responsive Design */
-@media (max-width: 992px) {
-  .donation-form-container {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 768px) {
-  .donation-container {
-    margin-left: 70px;
-    width: calc(100% - 70px);
-    padding: 1rem;
-  }
-  
-  .form-row {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 576px) {
-  .donation-container {
-    margin-left: 0;
-    width: 100%;
-  }
-  
-  .donation-header h1 {
-    font-size: 2rem;
-  }
-}
-/* Add these to your existing donate.css */
-
 .donation-tabs {
   display: flex;
   margin-bottom: 1.5rem;
@@ -242,34 +212,65 @@ textarea {
   border-left: 4px solid var(--prc-red);
 }
 
-/* Responsive adjustments */
+.donate-button[disabled] {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.fa-spinner.fa-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Responsive Design - kept exactly as you had them */
+@media (max-width: 992px) {
+  .donation-form-container {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 768px) {
+  .donation-container {
+    margin-left: 70px;
+    width: calc(100% - 70px);
+    padding: 1rem;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+
   .donation-tabs {
     flex-direction: column;
   }
-  
+
   .tab-button {
     justify-content: center;
     border-bottom: none;
     border-left: 3px solid transparent;
   }
-  
+
   .tab-button.active {
     border-bottom: none;
     border-left-color: var(--prc-red);
   }
 }
-/* Add to donate.css */
-.donate-button[disabled] {
-    opacity: 0.7;
-    cursor: not-allowed;
-}
 
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
+@media (max-width: 576px) {
+  .donation-container {
+    margin-left: 0;
+    width: 100%;
+  }
 
-.fa-spinner.fa-spin {
-    animation: spin 1s linear infinite;
+  .donation-header h1 {
+    font-size: 2rem;
+  }
 }

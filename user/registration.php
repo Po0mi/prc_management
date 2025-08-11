@@ -136,5 +136,6 @@ $events = $stmt->fetchAll();
         </div>
     </div>
     <script src="/js/register.js"></script>
+      <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>

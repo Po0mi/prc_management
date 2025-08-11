@@ -1,11 +1,25 @@
-
 .announcements-container {
-  padding: 2rem;
   margin-left: var(--sidebar-width);
   width: calc(100% - var(--sidebar-width));
   box-sizing: border-box;
   min-height: 100vh;
+  margin-top: 10px;
+
+  /* Removed problematic positioning */
+  /* position: relative; */
+  /* right: 13%; */
+
+  transition: margin-left var(--transition-speed), width var(--transition-speed);
 }
+
+/* Adjust container when sidebar is collapsed */
+.sidebar.collapsed + .announcements-container,
+.sidebar.collapsed ~ .announcements-container {
+  margin-left: var(--sidebar-collapsed-width);
+  width: calc(100% - var(--sidebar-collapsed-width));
+}
+
+/* Rest of your existing styles */
 
 .page-header {
   margin-bottom: 2rem;
@@ -214,7 +228,7 @@
   .announcements-toolbar {
     flex-direction: column;
   }
-  
+
   .search-box {
     max-width: 100%;
   }
@@ -233,11 +247,11 @@
     margin-left: 0;
     width: 100%;
   }
-  
+
   .announcements-content {
     padding: 1.5rem;
   }
-  
+
   .announcement-header,
   .announcement-body,
   .announcement-footer {

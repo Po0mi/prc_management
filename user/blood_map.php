@@ -156,5 +156,6 @@ foreach ($rows as $r) {
       <?php endforeach; ?>
     <?php endif; ?>
   </script>
+    <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>

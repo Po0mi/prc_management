@@ -290,5 +290,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_session'])) 
       </div>
     </div>
   </div>
+  
 </body>
 </html>
