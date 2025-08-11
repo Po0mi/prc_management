@@ -144,40 +144,8 @@
   display: none;
 }
 
-/* Hide dropdown name in collapsed mode but keep icons and arrow */
-.sidebar.collapsed .dropdown-header span {
-  display: none;
-}
-
-.sidebar.collapsed .dropdown-header {
-  justify-content: center;
-}
-
-.sidebar.collapsed .dropdown-header i {
-  display: inline-block; /* keep main icon visible */
-}
-
-.sidebar.collapsed .dropdown-header .dropdown-arrow {
-  display: inline-block; /* keep arrow visible */
-}
-
-/* Keep main nav icons & dropdown arrow visible when collapsed */
-.sidebar.collapsed .dropdown-header {
-  justify-content: center;
-}
-
-.sidebar.collapsed .dropdown-header i {
-  display: inline-block; /* Keep event/training icons */
-}
-
-.sidebar.collapsed .dropdown-header .dropdown-arrow {
-  display: inline-block;
-  margin-left: auto;
-}
-
 /* Align icons in collapsed mode */
-.sidebar.collapsed .nav-link,
-.sidebar.collapsed .dropdown-header {
+.sidebar.collapsed .nav-link {
   justify-content: center;
 }
 
@@ -204,47 +172,6 @@
 .sidebar.collapsed .logo-title img {
   max-width: 100%;
   height: auto;
-}
-
-/* Dropdown Navigation Styles */
-.dropdown-nav {
-  position: relative;
-  cursor: pointer;
-}
-.dropdown-nav:hover {
-  background-color: rgba(255, 255, 255, 0.15);
-}
-
-.dropdown-header {
-  display: flex;
-  align-items: center;
-  padding: 12px 15px;
-  color: #fff;
-}
-
-.dropdown-header .dropdown-arrow {
-  margin-left: auto;
-  transition: transform 0.3s ease;
-}
-
-.dropdown-nav.active .dropdown-arrow {
-  transform: rotate(180deg);
-}
-
-.dropdown-links {
-  max-height: 0;
-  overflow: hidden;
-  transition: max-height 0.3s ease;
-  background-color: rgba(0, 0, 0, 0.1);
-}
-
-.dropdown-nav.active .dropdown-links {
-  max-height: 200px;
-}
-
-.sub-link {
-  padding-left: 40px !important;
-  font-size: 0.9em;
 }
 
 /* Mobile rules */

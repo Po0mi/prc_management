@@ -249,8 +249,137 @@
   padding-top: 0;
   padding-bottom: 1rem;
 }
+:root {
+  --prc-red: #a00000;
+  --prc-red-dark: #800000;
+  --prc-blue: #004b79;
+  --bg-color: #ffffff;
+  --text-color: #333333;
+  --header-bg: white;
+  --card-bg: white;
+  --shadow-color: rgba(0, 0, 0, 0.08);
+  --border-color: #eee;
+  --secondary-text: #666;
+}
 
-/* Responsive Design */
+.dark-mode {
+  --bg-color: #121212;
+  --text-color: #f0f0f0;
+  --header-bg: #1e1e1e;
+  --card-bg: #2d2d2d;
+  --shadow-color: rgba(0, 0, 0, 0.3);
+  --border-color: #444;
+  --secondary-text: #aaa;
+  --prc-red: #ff4d4d;
+  --prc-red-dark: #ff3333;
+}
+
+/* Apply dark mode styles */
+.dark-mode .users-container {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+}
+
+.dark-mode .page-header h1 {
+  color: var(--prc-red);
+}
+
+.dark-mode .page-header p {
+  color: var(--text-color);
+}
+
+.dark-mode .alert.success {
+  background-color: #1e3a24;
+  color: #a3d9b1;
+  border-left: 4px solid #28a745;
+}
+
+.dark-mode .alert.error {
+  background-color: #3a1e1e;
+  color: #f1aeb5;
+  border-left: 4px solid #dc3545;
+}
+
+.dark-mode .card,
+.dark-mode .stat-card,
+.dark-mode .table-container {
+  background: var(--card-bg);
+  box-shadow: 0 2px 10px var(--shadow-color);
+  color: var(--text-color);
+}
+
+.dark-mode .empty-state i {
+  color: var(--prc-red);
+}
+
+.dark-mode .empty-state h3 {
+  color: var(--text-color);
+}
+
+.dark-mode .empty-state p {
+  color: var(--text-color);
+}
+
+.dark-mode .stat-content h3 {
+  color: var(--text-color);
+}
+
+.dark-mode .stat-content p {
+  color: var(--text-color);
+}
+
+.dark-mode .data-table thead {
+  background-color: #252525;
+}
+
+.dark-mode .data-table th {
+  color: var(--text-color);
+  border-bottom: 2px solid var(--border-color);
+}
+
+.dark-mode .data-table td {
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-color);
+}
+
+.dark-mode .data-table tr:hover {
+  background-color: #383838;
+}
+
+.dark-mode .form-group input {
+  background-color: #383838;
+  border: 1px solid #555;
+  color: var(--text-color);
+}
+
+.dark-mode .btn-primary {
+  background-color: var(--prc-red);
+}
+
+.dark-mode .btn-primary:hover {
+  background-color: var(--prc-red-dark);
+}
+
+.dark-mode .status-badge.attending {
+  background-color: #1e3a24;
+  color: #a3d9b1;
+}
+
+.dark-mode .status-badge.pending {
+  background-color: #3a3200;
+  color: #ffe087;
+}
+
+.dark-mode .session-description {
+  background-color: #252525;
+  color: var(--secondary-text);
+}
+
+.dark-mode .description-row {
+  background-color: #252525;
+}
+
+/* Responsive Design remains the same */
 @media (max-width: 768px) {
   .users-container {
     padding: 1rem;
@@ -282,7 +411,7 @@
   .data-table tr {
     display: block;
     margin-bottom: 1rem;
-    border-bottom: 2px solid #eee;
+    border-bottom: 2px solid var(--border-color);
   }
 
   .data-table td {
@@ -290,7 +419,7 @@
     text-align: right;
     padding-left: 50%;
     position: relative;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--border-color);
   }
 
   .data-table td::before {
@@ -301,7 +430,7 @@
     padding-right: 1rem;
     font-weight: 600;
     text-align: left;
-    color: #555;
+    color: var(--secondary-text);
   }
 
   .actions {

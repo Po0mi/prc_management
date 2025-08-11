@@ -13,6 +13,7 @@
     <a href="index.php">
         <img src="assets/logo.png" alt="PRC Logo" class="prc-logo">
     </a>
+    
     <div>
         <h1>Philippine Red Cross</h1>
         <p>Management System Portal</p>

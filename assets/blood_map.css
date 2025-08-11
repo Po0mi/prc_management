@@ -23,16 +23,6 @@
   padding-bottom: 0.5rem;
 }
 
-.page-title:after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 60px;
-  height: 3px;
-  background: var(--prc-red);
-}
-
 #map {
   height: 500px;
   width: 100%;
@@ -81,16 +71,6 @@
   font-weight: 600;
   position: relative;
   padding-bottom: 0.75rem;
-}
-
-.section-title:after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 50px;
-  height: 3px;
-  background: var(--prc-red);
 }
 
 .bank-cards {
@@ -189,7 +169,151 @@
   align-items: center;
 }
 
-/* Responsive Design */
+:root {
+  --prc-red: #a00000;
+  --prc-red-dark: #800000;
+  --prc-blue: #004b79;
+  --bg-color: #f8f9fa;
+  --text-color: #333333;
+  --card-bg: white;
+  --shadow-color: rgba(0, 0, 0, 0.08);
+  --border-color: rgba(0, 0, 0, 0.05);
+  --secondary-text: #6c757d;
+  --inventory-bg: rgba(204, 0, 0, 0.05);
+  --inventory-hover: rgba(204, 0, 0, 0.1);
+  --no-inventory-bg: rgba(0, 0, 0, 0.03);
+}
+
+.dark-mode {
+  --bg-color: #121212;
+  --text-color: #f0f0f0;
+  --card-bg: #2d2d2d;
+  --shadow-color: rgba(0, 0, 0, 0.3);
+  --border-color: rgba(255, 255, 255, 0.1);
+  --secondary-text: #aaa;
+  --inventory-bg: rgba(255, 77, 77, 0.1);
+  --inventory-hover: rgba(255, 77, 77, 0.2);
+  --no-inventory-bg: rgba(255, 255, 255, 0.05);
+  --prc-red: #ff4d4d;
+  --prc-red-dark: #ff3333;
+}
+
+/* Apply dark mode styles */
+.dark-mode .blood-map-container {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+}
+
+.dark-mode .blood_map_title,
+.dark-mode .section-title {
+  color: var(--prc-red);
+}
+
+.dark-mode .blood_map_title:after,
+.dark-mode .section-title:after {
+  background: var(--prc-red);
+}
+
+.dark-mode #map {
+  box-shadow: 0 5px 15px var(--shadow-color);
+}
+
+.dark-mode .empty-state {
+  background: var(--card-bg);
+  box-shadow: 0 5px 15px var(--shadow-color);
+}
+
+.dark-mode .empty-state i {
+  color: var(--prc-red);
+}
+
+.dark-mode .empty-state h3 {
+  color: var(--prc-red);
+}
+
+.dark-mode .empty-state p {
+  color: var(--text-color);
+}
+
+.dark-mode .bank-card {
+  background: var(--card-bg);
+  box-shadow: 0 5px 15px var(--shadow-color);
+  border-left: 4px solid var(--prc-red);
+}
+
+.dark-mode .bank-card:hover {
+  box-shadow: 0 10px 25px var(--shadow-color);
+}
+
+.dark-mode .bank-header {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.dark-mode .bank-header h4 {
+  color: var(--text-color);
+}
+
+.dark-mode .bank-location {
+  color: var(--text-color);
+}
+
+.dark-mode .bank-location i {
+  color: var(--prc-red);
+}
+
+.dark-mode .inventory-item {
+  background: var(--inventory-bg);
+}
+
+.dark-mode .inventory-item:hover {
+  background: var(--inventory-hover);
+}
+
+.dark-mode .blood-type {
+  color: var(--text-color);
+}
+
+.dark-mode .units-available {
+  background: var(--prc-red);
+  color: white;
+}
+
+.dark-mode .no-inventory {
+  color: var(--secondary-text);
+  background: var(--no-inventory-bg);
+}
+
+/* Leaflet map adjustments for dark mode */
+.dark-mode .leaflet-container {
+  background: #2d2d2d !important;
+}
+
+.dark-mode .leaflet-tile {
+  filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg)
+    brightness(0.7) saturate(0.7) !important;
+}
+
+.dark-mode .leaflet-control {
+  background-color: #3d3d3d !important;
+  color: #f0f0f0 !important;
+}
+
+.dark-mode .leaflet-bar a {
+  background-color: #3d3d3d !important;
+  color: #f0f0f0 !important;
+  border-bottom: 1px solid #555 !important;
+}
+
+.dark-mode .leaflet-popup-content-wrapper {
+  background-color: #3d3d3d !important;
+  color: #f0f0f0 !important;
+}
+
+.dark-mode .leaflet-popup-tip {
+  background-color: #3d3d3d !important;
+}
+
+/* Responsive Design remains the same */
 @media (max-width: 992px) {
   .bank-cards {
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));

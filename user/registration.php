@@ -141,5 +141,6 @@ $events = $stmt->fetchAll();
     <script src="/js/register.js"></script>
       <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
       <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
+      <script src="js/darkmode.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>

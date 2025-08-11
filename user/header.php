@@ -7,8 +7,11 @@
     <button title="Notifications">
       <i class="fas fa-bell"></i>
     </button>
-    <button title="Settings">
-      <i class="fas fa-cog"></i>
+    <button title="Mail">
+      <i class="fas fa-envelope"></i>
+    </button>
+    <button title="Toggle Dark Mode" id="darkModeToggle">
+      <i class="fas fa-moon"></i>
     </button>
   </div>
 </header>

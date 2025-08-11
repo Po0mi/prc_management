@@ -69,6 +69,139 @@
   border-radius: 10px;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
 }
+:root {
+  --sidebar-width: 250px;
+  --sidebar-collapsed-width: 70px;
+  --transition-speed: 0.3s;
+  --prc-red: #a00000;
+  --prc-red-dark: #800000;
+  --bg-color: #ffffff;
+  --text-color: #333333;
+  --card-bg: white;
+  --shadow-color: rgba(0, 0, 0, 0.05);
+  --border-color: #ddd;
+  --secondary-text: #666;
+  --input-bg: white;
+  --tab-inactive: #666;
+  --fields-bg: #f9f9f9;
+}
+
+.dark-mode {
+  --prc-red: #a00000;
+  --prc-red-dark: #800000;
+  --bg-color: #121212;
+  --text-color: #f0f0f0;
+  --card-bg: #2d2d2d;
+  --shadow-color: rgba(0, 0, 0, 0.3);
+  --border-color: #444;
+  --secondary-text: #aaa;
+  --input-bg: #383838;
+  --tab-inactive: #aaa;
+  --fields-bg: #252525;
+}
+
+.donation-container {
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: 2rem;
+  transition: all var(--transition-speed) ease;
+  margin-right: var(--sidebar-width);
+  width: calc(100% - var(--sidebar-width));
+  width: 100%;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+}
+
+/* Adjust container when sidebar is collapsed */
+.sidebar.collapsed ~ .donation-container {
+  margin-left: var(--sidebar-collapsed-width);
+  width: calc(100% - var(--sidebar-collapsed-width));
+}
+
+.dark-mode .donation-header h1 {
+  color: var(--prc-red);
+}
+
+.dark-mode .donation-header p {
+  color: var(--text-color);
+}
+
+.dark-mode .donation-form,
+.dark-mode .info-card {
+  background: var(--card-bg);
+  box-shadow: 0 4px 15px var(--shadow-color);
+}
+
+.dark-mode .form-group label {
+  color: var(--text-color);
+}
+
+.dark-mode .input-with-icon i {
+  color: var(--text-color);
+}
+
+.dark-mode .input-with-icon input,
+.dark-mode .input-with-icon select,
+.dark-mode textarea {
+  background-color: var(--input-bg);
+  border-color: var(--border-color);
+  color: var(--text-color);
+}
+
+.dark-mode .input-with-icon select {
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23aaa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+}
+
+.dark-mode .donate-button {
+  background: var(--prc-red);
+}
+
+.dark-mode .donate-button:hover {
+  background: var(--prc-red-dark);
+}
+
+.dark-mode .info-card i,
+.dark-mode .info-card h3 {
+  color: var(--prc-red);
+}
+
+.dark-mode .info-card p {
+  color: var(--text-color);
+}
+
+.dark-mode .alert.error {
+  background: #3a1e1e;
+  color: #f1aeb5;
+  border-left-color: #c62828;
+}
+
+.dark-mode .alert.success {
+  background: #1e3a24;
+  color: #a3d9b1;
+  border-left-color: #2e7d32;
+}
+
+.dark-mode .donation-tabs {
+  border-bottom-color: var(--border-color);
+}
+
+.dark-mode .tab-button {
+  color: var(--tab-inactive);
+}
+
+.dark-mode .tab-button:hover,
+.dark-mode .tab-button.active {
+  color: var(--prc-red);
+}
+
+.dark-mode .tab-button.active {
+  border-bottom-color: var(--prc-red);
+}
+
+.dark-mode .donation-fields {
+  background: var(--fields-bg);
+  border-left-color: var(--prc-red);
+}
 
 @media (min-width: 992px) {
   .donation-form-container {
