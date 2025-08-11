@@ -1,7 +1,6 @@
 .users-container {
   padding: 2rem;
-  margin-left: var(--sidebar-width);
-  width: calc(100% - var(--sidebar-width));
+  width: 100%;
   box-sizing: border-box;
   min-height: 100vh;
 }
@@ -206,69 +205,7 @@
   white-space: nowrap;
 }
 
-/* Responsive Design */
-@media (max-width: 768px) {
-  .users-container {
-    margin-left: 70px;
-    width: calc(100% - 70px);
-    padding: 1rem;
-  }
-
-  .stats-cards {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 576px) {
-  .users-container {
-    margin-left: 0;
-    width: 100%;
-  }
-
-  .data-table {
-    display: block;
-  }
-
-  .data-table thead {
-    display: none;
-  }
-
-  .data-table tr {
-    display: block;
-    margin-bottom: 1rem;
-    border-bottom: 2px solid #eee;
-  }
-
-  .data-table td {
-    display: block;
-    text-align: right;
-    padding-left: 50%;
-    position: relative;
-    border-bottom: 1px solid #eee;
-  }
-
-  .data-table td::before {
-    content: attr(data-label);
-    position: absolute;
-    left: 1rem;
-    width: calc(50% - 1rem);
-    padding-right: 1rem;
-    font-weight: 600;
-    text-align: left;
-    color: #555;
-  }
-
-  .actions {
-    text-align: center;
-  }
-
-  .actions .btn {
-    width: 100%;
-    justify-content: center;
-    margin-bottom: 0.5rem;
-  }
-}
-/* Additional Schedule-specific Styles */
+/* Status Badges */
 .status-badge {
   padding: 0.35rem 0.7rem;
   border-radius: 20px;
@@ -313,8 +250,16 @@
   padding-bottom: 1rem;
 }
 
-/* Responsive adjustments */
+/* Responsive Design */
 @media (max-width: 768px) {
+  .users-container {
+    padding: 1rem;
+  }
+
+  .stats-cards {
+    grid-template-columns: 1fr;
+  }
+
   .data-table td:nth-child(3),
   .data-table th:nth-child(3) {
     display: none;
@@ -322,6 +267,53 @@
 }
 
 @media (max-width: 576px) {
+  .users-container {
+    padding: 1rem;
+  }
+
+  .data-table {
+    display: block;
+  }
+
+  .data-table thead {
+    display: none;
+  }
+
+  .data-table tr {
+    display: block;
+    margin-bottom: 1rem;
+    border-bottom: 2px solid #eee;
+  }
+
+  .data-table td {
+    display: block;
+    text-align: right;
+    padding-left: 50%;
+    position: relative;
+    border-bottom: 1px solid #eee;
+  }
+
+  .data-table td::before {
+    content: attr(data-label);
+    position: absolute;
+    left: 1rem;
+    width: calc(50% - 1rem);
+    padding-right: 1rem;
+    font-weight: 600;
+    text-align: left;
+    color: #555;
+  }
+
+  .actions {
+    text-align: center;
+  }
+
+  .actions .btn {
+    width: 100%;
+    justify-content: center;
+    margin-bottom: 0.5rem;
+  }
+
   .data-table td:nth-child(4),
   .data-table th:nth-child(4) {
     display: none;

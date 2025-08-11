@@ -1,45 +1,83 @@
+:root {
+  --sidebar-width: 250px;
+  --sidebar-collapsed-width: 70px;
+  --transition-speed: 0.3s;
+}
+
 .donation-container {
-  margin-left: var(--sidebar-width);
-  width: calc(100% - var(--sidebar-width));
   box-sizing: border-box;
   min-height: 100vh;
   padding: 2rem;
-  transition: margin-left 0.3s ease;
+  transition: all var(--transition-speed) ease;
+  margin-right: var(--sidebar-width);
+  width: calc(100% - var(--sidebar-width));
+  width: 100%;
 }
 
-/* Rest of your existing CSS remains completely unchanged */
+/* Adjust container when sidebar is collapsed */
+.sidebar.collapsed ~ .donation-container {
+  margin-left: var(--sidebar-collapsed-width);
+  width: calc(100% - var(--sidebar-collapsed-width));
+}
+
+/* Mobile styles - sidebar hidden */
+@media (max-width: 768px) {
+  .donation-container {
+    margin-left: 0;
+    width: 100%;
+    padding: 1rem;
+  }
+
+  .sidebar.collapsed ~ .donation-container {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+
+/* Rest of your existing CSS with some width fixes */
 .donation-header {
   margin-bottom: 2rem;
-  text-align: center;
+  text-align: start;
   max-width: 800px;
-  margin-left: auto;
-  margin-right: auto;
+  width: 100%;
 }
 
 .donation-header h1 {
   color: var(--prc-red);
-  font-size: 2.5rem;
+  font-size: clamp(1.8rem, 5vw, 2.5rem);
   margin-bottom: 0.5rem;
 }
 
 .donation-header p {
   color: #666;
-  font-size: 1.1rem;
+  font-size: clamp(1rem, 2vw, 1.1rem);
 }
 
 .donation-form-container {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2rem;
+  grid-template-columns: 1fr;
+  gap: 3rem;
   max-width: 1200px;
   margin: 0 auto;
+  width: 100%;
+  margin-left: 5px;
 }
 
 .donation-form {
   background: white;
-  padding: 2rem;
+  padding: 1.5rem;
   border-radius: 10px;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+}
+
+@media (min-width: 992px) {
+  .donation-form-container {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .donation-form {
+    padding: 2rem;
+  }
 }
 
 .form-group {
@@ -94,8 +132,14 @@ textarea {
 
 .form-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 1rem;
+}
+
+@media (min-width: 576px) {
+  .form-row {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 .donate-button {
@@ -143,6 +187,7 @@ textarea {
 .info-card h3 {
   color: var(--prc-red);
   margin-bottom: 0.5rem;
+  font-size: 1.3rem;
 }
 
 .info-card p {
@@ -178,6 +223,8 @@ textarea {
   display: flex;
   margin-bottom: 1.5rem;
   border-bottom: 1px solid #ddd;
+  width: 20%;
+  overflow-x: auto;
 }
 
 .tab-button {
@@ -193,6 +240,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  white-space: nowrap;
 }
 
 .tab-button:hover {
@@ -230,47 +278,27 @@ textarea {
   animation: spin 1s linear infinite;
 }
 
-/* Responsive Design - kept exactly as you had them */
-@media (max-width: 992px) {
-  .donation-form-container {
-    grid-template-columns: 1fr;
-  }
-}
-
 @media (max-width: 768px) {
-  .donation-container {
-    margin-left: 70px;
-    width: calc(100% - 70px);
-    padding: 1rem;
-  }
-
-  .form-row {
-    grid-template-columns: 1fr;
-  }
-
   .donation-tabs {
-    flex-direction: column;
+    flex-wrap: wrap;
   }
 
   .tab-button {
-    justify-content: center;
-    border-bottom: none;
-    border-left: 3px solid transparent;
-  }
-
-  .tab-button.active {
-    border-bottom: none;
-    border-left-color: var(--prc-red);
+    padding: 0.6rem 1rem;
+    font-size: 0.9rem;
   }
 }
 
 @media (max-width: 576px) {
-  .donation-container {
-    margin-left: 0;
-    width: 100%;
-  }
-
   .donation-header h1 {
     font-size: 2rem;
+  }
+
+  .info-card {
+    padding: 1rem;
+  }
+
+  .donation-fields {
+    padding: 1rem;
   }
 }

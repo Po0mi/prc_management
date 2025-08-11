@@ -1,14 +1,11 @@
 .announcements-container {
-  margin-left: var(--sidebar-width);
+  margin-right: var(--sidebar-width);
   width: calc(100% - var(--sidebar-width));
   box-sizing: border-box;
   min-height: 100vh;
   margin-top: 10px;
-
-  /* Removed problematic positioning */
-  /* position: relative; */
-  /* right: 13%; */
-
+  padding: 2rem;
+  width: 100%;
   transition: margin-left var(--transition-speed), width var(--transition-speed);
 }
 
@@ -40,7 +37,6 @@
   background: white;
   border-radius: 10px;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
-  padding: 2rem;
 }
 
 .announcements-toolbar {
@@ -115,11 +111,12 @@
   border: 1px solid #eee;
   border-radius: 8px;
   overflow: hidden;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
   transition: all 0.3s ease;
 }
 
 .announcement-item:hover {
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
   transform: translateY(-2px);
 }
 

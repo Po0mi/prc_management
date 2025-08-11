@@ -49,16 +49,20 @@ foreach ($rows as $r) {
   <link rel="stylesheet" href="../assets/styles.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/sidebar.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/blood_map.css?v=<?php echo time(); ?>">
+  <link rel="stylesheet" href="../assets/dashboard.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
 </head>
 <body>
   <?php include 'sidebar.php'; ?>
   
-  <div class="main-content">
+    <div class="header-content">
+    <?php include 'header.php'; ?>
+    
+  
     <div class="blood-map-container">
       <div class="page-header">
-        <h1 class="page-title">Blood Supply Map</h1>
+        <h1 class="blood_map_title">Blood Supply Map</h1>
       </div>
 
       <?php if (empty($banks)): ?>
@@ -157,5 +161,6 @@ foreach ($rows as $r) {
     <?php endif; ?>
   </script>
     <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
+    <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>

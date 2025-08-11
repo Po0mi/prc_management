@@ -46,7 +46,7 @@ $trainingNotif = $trainStmt->fetch();
 <body>
   <?php include 'sidebar.php'; ?>
   
-  <div class="main-content">
+  <div class="header-content">
     <?php include 'header.php'; ?>
     
     <div class="dashboard-content">
@@ -132,5 +132,6 @@ $trainingNotif = $trainStmt->fetch();
   </div>
   
   <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
+  <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>

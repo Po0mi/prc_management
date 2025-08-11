@@ -20,14 +20,26 @@
         <i class="fas fa-home"></i>
         <span class="link-text">Dashboard</span>
       </a>
-      <a href="registration.php" class="nav-link">
-        <i class="fas fa-calendar-check"></i>
-        <span class="link-text">Event Registration</span>
-      </a>
-      <a href="schedule.php" class="nav-link">
-        <i class="fas fa-calendar-alt"></i>
-        <span class="link-text">Training Schedule</span>
-      </a>
+      
+      <!-- Events & Training Dropdown -->
+      <div class="dropdown-nav">
+        <div class="dropdown-header">
+          <i class="fas fa-calendar"></i>
+          <span class="link-text">Events & Training</span>
+          <i class="fas fa-chevron-down dropdown-arrow"></i>
+        </div>
+        <div class="dropdown-links">
+          <a href="registration.php" class="nav-link sub-link">
+            <i class="fas fa-calendar-check"></i>
+            <span class="link-text">Event Registration</span>
+          </a>
+          <a href="schedule.php" class="nav-link sub-link">
+            <i class="fas fa-calendar-alt"></i>
+            <span class="link-text">Training Schedule</span>
+          </a>
+        </div>
+      </div>
+      
       <a href="blood_map.php" class="nav-link">
         <i class="fas fa-map-marker-alt"></i>
         <span class="link-text">Blood Map</span>

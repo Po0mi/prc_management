@@ -71,10 +71,12 @@ $registered = $stmt->fetchColumn();
   <link rel="stylesheet" href="../assets/styles.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/sidebar.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/schedule.css?v=<?php echo time(); ?>">
+  <link rel="stylesheet" href="../assets/dashboard.css?v=<?php echo time(); ?>">
 </head>
 <body>
   <?php include 'sidebar.php'; ?>
-  
+  <div class="header-content">
+    <?php include 'header.php'; ?>
   <div class="sessions-container">
     <div class="page-header">
       <h1>Training Schedule</h1>
@@ -230,5 +232,6 @@ $registered = $stmt->fetchColumn();
     </div>
   </div>
     <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
+    <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>

@@ -96,7 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_donation'])) {
 </head>
 <body>
   <?php include 'sidebar.php'; ?>
-    <div class="main-content">
+    <div class="header-content">
     <?php include 'header.php'; ?>
   
   <div class="main-content">
@@ -284,5 +284,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_donation'])) {
   
   <script src="js/donate.js"></script>
     <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
+    <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>
