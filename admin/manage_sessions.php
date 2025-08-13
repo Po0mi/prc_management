@@ -22,7 +22,6 @@ $successMessage = '';
 
 date_default_timezone_set('Asia/Kuala_Lumpur');
 
-
 $majorServices = [
     'Health Service',
     'Safety Service',
@@ -31,16 +30,13 @@ $majorServices = [
     'Red Cross Youth'
 ];
 
-
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 
-
 function validateSessionData($data) {
     $errors = [];
     
-   
     $required = ['title', 'session_date', 'start_time', 'end_time', 'venue', 'major_service'];
     foreach ($required as $field) {
         if (empty($data[$field])) {
@@ -49,7 +45,6 @@ function validateSessionData($data) {
         }
     }
     
-   
     if (!preg_match('/^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/', $data['start_time'] ?? '')) {
         $errors[] = "Invalid start time format. Please use HH:MM format (24-hour with leading zeros).";
     }
@@ -58,17 +53,14 @@ function validateSessionData($data) {
         $errors[] = "Invalid end time format. Please use HH:MM format (24-hour with leading zeros).";
     }
     
-    
     try {
         $date = $data['session_date'] ?? '';
         $startTime = $data['start_time'] ?? '';
         $endTime = $data['end_time'] ?? '';
         
-        
         if (!DateTime::createFromFormat('Y-m-d', $date)) {
             $errors[] = "Invalid date format. Please use YYYY-MM-DD.";
         }
-        
         
         if (empty($errors)) {
             $start = DateTime::createFromFormat('Y-m-d H:i', $date . ' ' . $startTime);
@@ -105,7 +97,7 @@ function handleDatabaseError($e) {
     return "A database error occurred. Please try again later.";
 }
 
-
+// Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_session'])) {
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
         $errorMessage = "Security error: Invalid form submission. Please try again.";
@@ -131,7 +123,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_session'])) {
         }
     }
 }
-
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_session'])) {
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
@@ -164,7 +155,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_session'])) {
     }
 }
 
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_session'])) {
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
         $errorMessage = "Security error: Invalid form submission. Please try again.";
@@ -174,7 +164,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_session'])) {
         
         if ($session_id > 0) {
             try {
-                
                 $stmt = $pdo->prepare("SELECT COUNT(*) FROM session_registrations WHERE session_id = ?");
                 $stmt->execute([$session_id]);
                 $registrations = $stmt->fetchColumn();
@@ -196,58 +185,91 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_session'])) {
     }
 }
 
-
+// Get filter parameters
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
+$serviceFilter = isset($_GET['service']) ? trim($_GET['service']) : '';
+$statusFilter = isset($_GET['status']) ? trim($_GET['status']) : '';
 $page = max(1, isset($_GET['page']) ? (int)$_GET['page'] : 1);
 $limit = 20;
 $offset = ($page - 1) * $limit;
 
+// Build query with filters
 try {
+    $whereConditions = [];
+    $params = [];
+    
     if ($search) {
-        $stmt = $pdo->prepare("
-            SELECT SQL_CALC_FOUND_ROWS ts.*, 
-                   COUNT(sr.registration_id) AS registrations_count
-            FROM training_sessions ts
-            LEFT JOIN session_registrations sr ON ts.session_id = sr.session_id
-            WHERE MATCH(ts.title, ts.venue, ts.major_service) AGAINST(:search IN BOOLEAN MODE)
-            GROUP BY ts.session_id
-            ORDER BY ts.session_date ASC, ts.start_time ASC
-            LIMIT :limit OFFSET :offset
-        ");
-        $stmt->bindValue(':search', $search, PDO::PARAM_STR);
-    } else {
-        $stmt = $pdo->prepare("
-            SELECT SQL_CALC_FOUND_ROWS ts.*, 
-                   COUNT(sr.registration_id) AS registrations_count
-            FROM training_sessions ts
-            LEFT JOIN session_registrations sr ON ts.session_id = sr.session_id
-            GROUP BY ts.session_id
-            ORDER BY ts.session_date ASC, ts.start_time ASC
-            LIMIT :limit OFFSET :offset
-        ");
+        $whereConditions[] = "(ts.title LIKE :search OR ts.venue LIKE :search)";
+        $params[':search'] = '%' . $search . '%';
     }
     
+    if ($serviceFilter) {
+        $whereConditions[] = "ts.major_service = :service";
+        $params[':service'] = $serviceFilter;
+    }
+    
+    if ($statusFilter === 'upcoming') {
+        $whereConditions[] = "ts.session_date >= CURDATE()";
+    } elseif ($statusFilter === 'past') {
+        $whereConditions[] = "ts.session_date < CURDATE()";
+    }
+    
+    $whereClause = $whereConditions ? 'WHERE ' . implode(' AND ', $whereConditions) : '';
+    
+    $query = "
+        SELECT SQL_CALC_FOUND_ROWS ts.*, 
+               COUNT(sr.registration_id) AS registrations_count
+        FROM training_sessions ts
+        LEFT JOIN session_registrations sr ON ts.session_id = sr.session_id
+        $whereClause
+        GROUP BY ts.session_id
+        ORDER BY ts.session_date ASC, ts.start_time ASC
+        LIMIT :limit OFFSET :offset
+    ";
+    
+    $stmt = $pdo->prepare($query);
+    foreach ($params as $key => $value) {
+        $stmt->bindValue($key, $value, PDO::PARAM_STR);
+    }
     $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
     $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
     $stmt->execute();
     $sessions = $stmt->fetchAll();
     
-    
     $totalStmt = $pdo->query("SELECT FOUND_ROWS()");
     $totalSessions = $totalStmt->fetchColumn();
     $totalPages = ceil($totalSessions / $limit);
     
+    // Get statistics
+    $stats = [];
+    foreach ($majorServices as $service) {
+        $stmt = $pdo->prepare("
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN session_date >= CURDATE() THEN 1 ELSE 0 END) as upcoming,
+                SUM(CASE WHEN session_date < CURDATE() THEN 1 ELSE 0 END) as past
+            FROM training_sessions 
+            WHERE major_service = ?
+        ");
+        $stmt->execute([$service]);
+        $stats[$service] = $stmt->fetch(PDO::FETCH_ASSOC);
+    }
     
-    $upcoming = $pdo->query("SELECT COUNT(*) FROM training_sessions WHERE session_date >= CURDATE()")->fetchColumn();
-    $past = $pdo->query("SELECT COUNT(*) FROM training_sessions WHERE session_date < CURDATE()")->fetchColumn();
+    $totalStats = $pdo->query("
+        SELECT 
+            COUNT(*) as total,
+            SUM(CASE WHEN session_date >= CURDATE() THEN 1 ELSE 0 END) as upcoming,
+            SUM(CASE WHEN session_date < CURDATE() THEN 1 ELSE 0 END) as past
+        FROM training_sessions
+    ")->fetch(PDO::FETCH_ASSOC);
     
 } catch (PDOException $e) {
     $errorMessage = handleDatabaseError($e);
     $sessions = [];
     $totalSessions = 0;
     $totalPages = 1;
-    $upcoming = 0;
-    $past = 0;
+    $stats = [];
+    $totalStats = ['total' => 0, 'upcoming' => 0, 'past' => 0];
 }
 ?>
 
@@ -257,10 +279,8 @@ try {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Manage Training Sessions - PRC Admin</title>
-    <!-- Apply saved sidebar state BEFORE CSS -->
   <?php $collapsed = isset($_COOKIE['sidebarCollapsed']) && $_COOKIE['sidebarCollapsed'] === 'true'; ?>
   <script>
-    // Option 1: Set sidebar width early to prevent flicker
     (function() {
       var collapsed = document.cookie.split('; ').find(row => row.startsWith('sidebarCollapsed='));
       var root = document.documentElement;
@@ -275,419 +295,345 @@ try {
   <link rel="stylesheet" href="../assets/sidebar_admin.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/styles.css?v=<?= time() ?>">
   <link rel="stylesheet" href="../assets/sessions.css?v=<?= time() ?>">
-  <style>
-    
-    .invalid {
-        border-color: #ff4444 !important;
-        box-shadow: 0 0 0 2px rgba(255, 68, 68, 0.2);
-    }
-    .error-message {
-        color: #ff4444;
-        font-size: 0.8em;
-        margin-top: 5px;
-        display: none;
-    }
-    .has-error .error-message {
-        display: block;
-    }
-    .form-group {
-        position: relative;
-        margin-bottom: 15px;
-    }
-  </style>
 </head>
 <body>
   <?php include 'sidebar.php'; ?>
   
-  <div class="admin-content">
-    <div class="sessions-container">
-      <div class="page-header">
-        <h1>Training Sessions Management</h1>
-        <p>Schedule and manage training sessions for volunteers</p>
+  <div class="sessions-container">
+    <div class="page-header">
+      <h1><i class="fas fa-graduation-cap"></i> Training Sessions Management</h1>
+      <p>Schedule and manage training sessions across all major services</p>
+    </div>
+
+    <?php if ($errorMessage): ?>
+      <div class="alert error">
+        <i class="fas fa-exclamation-circle"></i>
+        <?= $errorMessage ?>
       </div>
+    <?php endif; ?>
+    
+    <?php if ($successMessage): ?>
+      <div class="alert success">
+        <i class="fas fa-check-circle"></i>
+        <?= $successMessage ?>
+      </div>
+    <?php endif; ?>
 
-      <?php if ($errorMessage): ?>
-        <div class="alert error">
-          <i class="fas fa-exclamation-circle"></i>
-          <?= htmlspecialchars($errorMessage) ?>
+    <!-- Service Filter Tabs -->
+    <div class="service-tabs">
+      <a href="?service=&status=<?= htmlspecialchars($statusFilter) ?>" class="service-tab all-services <?= !$serviceFilter ? 'active' : '' ?>">
+        <div class="service-name">All Services</div>
+        <div class="service-count"><?= $totalStats['total'] ?> sessions</div>
+      </a>
+      <?php foreach ($majorServices as $service): ?>
+        <a href="?service=<?= urlencode($service) ?>&status=<?= htmlspecialchars($statusFilter) ?>" 
+           class="service-tab <?= $serviceFilter === $service ? 'active' : '' ?>">
+          <div class="service-name"><?= htmlspecialchars($service) ?></div>
+          <div class="service-count"><?= $stats[$service]['total'] ?? 0 ?> sessions</div>
+        </a>
+      <?php endforeach; ?>
+    </div>
+
+    <!-- Action Bar -->
+    <div class="action-bar">
+      <div class="action-bar-left">
+        <form method="GET" class="search-box">
+          <input type="hidden" name="service" value="<?= htmlspecialchars($serviceFilter) ?>">
+          <input type="hidden" name="status" value="<?= htmlspecialchars($statusFilter) ?>">
+          <i class="fas fa-search"></i>
+          <input type="text" name="search" placeholder="Search sessions..." value="<?= htmlspecialchars($search) ?>">
+          <button type="submit"><i class="fas fa-arrow-right"></i></button>
+        </form>
+        
+        <div class="status-filter">
+          <button onclick="filterStatus('all')" class="<?= !$statusFilter ? 'active' : '' ?>">All</button>
+          <button onclick="filterStatus('upcoming')" class="<?= $statusFilter === 'upcoming' ? 'active' : '' ?>">Upcoming</button>
+          <button onclick="filterStatus('past')" class="<?= $statusFilter === 'past' ? 'active' : '' ?>">Past</button>
         </div>
-      <?php endif; ?>
+      </div>
       
-      <?php if ($successMessage): ?>
-        <div class="alert success">
-          <i class="fas fa-check-circle"></i>
-          <?= htmlspecialchars($successMessage) ?>
+      <button class="btn-create" onclick="openCreateModal()">
+        <i class="fas fa-plus-circle"></i> Create New Session
+      </button>
+    </div>
+
+    <!-- Statistics Overview -->
+    <div class="stats-overview">
+      <div class="stat-card">
+        <div class="stat-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+          <i class="fas fa-calendar-alt"></i>
         </div>
-      <?php endif; ?>
-
-      <div class="event-sections">
-        <!-- Create Session Section -->
-        <section class="card">
-          <div class="section-header">
-            <h2><i class="fas fa-calendar-plus"></i> Schedule New Training Session</h2>
-          </div>
-          <form method="POST" class="session-form" id="create-session-form">
-            <input type="hidden" name="create_session" value="1">
-            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-            
-            <div class="form-row">
-              <div class="form-group">
-                <label for="title">Session Title *</label>
-                <input type="text" id="title" name="title" required placeholder="Enter session title">
-              </div>
-              
-              <div class="form-group">
-                <label for="session_date">Date *</label>
-                <input type="date" id="session_date" name="session_date" required min="<?= date('Y-m-d') ?>">
-                <div class="error-message" id="date-error"></div>
-              </div>
-            </div>
-            
-            <div class="form-group">
-              <label for="major_service">Major Service *</label>
-              <select id="major_service" name="major_service" required>
-                <option value="">Select a Major Service</option>
-                <?php foreach ($majorServices as $service): ?>
-                  <option value="<?= htmlspecialchars($service) ?>"><?= htmlspecialchars($service) ?></option>
-                <?php endforeach; ?>
-              </select>
-            </div>
-            
-            <div class="form-row">
-              <div class="form-group">
-                <label for="start_time">Start Time *</label>
-                <input type="time" id="start_time" name="start_time" required 
-                       pattern="([01][0-9]|2[0-3]):[0-5][0-9]"
-                       title="Please enter time in HH:MM format (24-hour)">
-                <div class="error-message" id="start-time-error"></div>
-              </div>
-              
-              <div class="form-group">
-                <label for="end_time">End Time *</label>
-                <input type="time" id="end_time" name="end_time" required 
-                       pattern="([01][0-9]|2[0-3]):[0-5][0-9]"
-                       title="Please enter time in HH:MM format (24-hour)">
-                <div class="error-message" id="end-time-error"></div>
-              </div>
-              
-              <div class="form-group">
-                <label for="venue">Venue *</label>
-                <input type="text" id="venue" name="venue" required placeholder="Training location">
-              </div>
-            </div>
-            
-            <div class="form-row">
-              <div class="form-group">
-                <label for="capacity">Capacity</label>
-                <input type="number" id="capacity" name="capacity" min="1" placeholder="Leave empty for unlimited">
-              </div>
-              
-              <div class="form-group">
-                <label for="fee">Fee (₱)</label>
-                <input type="number" id="fee" name="fee" min="0" step="0.01" placeholder="0.00 for free">
-              </div>
-            </div>
-            
-            <button type="submit" class="btn btn-primary">
-              <i class="fas fa-save"></i> Create Session
-            </button>
-          </form>
-        </section>
-
+        <div>
+          <div style="font-size: 1.5rem; font-weight: 700;"><?= $totalStats['total'] ?></div>
+          <div style="color: var(--gray); font-size: 0.9rem;">Total Sessions</div>
+        </div>
+      </div>
       
-        <section class="card">
-          <div class="section-header">
-            <h2><i class="fas fa-calendar-alt"></i> All Training Sessions</h2>
-            <form method="GET" class="search-box">
-              <input type="text" name="search" placeholder="Search sessions..." 
-                     value="<?= htmlspecialchars($search) ?>">
-              <button type="submit"><i class="fas fa-search"></i></button>
-              <?php if ($search): ?>
-                <a href="manage_sessions.php" class="clear-search">
-                  <i class="fas fa-times"></i>
-                </a>
-              <?php endif; ?>
-            </form>
-          </div>
-          
-          <div class="stats-cards">
-            <div class="stat-card">
-              <div class="stat-icon blue">
-                <i class="fas fa-calendar"></i>
-              </div>
-              <div class="stat-content">
-                <h3>Total Sessions</h3>
-                <p><?= $totalSessions ?></p>
-              </div>
-            </div>
-            
-            <div class="stat-card">
-              <div class="stat-icon green">
-                <i class="fas fa-calendar-check"></i>
-              </div>
-              <div class="stat-content">
-                <h3>Upcoming</h3>
-                <p><?= $upcoming ?></p>
-              </div>
-            </div>
-            
-            <div class="stat-card">
-              <div class="stat-icon orange">
-                <i class="fas fa-users"></i>
-              </div>
-              <div class="stat-content">
-                <h3>Total Registrations</h3>
-                <p><?= array_sum(array_column($sessions, 'registrations_count')) ?></p>
-              </div>
-            </div>
-          </div>
-          
-          <?php if (empty($sessions)): ?>
-            <div class="empty-state">
-              <i class="fas fa-calendar-times"></i>
-              <h3>No Training Sessions Found</h3>
-              <p><?= $search ? 'Try a different search term' : 'Get started by scheduling your first training session' ?></p>
-            </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background: linear-gradient(135deg, #00c853 0%, #64dd17 100%);">
+          <i class="fas fa-clock"></i>
+        </div>
+        <div>
+          <div style="font-size: 1.5rem; font-weight: 700;"><?= $totalStats['upcoming'] ?></div>
+          <div style="color: var(--gray); font-size: 0.9rem;">Upcoming</div>
+        </div>
+      </div>
+      
+      <div class="stat-card">
+        <div class="stat-icon" style="background: linear-gradient(135deg, #ff6b6b 0%, #ff8e53 100%);">
+          <i class="fas fa-history"></i>
+        </div>
+        <div>
+          <div style="font-size: 1.5rem; font-weight: 700;"><?= $totalStats['past'] ?></div>
+          <div style="color: var(--gray); font-size: 0.9rem;">Completed</div>
+        </div>
+      </div>
+      
+      <div class="stat-card">
+        <div class="stat-icon" style="background: linear-gradient(135deg, #ffd93d 0%, #ff9800 100%);">
+          <i class="fas fa-users"></i>
+        </div>
+        <div>
+          <div style="font-size: 1.5rem; font-weight: 700;"><?= array_sum(array_column($sessions, 'registrations_count')) ?></div>
+          <div style="color: var(--gray); font-size: 0.9rem;">Total Registrations</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sessions Table -->
+    <div class="sessions-table-wrapper">
+      <div class="table-header">
+        <h2 class="table-title">
+          <?php if ($serviceFilter): ?>
+            <?= htmlspecialchars($serviceFilter) ?> Sessions
           <?php else: ?>
-            <div class="table-container">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Title</th>
-                    <th>Major Service</th>
-                    <th>Date</th>
-                    <th>Time</th>
-                    <th>Venue</th>
-                    <th>Registrations</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <?php foreach ($sessions as $s): 
-                    $sessionDate = strtotime($s['session_date']);
-                    $today = strtotime('today');
-                    $statusClass = '';
-                    
-                    if ($sessionDate < $today) {
-                      $statusClass = 'past';
-                      $statusText = 'Completed';
-                    } else {
-                      $statusClass = 'upcoming';
-                      $statusText = 'Upcoming';
-                    }
-                    
-                    $isFull = $s['capacity'] > 0 && $s['registrations_count'] >= $s['capacity'];
-                  ?>
-                    <tr>
-                      <td><?= htmlspecialchars($s['session_id']) ?></td>
-                      <td>
-                        <input type="text" name="title" value="<?= htmlspecialchars($s['title']) ?>" 
-                               form="update-form-<?= $s['session_id'] ?>" required>
-                      </td>
-                      <td>
-                        <select name="major_service" form="update-form-<?= $s['session_id'] ?>" required>
-                          <?php foreach ($majorServices as $service): ?>
-                            <option value="<?= htmlspecialchars($service) ?>" <?= $service === $s['major_service'] ? 'selected' : '' ?>>
-                              <?= htmlspecialchars($service) ?>
-                            </option>
-                          <?php endforeach; ?>
-                        </select>
-                      </td>
-                      <td>
-                        <input type="date" name="session_date" value="<?= $s['session_date'] ?>"
-                               form="update-form-<?= $s['session_id'] ?>" required>
-                      </td>
-                      <td class="time-inputs">
-                        <input type="time" name="start_time" value="<?= $s['start_time'] ?>"
-                               form="update-form-<?= $s['session_id'] ?>" required pattern="([01][0-9]|2[0-3]):[0-5][0-9]">
-                        <span>to</span>
-                        <input type="time" name="end_time" value="<?= $s['end_time'] ?>"
-                               form="update-form-<?= $s['session_id'] ?>" required pattern="([01][0-9]|2[0-3]):[0-5][0-9]">
-                      </td>
-                      <td>
-                        <input type="text" name="venue" value="<?= htmlspecialchars($s['venue']) ?>"
-                               form="update-form-<?= $s['session_id'] ?>" required>
-                      </td>
-                      <td>
-                        <a href="view_registrations.php?session_id=<?= $s['session_id'] ?>" 
-                           class="registrations-link <?= $isFull ? 'full' : '' ?>">
-                          <?= $s['registrations_count'] ?> / <?= $s['capacity'] ?: '∞' ?>
-                          <?php if ($isFull): ?>
-                            <span class="full-badge">FULL</span>
-                          <?php endif; ?>
-                        </a>
-                      </td>
-                      <td>
-                        <span class="status-badge <?= $statusClass ?>">
-                          <?= $statusText ?>
-                        </span>
-                      </td>
-                      <td class="actions">
-                        <form method="POST" id="update-form-<?= $s['session_id'] ?>" class="inline-form">
-                          <input type="hidden" name="update_session" value="1">
-                          <input type="hidden" name="session_id" value="<?= $s['session_id'] ?>">
-                          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-                          <input type="hidden" name="capacity" value="<?= $s['capacity'] ?>" form="update-form-<?= $s['session_id'] ?>">
-                          <input type="hidden" name="fee" value="<?= $s['fee'] ?>" form="update-form-<?= $s['session_id'] ?>">
-                          <button type="submit" class="btn btn-sm btn-update">
-                            <i class="fas fa-save"></i> Update
-                          </button>
-                        </form>
-                        
-                        <form method="POST" class="inline-form" 
-                              onsubmit="return confirm('Are you sure you want to delete this session?')">
-                          <input type="hidden" name="delete_session" value="1">
-                          <input type="hidden" name="session_id" value="<?= $s['session_id'] ?>">
-                          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-                          <button type="submit" class="btn btn-sm btn-delete">
-                            <i class="fas fa-trash-alt"></i> Delete
-                          </button>
-                        </form>
-                      </td>
-                    </tr>
-                  <?php endforeach; ?>
-                </tbody>
-              </table>
-
-              <?php if ($totalPages > 1): ?>
-                <div class="pagination">
-                  <?php if ($page > 1): ?>
-                    <a href="?page=<?= $page-1 ?><?= $search ? '&search='.urlencode($search) : '' ?>" class="page-link">
-                      <i class="fas fa-chevron-left"></i> Previous
-                    </a>
-                  <?php endif; ?>
-                  
-                  <span class="page-info">Page <?= $page ?> of <?= $totalPages ?></span>
-                  
-                  <?php if ($page < $totalPages): ?>
-                    <a href="?page=<?= $page+1 ?><?= $search ? '&search='.urlencode($search) : '' ?>" class="page-link">
-                      Next <i class="fas fa-chevron-right"></i>
-                    </a>
-                  <?php endif; ?>
-                </div>
-              <?php endif; ?>
-            </div>
+            All Training Sessions
           <?php endif; ?>
-        </section>
+        </h2>
       </div>
+      
+      <?php if (empty($sessions)): ?>
+        <div class="empty-state">
+          <i class="fas fa-inbox"></i>
+          <h3>No sessions found</h3>
+          <p><?= $search ? 'Try adjusting your search criteria' : 'Click "Create New Session" to get started' ?></p>
+        </div>
+      <?php else: ?>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Session Details</th>
+              <th>Service</th>
+              <th>Date & Time</th>
+              <th>Venue</th>
+              <th>Registrations</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($sessions as $session): 
+              $sessionDate = strtotime($session['session_date']);
+              $today = strtotime('today');
+              $isUpcoming = $sessionDate >= $today;
+              $isFull = $session['capacity'] > 0 && $session['registrations_count'] >= $session['capacity'];
+            ?>
+              <tr>
+                <td>
+                  <div class="session-title"><?= htmlspecialchars($session['title']) ?></div>
+                  <div style="font-size: 0.85rem; color: var(--gray);">ID: #<?= $session['session_id'] ?></div>
+                </td>
+                <td>
+                  <span class="session-service"><?= htmlspecialchars($session['major_service']) ?></span>
+                </td>
+                <td>
+                  <div class="session-datetime">
+                    <span class="session-date"><?= date('M d, Y', $sessionDate) ?></span>
+                    <span class="session-time"><?= date('g:i A', strtotime($session['start_time'])) ?> - <?= date('g:i A', strtotime($session['end_time'])) ?></span>
+                  </div>
+                </td>
+                <td><?= htmlspecialchars($session['venue']) ?></td>
+                <td>
+                  <a href="view_registrations.php?session_id=<?= $session['session_id'] ?>" 
+                     class="registrations-badge <?= $isFull ? 'full' : '' ?>">
+                    <i class="fas fa-users"></i>
+                    <?= $session['registrations_count'] ?> / <?= $session['capacity'] ?: '∞' ?>
+                    <?php if ($isFull): ?>
+                      <span style="font-size: 0.7rem; background: var(--prc-red); color: white; padding: 0.2rem 0.4rem; border-radius: 4px;">FULL</span>
+                    <?php endif; ?>
+                  </a>
+                </td>
+                <td>
+                  <span class="status-badge <?= $isUpcoming ? 'upcoming' : 'past' ?>">
+                    <?= $isUpcoming ? 'Upcoming' : 'Completed' ?>
+                  </span>
+                </td>
+                <td class="actions">
+                  <button class="btn-action btn-edit" onclick="openEditModal(<?= htmlspecialchars(json_encode($session)) ?>)">
+                    <i class="fas fa-edit"></i> Edit
+                  </button>
+                  <form method="POST" style="display: inline;" onsubmit="return confirm('Delete this session?');">
+                    <input type="hidden" name="delete_session" value="1">
+                    <input type="hidden" name="session_id" value="<?= $session['session_id'] ?>">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                    <button type="submit" class="btn-action btn-delete">
+                      <i class="fas fa-trash"></i> Delete
+                    </button>
+                  </form>
+                </td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+        
+        <?php if ($totalPages > 1): ?>
+          <div class="pagination">
+            <?php if ($page > 1): ?>
+              <a href="?page=<?= $page-1 ?>&service=<?= urlencode($serviceFilter) ?>&status=<?= htmlspecialchars($statusFilter) ?>&search=<?= urlencode($search) ?>" class="page-link">
+                <i class="fas fa-chevron-left"></i> Previous
+              </a>
+            <?php endif; ?>
+            
+            <span>Page <?= $page ?> of <?= $totalPages ?></span>
+            
+            <?php if ($page < $totalPages): ?>
+              <a href="?page=<?= $page+1 ?>&service=<?= urlencode($serviceFilter) ?>&status=<?= htmlspecialchars($statusFilter) ?>&search=<?= urlencode($search) ?>" class="page-link">
+                Next <i class="fas fa-chevron-right"></i>
+              </a>
+            <?php endif; ?>
+          </div>
+        <?php endif; ?>
+      <?php endif; ?>
     </div>
   </div>
 
-  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <!-- Create/Edit Modal -->
+  <div class="modal" id="sessionModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modalTitle">Create New Session</h2>
+        <button class="close-modal" onclick="closeModal()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      
+      <form method="POST" id="sessionForm">
+        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+        <input type="hidden" name="create_session" value="1" id="formAction">
+        <input type="hidden" name="session_id" id="sessionId">
+        
+        <div class="form-group">
+          <label for="title">Session Title *</label>
+          <input type="text" id="title" name="title" required placeholder="Enter session title">
+        </div>
+        
+        <div class="form-group">
+          <label for="major_service">Major Service *</label>
+          <select id="major_service" name="major_service" required>
+            <option value="">Select a service</option>
+            <?php foreach ($majorServices as $service): ?>
+              <option value="<?= htmlspecialchars($service) ?>"><?= htmlspecialchars($service) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label for="session_date">Date *</label>
+            <input type="date" id="session_date" name="session_date" required min="<?= date('Y-m-d') ?>">
+          </div>
+          
+          <div class="form-group">
+            <label for="venue">Venue *</label>
+            <input type="text" id="venue" name="venue" required placeholder="Location">
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label for="start_time">Start Time *</label>
+            <input type="time" id="start_time" name="start_time" required value="09:00">
+          </div>
+          
+          <div class="form-group">
+            <label for="end_time">End Time *</label>
+            <input type="time" id="end_time" name="end_time" required value="17:00">
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label for="capacity">Capacity</label>
+            <input type="number" id="capacity" name="capacity" min="0" placeholder="0 for unlimited">
+          </div>
+          
+          <div class="form-group">
+            <label for="fee">Fee (₱)</label>
+            <input type="number" id="fee" name="fee" min="0" step="0.01" placeholder="0.00">
+          </div>
+        </div>
+        
+        <button type="submit" class="btn-submit">
+          <i class="fas fa-save"></i> Save Session
+        </button>
+      </form>
+    </div>
+  </div>
+
   <script>
-  document.addEventListener('DOMContentLoaded', function() {
-      
-      document.getElementById('start_time').value = '09:00';
-      document.getElementById('end_time').value = '17:00';
-      
-      
-      document.getElementById('session_date').min = new Date().toISOString().split('T')[0];
-      
-      
-      document.getElementById('start_time').addEventListener('blur', validateTimeInput);
-      document.getElementById('end_time').addEventListener('blur', validateTimeInput);
-      document.getElementById('session_date').addEventListener('blur', validateDate);
-      
-      
-      document.getElementById('create-session-form').addEventListener('submit', function(e) {
-          if (!validateForm()) {
-              e.preventDefault();
-          }
-      });
-      
-      function validateTimeInput(e) {
-          const timeInput = e.target;
-          const timeValue = timeInput.value;
-          const timeRegex = /^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/;
-          const errorElement = document.getElementById(timeInput.id + '-error');
-          const formGroup = timeInput.closest('.form-group');
-          
-          if (!timeValue) {
-              formGroup.classList.add('has-error');
-              errorElement.textContent = 'This field is required';
-              return false;
-          }
-          
-          if (!timeRegex.test(timeValue)) {
-              formGroup.classList.add('has-error');
-              errorElement.textContent = 'Please enter time in HH:MM format (24-hour with leading zeros)';
-              return false;
-          } else {
-              formGroup.classList.remove('has-error');
-              errorElement.textContent = '';
-              return true;
-          }
+    function openCreateModal() {
+      document.getElementById('modalTitle').textContent = 'Create New Session';
+      document.getElementById('formAction').name = 'create_session';
+      document.getElementById('sessionForm').reset();
+      document.getElementById('sessionModal').classList.add('active');
+    }
+    
+    function openEditModal(session) {
+      document.getElementById('modalTitle').textContent = 'Edit Session';
+      document.getElementById('formAction').name = 'update_session';
+      document.getElementById('sessionId').value = session.session_id;
+      document.getElementById('title').value = session.title;
+      document.getElementById('major_service').value = session.major_service;
+      document.getElementById('session_date').value = session.session_date;
+      document.getElementById('start_time').value = session.start_time;
+      document.getElementById('end_time').value = session.end_time;
+      document.getElementById('venue').value = session.venue;
+      document.getElementById('capacity').value = session.capacity;
+      document.getElementById('fee').value = session.fee;
+      document.getElementById('sessionModal').classList.add('active');
+    }
+    
+    function closeModal() {
+      document.getElementById('sessionModal').classList.remove('active');
+    }
+    
+    function filterStatus(status) {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (status === 'all') {
+        urlParams.delete('status');
+      } else {
+        urlParams.set('status', status);
       }
-      
-      function validateDate() {
-          const dateInput = document.getElementById('session_date');
-          const dateValue = dateInput.value;
-          const errorElement = document.getElementById('date-error');
-          const formGroup = dateInput.closest('.form-group');
-          
-          if (!dateValue) {
-              formGroup.classList.add('has-error');
-              errorElement.textContent = 'Please select a date';
-              return false;
-          }
-          
-          const date = new Date(dateValue);
-          if (isNaN(date.getTime())) {
-              formGroup.classList.add('has-error');
-              errorElement.textContent = 'Invalid date format';
-              return false;
-          }
-          
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          
-          if (date < today) {
-              formGroup.classList.add('has-error');
-              errorElement.textContent = 'Date cannot be in the past';
-              return false;
-          }
-          
-          formGroup.classList.remove('has-error');
-          errorElement.textContent = '';
-          return true;
+      window.location.search = urlParams.toString();
+    }
+    
+    // Close modal when clicking outside
+    document.getElementById('sessionModal').addEventListener('click', function(e) {
+      if (e.target === this) {
+        closeModal();
       }
+    });
+    
+    // Form validation
+    document.getElementById('sessionForm').addEventListener('submit', function(e) {
+      const startTime = document.getElementById('start_time').value;
+      const endTime = document.getElementById('end_time').value;
       
-      function validateForm() {
-          
-          const dateValid = validateDate();
-          const startTimeValid = validateTimeInput({target: document.getElementById('start_time')});
-          const endTimeValid = validateTimeInput({target: document.getElementById('end_time')});
-          
-          
-          if (startTimeValid && endTimeValid && dateValid) {
-              const startTime = document.getElementById('start_time').value;
-              const endTime = document.getElementById('end_time').value;
-              const date = document.getElementById('session_date').value;
-              
-              const start = new Date(`${date}T${startTime}`);
-              const end = new Date(`${date}T${endTime}`);
-              
-              if (end <= start) {
-                  const endTimeGroup = document.getElementById('end_time').closest('.form-group');
-                  const errorElement = document.getElementById('end-time-error');
-                  endTimeGroup.classList.add('has-error');
-                  errorElement.textContent = 'End time must be after start time';
-                  return false;
-              }
-          }
-          
-          
-          const invalidFields = document.querySelectorAll('.has-error');
-          if (invalidFields.length > 0) {
-              invalidFields[0].querySelector('input').focus();
-              return false;
-          }
-          
-          return true;
+      if (endTime <= startTime) {
+        e.preventDefault();
+        alert('End time must be after start time');
       }
-  });
+    });
   </script>
   <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
 </body>

@@ -1,8 +1,13 @@
+/* Enhanced Dashboard Styles */
+
 :root {
   --sidebar-width: 220px;
   --sidebar-collapsed-width: 70px;
   --transition-speed: 0.3s;
   --content-padding: 2rem;
+  --prc-red: #a00000;
+  --prc-red-dark: #800000;
+  --prc-blue: #0056b3;
 }
 
 body {
@@ -11,6 +16,7 @@ body {
   transition: padding-left var(--transition-speed) ease;
 }
 
+/* Main Container */
 .admin-content {
   width: calc(100% - var(--sidebar-width));
   padding: var(--content-padding);
@@ -29,10 +35,11 @@ body {
 }
 
 .dashboard-container {
-  padding: var(--content-padding);
+  padding: 0;
   transition: padding var(--transition-speed) ease;
 }
 
+/* Welcome Section */
 .welcome-section {
   margin-bottom: 2rem;
 }
@@ -49,6 +56,7 @@ body {
   line-height: 1.5;
 }
 
+/* Stats Grid */
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -116,12 +124,12 @@ body {
   color: var(--prc-red);
 }
 
+/* Quick Actions Section */
 .quick-actions {
   background: white;
   border-radius: 10px;
   padding: 1.5rem;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-
   transition: width var(--transition-speed) ease;
 }
 

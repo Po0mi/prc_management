@@ -115,9 +115,7 @@ usort($allDonations, function($a, $b) {
     return strtotime($b['donation_date']) - strtotime($a['donation_date']);
 });
 
-
 $donors = $pdo->query("SELECT donor_id, name, email FROM donors ORDER BY name")->fetchAll();
-
 
 $monetary_count = $pdo->query("SELECT COUNT(*) FROM donations")->fetchColumn();
 $inkind_count = $pdo->query("SELECT COUNT(*) FROM in_kind_donations")->fetchColumn();
@@ -134,10 +132,8 @@ $pending_count = $pdo->query("SELECT COUNT(*) FROM donations WHERE status = 'pen
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Manage Donations - PRC Portal</title>
-    <!-- Apply saved sidebar state BEFORE CSS -->
   <?php $collapsed = isset($_COOKIE['sidebarCollapsed']) && $_COOKIE['sidebarCollapsed'] === 'true'; ?>
   <script>
-    // Option 1: Set sidebar width early to prevent flicker
     (function() {
       var collapsed = document.cookie.split('; ').find(row => row.startsWith('sidebarCollapsed='));
       var root = document.documentElement;
@@ -151,264 +147,310 @@ $pending_count = $pdo->query("SELECT COUNT(*) FROM donations WHERE status = 'pen
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="../assets/sidebar_admin.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/styles.css?v=<?php echo time(); ?>">
-  <link rel="stylesheet" href="../assets/admin.css?v=<?php echo time(); ?>">
-   <link rel="stylesheet" href="../assets/donations.css?v=<?php echo time(); ?>">
+  <link rel="stylesheet" href="../assets/donations.css?v=<?php echo time(); ?>">
 </head>
 <body>
   <?php include 'sidebar.php'; ?>
   
-  <div class="admin-content">
-    <div class="donations-container">
-      <div class="page-header">
-        <h1><i class="fas fa-hand-holding-heart"></i> Donation Management</h1>
-        <p>Record, update, and manage all donations</p>
+  <div class="donations-container">
+    <div class="page-header">
+      <h1><i class="fas fa-hand-holding-heart"></i> Donation Management</h1>
+      <p>Record, update, and manage all donations</p>
+    </div>
+
+    <?php if ($errorMessage): ?>
+      <div class="alert error">
+        <i class="fas fa-exclamation-circle"></i>
+        <?= htmlspecialchars($errorMessage) ?>
       </div>
+    <?php endif; ?>
+    
+    <?php if ($successMessage): ?>
+      <div class="alert success">
+        <i class="fas fa-check-circle"></i>
+        <?= htmlspecialchars($successMessage) ?>
+      </div>
+    <?php endif; ?>
 
-      <?php if ($errorMessage): ?>
-        <div class="alert error">
-          <i class="fas fa-exclamation-circle"></i>
-          <?= htmlspecialchars($errorMessage) ?>
-        </div>
-      <?php endif; ?>
-      
-      <?php if ($successMessage): ?>
-        <div class="alert success">
-          <i class="fas fa-check-circle"></i>
-          <?= htmlspecialchars($successMessage) ?>
-        </div>
-      <?php endif; ?>
-
-      <div class="donation-sections">
+    <!-- Action Bar -->
+    <div class="action-bar">
+      <div class="action-bar-left">
+        <form method="GET" class="search-box">
+          <i class="fas fa-search"></i>
+          <input type="text" name="search" placeholder="Search donations...">
+          <button type="submit"><i class="fas fa-arrow-right"></i></button>
+        </form>
         
-        <section class="create-donation card">
-          <h2><i class="fas fa-plus-circle"></i> Record New Donation</h2>
-          <form method="POST" class="donation-form">
-            <input type="hidden" name="create_donation" value="1">
-            
-            <div class="form-row">
-              <div class="form-group">
-                <label for="donation_type">Donation Type</label>
-                <select id="donation-type" name="donation_type" required>
-                  <option value="monetary">Monetary Donation</option>
-                  <option value="in_kind">In-Kind Donation</option>
-                </select>
-              </div>
-              
-              <div class="form-group">
-                <label for="donor_id">Donor</label>
-                <select id="donor_id" name="donor_id" required>
-                  <?php foreach ($donors as $donor): ?>
-                    <option value="<?= $donor['donor_id'] ?>"><?= htmlspecialchars($donor['name']) ?> (<?= htmlspecialchars($donor['email']) ?>)</option>
-                  <?php endforeach; ?>
-                </select>
-              </div>
-            </div>
-            
-            <div class="form-row">
-              <div class="form-group">
-                <label for="amount">Amount/Value</label>
-                <input type="number" id="amount" name="amount" step="0.01" min="0" required>
-              </div>
-              
-              <div class="form-group">
-                <label for="donation_date">Date</label>
-                <input type="date" id="donation_date" name="donation_date" required>
-              </div>
-            </div>
-            
-            <div id="monetary-fields">
-              <div class="form-group">
-                <label for="payment_method">Payment Method</label>
-                <select id="payment_method" name="payment_method">
-                  <option value="cash">Cash</option>
-                  <option value="check">Check</option>
-                  <option value="credit_card">Credit Card</option>
-                  <option value="bank_transfer">Bank Transfer</option>
-                  <option value="online">Online Payment</option>
-                </select>
-              </div>
-            </div>
-            
-            <div id="inkind-fields" style="display: none;">
-              <div class="form-group">
-                <label for="item_description">Item Description</label>
-                <textarea id="item_description" name="item_description"></textarea>
-              </div>
-            </div>
-            
-            <button type="submit" class="btn btn-primary">
-              <i class="fas fa-save"></i> Record Donation
-            </button>
-          </form>
-        </section>
-
-   
-        <section class="existing-donations">
-          <div class="section-header">
-            <h2><i class="fas fa-list"></i> All Donations</h2>
-            <div class="search-box">
-              <input type="text" placeholder="Search donations...">
-              <button type="submit"><i class="fas fa-search"></i></button>
-            </div>
-          </div>
-          
-          <div class="stats-cards">
-            <div class="stat-card">
-              <div class="stat-icon blue">
-                <i class="fas fa-hand-holding-usd"></i>
-              </div>
-              <div class="stat-content">
-                <h3>Total Donations</h3>
-                <p><?= $total_donations ?></p>
-              </div>
-            </div>
-            
-            <div class="stat-card">
-              <div class="stat-icon green">
-                <i class="fas fa-money-bill-wave"></i>
-              </div>
-              <div class="stat-content">
-                <h3>Monetary</h3>
-                <p><?= $monetary_count ?></p>
-              </div>
-            </div>
-            
-            <div class="stat-card">
-              <div class="stat-icon purple">
-                <i class="fas fa-box-open"></i>
-              </div>
-              <div class="stat-content">
-                <h3>In-Kind</h3>
-                <p><?= $inkind_count ?></p>
-              </div>
-            </div>
-            
-            <div class="stat-card">
-              <div class="stat-icon orange">
-                <i class="fas fa-check-circle"></i>
-              </div>
-              <div class="stat-content">
-                <h3>Completed</h3>
-                <p><?= $completed_count ?></p>
-              </div>
-            </div>
-            
-            <div class="stat-card">
-              <div class="stat-icon yellow">
-                <i class="fas fa-clock"></i>
-              </div>
-              <div class="stat-content">
-                <h3>Pending</h3>
-                <p><?= $pending_count ?></p>
-              </div>
-            </div>
-          </div>
-          
-          <?php if (empty($allDonations)): ?>
-            <div class="empty-state">
-              <i class="fas fa-hand-holding-heart"></i>
-              <h3>No Donations Found</h3>
-              <p>There are no donations to display.</p>
-            </div>
-          <?php else: ?>
-            <div class="table-container">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Type</th>
-                    <th>Donor</th>
-                    <th>Details</th>
-                    <th>Amount</th>
-                    <th>Date</th>
-                    <th>Status</th>
-                    <th>Recorded By</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <?php foreach ($allDonations as $d): 
-                    $status = !empty($d['status']) ? $d['status'] : 'pending';
-                    $statusClass = 'status-' . $status;
-                  ?>
-                    <tr>
-                      <td><?= htmlspecialchars($d['donation_id']) ?></td>
-                      <td>
-                        <span class="badge badge-<?= $d['donation_type'] === 'monetary' ? 'primary' : 'info' ?>">
-                          <?= ucfirst(str_replace('_', ' ', $d['donation_type'])) ?>
-                        </span>
-                      </td>
-                      <td><?= htmlspecialchars($d['donor_name']) ?></td>
-                      <td>
-                        <?php if ($d['donation_type'] === 'monetary'): ?>
-                          <select name="payment_method" form="update-form-<?= $d['donation_id'] ?>">
-                            <option value="cash" <?= $d['payment_method'] === 'cash' ? 'selected' : '' ?>>Cash</option>
-                            <option value="check" <?= $d['payment_method'] === 'check' ? 'selected' : '' ?>>Check</option>
-                            <option value="credit_card" <?= $d['payment_method'] === 'credit_card' ? 'selected' : '' ?>>Credit Card</option>
-                            <option value="bank_transfer" <?= $d['payment_method'] === 'bank_transfer' ? 'selected' : '' ?>>Bank Transfer</option>
-                            <option value="online" <?= $d['payment_method'] === 'online' ? 'selected' : '' ?>>Online Payment</option>
-                          </select>
-                        <?php else: ?>
-                          <textarea name="item_description" form="update-form-<?= $d['donation_id'] ?>"><?= htmlspecialchars($d['item_description']) ?></textarea>
-                        <?php endif; ?>
-                      </td>
-                      <td>
-                        <input type="number" name="amount" value="<?= htmlspecialchars($d['amount']) ?>" 
-                               step="0.01" min="0" form="update-form-<?= $d['donation_id'] ?>" required>
-                      </td>
-                      <td>
-                        <input type="date" name="donation_date" value="<?= htmlspecialchars($d['donation_date']) ?>" 
-                               form="update-form-<?= $d['donation_id'] ?>" required>
-                      </td>
-                      <td>
-                        <select name="status" form="update-form-<?= $d['donation_id'] ?>" class="status-select">
-                          <option value="pending" <?= $status === 'pending' ? 'selected' : '' ?>>Pending</option>
-                          <option value="completed" <?= $status === 'completed' ? 'selected' : '' ?>>Completed</option>
-                          <?php if ($d['donation_type'] === 'monetary'): ?>
-                          <option value="refunded" <?= $status === 'refunded' ? 'selected' : '' ?>>Refunded</option>
-                          <?php endif; ?>
-                        </select>
-                      </td>
-                      <td><?= htmlspecialchars($d['recorded_by']) ?></td>
-                      <td class="actions">
-                        <form method="POST" id="update-form-<?= $d['donation_id'] ?>" class="inline-form">
-                          <input type="hidden" name="update_donation" value="1">
-                          <input type="hidden" name="donation_id" value="<?= $d['donation_id'] ?>">
-                          <input type="hidden" name="donation_type" value="<?= $d['donation_type'] ?>">
-                          <button type="submit" class="btn btn-sm btn-update">
-                            <i class="fas fa-save"></i> Update
-                          </button>
-                        </form>
-                        
-                        <form method="POST" class="inline-form" 
-                              onsubmit="return confirm('Are you sure you want to delete this donation?')">
-                          <input type="hidden" name="delete_donation" value="1">
-                          <input type="hidden" name="donation_id" value="<?= $d['donation_id'] ?>">
-                          <input type="hidden" name="donation_type" value="<?= $d['donation_type'] ?>">
-                          <button type="submit" class="btn btn-sm btn-delete">
-                            <i class="fas fa-trash-alt"></i> Delete
-                          </button>
-                        </form>
-                      </td>
-                    </tr>
-                  <?php endforeach; ?>
-                </tbody>
-              </table>
-            </div>
-          <?php endif; ?>
-        </section>
+        <div class="status-filter">
+          <button onclick="filterStatus('all')" class="active">All</button>
+          <button onclick="filterStatus('completed')">Completed</button>
+          <button onclick="filterStatus('pending')">Pending</button>
+        </div>
       </div>
+      
+      <button class="btn-create" onclick="openCreateModal()">
+        <i class="fas fa-plus-circle"></i> Record New Donation
+      </button>
+    </div>
+
+    <!-- Statistics Overview -->
+    <div class="stats-overview">
+      <div class="stat-card">
+        <div class="stat-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+          <i class="fas fa-hand-holding-heart"></i>
+        </div>
+        <div>
+          <div style="font-size: 1.5rem; font-weight: 700;"><?= $total_donations ?></div>
+          <div style="color: var(--gray); font-size: 0.9rem;">Total Donations</div>
+        </div>
+      </div>
+      
+      <div class="stat-card">
+        <div class="stat-icon" style="background: linear-gradient(135deg, #00c853 0%, #64dd17 100%);">
+          <i class="fas fa-money-bill-wave"></i>
+        </div>
+        <div>
+          <div style="font-size: 1.5rem; font-weight: 700;"><?= $monetary_count ?></div>
+          <div style="color: var(--gray); font-size: 0.9rem;">Monetary</div>
+        </div>
+      </div>
+      
+      <div class="stat-card">
+        <div class="stat-icon" style="background: linear-gradient(135deg, #ff6b6b 0%, #ff8e53 100%);">
+          <i class="fas fa-box-open"></i>
+        </div>
+        <div>
+          <div style="font-size: 1.5rem; font-weight: 700;"><?= $inkind_count ?></div>
+          <div style="color: var(--gray); font-size: 0.9rem;">In-Kind</div>
+        </div>
+      </div>
+      
+      <div class="stat-card">
+        <div class="stat-icon" style="background: linear-gradient(135deg, #ffd93d 0%, #ff9800 100%);">
+          <i class="fas fa-check-circle"></i>
+        </div>
+        <div>
+          <div style="font-size: 1.5rem; font-weight: 700;"><?= $completed_count ?></div>
+          <div style="color: var(--gray); font-size: 0.9rem;">Completed</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Donations Table -->
+    <div class="donations-table-wrapper">
+      <div class="table-header">
+        <h2 class="table-title">All Donations</h2>
+      </div>
+      
+      <?php if (empty($allDonations)): ?>
+        <div class="empty-state">
+          <i class="fas fa-hand-holding-heart"></i>
+          <h3>No donations found</h3>
+          <p>Click "Record New Donation" to get started</p>
+        </div>
+      <?php else: ?>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Donation Details</th>
+              <th>Donor</th>
+              <th>Amount/Value</th>
+              <th>Date</th>
+              <th>Status</th>
+              <th>Recorded By</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($allDonations as $d): 
+              $status = !empty($d['status']) ? $d['status'] : 'pending';
+              $statusClass = $status === 'completed' ? 'completed' : ($status === 'pending' ? 'pending' : 'other');
+            ?>
+              <tr>
+                <td>
+                  <div class="donation-title">
+                    <span class="badge <?= $d['donation_type'] === 'monetary' ? 'badge-primary' : 'badge-info' ?>">
+                      <?= ucfirst(str_replace('_', ' ', $d['donation_type'])) ?>
+                    </span>
+                    <?php if ($d['donation_type'] === 'in_kind'): ?>
+                      <div style="font-size: 0.85rem; color: var(--gray); margin-top: 0.2rem;">
+                        <?= htmlspecialchars($d['item_description']) ?>
+                      </div>
+                    <?php else: ?>
+                      <div style="font-size: 0.85rem; color: var(--gray); margin-top: 0.2rem;">
+                        <?= htmlspecialchars($d['payment_method']) ?>
+                      </div>
+                    <?php endif; ?>
+                  </div>
+                </td>
+                <td>
+                  <div class="donor-info">
+                    <div><?= htmlspecialchars($d['donor_name']) ?></div>
+                    <div style="font-size: 0.85rem; color: var(--gray);"><?= htmlspecialchars($d['donor_email']) ?></div>
+                  </div>
+                </td>
+                <td><?= number_format($d['amount'], 2) ?></td>
+                <td><?= date('M d, Y', strtotime($d['donation_date'])) ?></td>
+                <td>
+                  <span class="status-badge <?= $statusClass ?>">
+                    <?= ucfirst($status) ?>
+                  </span>
+                </td>
+                <td><?= htmlspecialchars($d['recorded_by']) ?></td>
+                <td class="actions">
+                  <button class="btn-action btn-edit" onclick="openEditModal(<?= htmlspecialchars(json_encode($d)) ?>)">
+                    <i class="fas fa-edit"></i> Edit
+                  </button>
+                  <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this donation?');">
+                    <input type="hidden" name="delete_donation" value="1">
+                    <input type="hidden" name="donation_id" value="<?= $d['donation_id'] ?>">
+                    <input type="hidden" name="donation_type" value="<?= $d['donation_type'] ?>">
+                    <button type="submit" class="btn-action btn-delete">
+                      <i class="fas fa-trash"></i> Delete
+                    </button>
+                  </form>
+                </td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      <?php endif; ?>
     </div>
   </div>
 
+  <!-- Create/Edit Modal -->
+  <div class="modal" id="donationModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modalTitle">Record New Donation</h2>
+        <button class="close-modal" onclick="closeModal()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      
+      <form method="POST" id="donationForm">
+        <input type="hidden" name="create_donation" value="1" id="formAction">
+        <input type="hidden" name="donation_id" id="donationId">
+        <input type="hidden" name="donation_type" id="donationTypeInput">
+        
+        <div class="form-group">
+          <label for="donation_type">Donation Type *</label>
+          <select id="donation_type" name="donation_type" required onchange="toggleDonationFields()">
+            <option value="monetary">Monetary Donation</option>
+            <option value="in_kind">In-Kind Donation</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label for="donor_id">Donor *</label>
+          <select id="donor_id" name="donor_id" required>
+            <?php foreach ($donors as $donor): ?>
+              <option value="<?= $donor['donor_id'] ?>"><?= htmlspecialchars($donor['name']) ?> (<?= htmlspecialchars($donor['email']) ?>)</option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label for="amount">Amount/Value *</label>
+            <input type="number" id="amount" name="amount" step="0.01" min="0" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="donation_date">Date *</label>
+            <input type="date" id="donation_date" name="donation_date" required>
+          </div>
+        </div>
+        
+        <div id="monetary-fields">
+          <div class="form-group">
+            <label for="payment_method">Payment Method *</label>
+            <select id="payment_method" name="payment_method">
+              <option value="cash">Cash</option>
+              <option value="check">Check</option>
+              <option value="credit_card">Credit Card</option>
+              <option value="bank_transfer">Bank Transfer</option>
+              <option value="online">Online Payment</option>
+            </select>
+          </div>
+        </div>
+        
+        <div id="inkind-fields" style="display: none;">
+          <div class="form-group">
+            <label for="item_description">Item Description *</label>
+            <textarea id="item_description" name="item_description"></textarea>
+          </div>
+          
+          <div class="form-group">
+            <label for="status">Status *</label>
+            <select id="status" name="status">
+              <option value="pending">Pending</option>
+              <option value="completed">Completed</option>
+            </select>
+          </div>
+        </div>
+        
+        <button type="submit" class="btn-submit">
+          <i class="fas fa-save"></i> Save Donation
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
   <script>
+    function openCreateModal() {
+      document.getElementById('modalTitle').textContent = 'Record New Donation';
+      document.getElementById('formAction').name = 'create_donation';
+      document.getElementById('donationForm').reset();
+      document.getElementById('donationTypeInput').value = '';
+      document.getElementById('donation_type').value = 'monetary';
+      toggleDonationFields();
+      document.getElementById('donationModal').classList.add('active');
+    }
     
-    document.getElementById('donation-type').addEventListener('change', function() {
-      const type = this.value;
+    function openEditModal(donation) {
+      document.getElementById('modalTitle').textContent = 'Edit Donation';
+      document.getElementById('formAction').name = 'update_donation';
+      document.getElementById('donationId').value = donation.donation_id;
+      document.getElementById('donationTypeInput').value = donation.donation_type;
+      document.getElementById('donation_type').value = donation.donation_type;
+      document.getElementById('donor_id').value = ''; // Need to set actual donor ID
+      document.getElementById('amount').value = donation.amount;
+      document.getElementById('donation_date').value = donation.donation_date;
+      
+      if (donation.donation_type === 'monetary') {
+        document.getElementById('payment_method').value = donation.payment_method || 'cash';
+      } else {
+        document.getElementById('item_description').value = donation.item_description || '';
+        document.getElementById('status').value = donation.status || 'pending';
+      }
+      
+      toggleDonationFields();
+      document.getElementById('donationModal').classList.add('active');
+    }
+    
+    function closeModal() {
+      document.getElementById('donationModal').classList.remove('active');
+    }
+    
+    function filterStatus(status) {
+      // Implement filtering logic here
+      console.log('Filter by:', status);
+    }
+    
+    function toggleDonationFields() {
+      const type = document.getElementById('donation_type').value;
       document.getElementById('monetary-fields').style.display = type === 'monetary' ? 'block' : 'none';
       document.getElementById('inkind-fields').style.display = type === 'in_kind' ? 'block' : 'none';
+    }
+    
+    // Close modal when clicking outside
+    document.getElementById('donationModal').addEventListener('click', function(e) {
+      if (e.target === this) {
+        closeModal();
+      }
     });
   </script>
-  <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>
