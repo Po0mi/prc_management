@@ -11,7 +11,6 @@ $pdo = $GLOBALS['pdo'];
 $userId = current_user_id();
 $username = current_username();
 
-
 $regStmt = $pdo->prepare("
     SELECT r.status, e.title 
     FROM registrations r
@@ -21,7 +20,6 @@ $regStmt = $pdo->prepare("
 ");
 $regStmt->execute([$userId]);
 $latestReg = $regStmt->fetch();
-
 
 $trainStmt = $pdo->prepare("
     SELECT * FROM training_sessions 
@@ -134,5 +132,6 @@ $trainingNotif = $trainStmt->fetch();
   <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
   <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
   <script src="js/darkmode.js?v=<?php echo time(); ?>"></script>
+  <script src="js/header.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>

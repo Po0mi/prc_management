@@ -1,6 +1,13 @@
 (() => {
   const SIDEBAR_COLLAPSED_KEY = "sidebarCollapsed";
 
+  // Set CSS variables immediately
+  document.documentElement.style.setProperty("--sidebar-width", "250px");
+  document.documentElement.style.setProperty(
+    "--sidebar-collapsed-width",
+    "70px"
+  );
+
   function findElements() {
     const collapseBtn = document.querySelector(".collapse-btn");
     const sidebar = document.querySelector(".sidebar");
@@ -10,8 +17,9 @@
       document.querySelector(".donate-content") ||
       document.querySelector(".announcements-content") ||
       document.querySelector(".blood-map-container") ||
-      document.querySelector(".sessions-container") || // Changed to match your container
+      document.querySelector(".sessions-container") ||
       document.querySelector(".admin-content") ||
+      document.querySelector(".users-container") ||
       document.body;
     return { collapseBtn, sidebar, mainContent };
   }
@@ -19,13 +27,16 @@
   function applyCollapsedStyles(sidebar, mainContent, collapsed) {
     if (!sidebar || !mainContent) return;
 
-    // Set CSS variable based on collapsed state
+    // Temporarily disable transitions
+    sidebar.style.transition = "none";
+
+    // Update CSS variable
     document.documentElement.style.setProperty(
       "--sidebar-width",
       collapsed ? "70px" : "250px"
     );
 
-    // Update sidebar classes and ARIA
+    // Update classes
     if (collapsed) {
       sidebar.classList.add("collapsed");
       sidebar.setAttribute("aria-expanded", "false");
@@ -33,6 +44,10 @@
       sidebar.classList.remove("collapsed");
       sidebar.setAttribute("aria-expanded", "true");
     }
+
+    // Force reflow before re-enabling transitions
+    void sidebar.offsetWidth;
+    sidebar.style.transition = "";
 
     // Rotate chevron icon
     const iconChevron = sidebar.querySelector(
@@ -42,31 +57,6 @@
       iconChevron.style.transform = collapsed
         ? "rotate(180deg)"
         : "rotate(0deg)";
-    }
-  }
-
-  function initUI() {
-    console.log("[general-ui] initUI running");
-    let { collapseBtn, sidebar, mainContent } = findElements();
-    console.log("[general-ui] found:", { collapseBtn, sidebar, mainContent });
-
-    if (!sidebar || !collapseBtn) {
-      const ob = new MutationObserver((mutations, o) => {
-        ({ collapseBtn, sidebar, mainContent } = findElements());
-        if (sidebar && collapseBtn) {
-          console.log(
-            "[general-ui] found missing elements via MutationObserver"
-          );
-          o.disconnect();
-          attachHandlers(sidebar, collapseBtn, mainContent);
-        }
-      });
-      ob.observe(document.body, { childList: true, subtree: true });
-      if (sidebar && collapseBtn) {
-        attachHandlers(sidebar, collapseBtn, mainContent);
-      }
-    } else {
-      attachHandlers(sidebar, collapseBtn, mainContent);
     }
   }
 
@@ -80,9 +70,12 @@
       return;
     }
 
+    // Mark sidebar as initialized
+    sidebar.classList.add("initialized");
+
+    // Apply saved state
     const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
     applyCollapsedStyles(sidebar, mainContent, saved);
-    console.log("[general-ui] restored collapsed state:", saved);
 
     if (!collapseBtn._hasGeneralUiHandler) {
       collapseBtn.addEventListener("click", (e) => {
@@ -90,16 +83,33 @@
         const collapsed = !sidebar.classList.contains("collapsed");
         applyCollapsedStyles(sidebar, mainContent, collapsed);
         localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed);
-        console.log(
-          "[general-ui] collapse button clicked. collapsed =",
-          collapsed
-        );
+        // Set cookie for PHP to access
+        document.cookie = `sidebarCollapsed=${collapsed}; path=/; max-age=${
+          60 * 60 * 24 * 30
+        }`;
       });
       collapseBtn._hasGeneralUiHandler = true;
-      console.log("[general-ui] click handler attached to collapse button");
     }
   }
 
+  function initUI() {
+    let { collapseBtn, sidebar, mainContent } = findElements();
+
+    if (!sidebar || !collapseBtn) {
+      const ob = new MutationObserver((mutations, o) => {
+        ({ collapseBtn, sidebar, mainContent } = findElements());
+        if (sidebar && collapseBtn) {
+          o.disconnect();
+          attachHandlers(sidebar, collapseBtn, mainContent);
+        }
+      });
+      ob.observe(document.body, { childList: true, subtree: true });
+    } else {
+      attachHandlers(sidebar, collapseBtn, mainContent);
+    }
+  }
+
+  // Initialize
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", initUI);
   } else {

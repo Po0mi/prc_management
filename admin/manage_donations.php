@@ -134,9 +134,23 @@ $pending_count = $pdo->query("SELECT COUNT(*) FROM donations WHERE status = 'pen
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Manage Donations - PRC Portal</title>
+    <!-- Apply saved sidebar state BEFORE CSS -->
+  <?php $collapsed = isset($_COOKIE['sidebarCollapsed']) && $_COOKIE['sidebarCollapsed'] === 'true'; ?>
+  <script>
+    // Option 1: Set sidebar width early to prevent flicker
+    (function() {
+      var collapsed = document.cookie.split('; ').find(row => row.startsWith('sidebarCollapsed='));
+      var root = document.documentElement;
+      if (collapsed && collapsed.split('=')[1] === 'true') {
+        root.style.setProperty('--sidebar-width', '70px');
+      } else {
+        root.style.setProperty('--sidebar-width', '250px');
+      }
+    })();
+  </script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="../assets/sidebar_admin.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/styles.css?v=<?php echo time(); ?>">
-  <link rel="stylesheet" href="../assets/sidebar.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/admin.css?v=<?php echo time(); ?>">
    <link rel="stylesheet" href="../assets/donations.css?v=<?php echo time(); ?>">
 </head>
@@ -395,5 +409,6 @@ $pending_count = $pdo->query("SELECT COUNT(*) FROM donations WHERE status = 'pen
       document.getElementById('inkind-fields').style.display = type === 'in_kind' ? 'block' : 'none';
     });
   </script>
+  <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>

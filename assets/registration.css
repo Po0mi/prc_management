@@ -3,6 +3,7 @@
   width: 100%;
   box-sizing: border-box;
   min-height: 100vh;
+  transition: margin-left 0.3s ease; /* Add smooth transition */
 }
 
 .page-header {

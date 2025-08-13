@@ -78,7 +78,7 @@ body {
   padding: 10rem 2rem 10rem;
   text-align: center;
   background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)),
-    url("front.jpeg") no-repeat center top / cover;
+    url("../assets/images/front.jpeg") no-repeat center top / cover;
   background-attachment: fixed;
   color: white;
   min-height: 70vh;
@@ -233,7 +233,7 @@ body {
 /* Events Section with Parallax */
 .events-section {
   background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)),
-    url("events.jpeg");
+    url("../assets/images/events.jpeg");
   background-size: cover;
   background-attachment: fixed;
   color: white;

@@ -145,8 +145,8 @@ $allSessions = $pdo->query("
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>View Registrations - PRC Admin</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="../assets/sidebar_admin.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/styles.css?v=<?php echo time(); ?>">
-  <link rel="stylesheet" href="../assets/sidebar.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/admin.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/view_registrations.css?v=<?php echo time(); ?>">
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -488,5 +488,6 @@ $allSessions = $pdo->query("
       return false;
     }
   </script>
+  <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>

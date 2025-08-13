@@ -63,4 +63,10 @@
       <span>Logout</span>
     </a>
   </nav>
+  
+<button class="collapse-btn">
+      <i class="fas fa-chevron-left"></i>
+      <i class="fas fa-bars"></i>
+    </button>
+  </div>
 </aside>

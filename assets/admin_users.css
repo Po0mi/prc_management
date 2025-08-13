@@ -1,10 +1,20 @@
+:root {
+  --sidebar-width: 220px;
+}
+
+body {
+  overflow-x: hidden;
+  margin: 0;
+}
 
 .users-container {
+  width: calc(100vw - var(--sidebar-width));
   padding: 2rem;
   margin-left: var(--sidebar-width);
-  width: calc(100% - var(--sidebar-width));
   box-sizing: border-box;
   min-height: 100vh;
+  transition: margin-left 0.3s ease, width 0.3s ease; /* Added width transition */
+  position: relative;
 }
 
 .page-header {
@@ -53,6 +63,7 @@
   padding: 2rem;
   border-radius: 10px;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+  width: 100%; /* Ensure full width */
 }
 
 .create-user h2,
@@ -71,8 +82,11 @@
 
 .form-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1.5rem;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(250px, 1fr)
+  ); /* Increased min width */
+  gap: 2rem; /* Increased gap */
 }
 
 .form-group {
@@ -190,7 +204,10 @@
 
 .stats-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(220px, 1fr)
+  ); /* Slightly wider cards */
   gap: 1.5rem;
   margin-bottom: 2rem;
 }
@@ -248,24 +265,27 @@
   border-radius: 10px;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
   padding: 1rem;
+  width: 100%;
 }
 
 .data-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: auto; /* Allows columns to expand */
 }
 
 .data-table th {
   background: #f8f9fa;
-  padding: 1rem;
+  padding: 1rem 1.5rem; /* Increased horizontal padding */
   text-align: left;
   font-weight: 600;
   color: #555;
   border-bottom: 2px solid #eee;
+  white-space: nowrap; /* Prevent header text wrapping */
 }
 
 .data-table td {
-  padding: 1rem;
+  padding: 1rem 1.5rem; /* Increased horizontal padding */
   border-bottom: 1px solid #eee;
   vertical-align: middle;
 }
@@ -294,29 +314,36 @@
 
 .role-select {
   padding: 0.5rem;
-  min-width: 100px;
+  min-width: 120px; /* Slightly wider */
 }
 
 /* Responsive Design */
+@media (max-width: 1200px) {
+  .users-container {
+    max-width: 100%; /* Allow full width on smaller screens */
+  }
+}
+
 @media (max-width: 992px) {
   .user-sections {
     grid-template-columns: 1fr;
   }
-  
+
   .form-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
   }
-  
+
   .section-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 1rem;
   }
-  
+
   .search-box {
     width: 100%;
   }
-  
+
   .search-box input {
     min-width: auto;
     width: 100%;
@@ -325,18 +352,19 @@
 
 @media (max-width: 768px) {
   .users-container {
-    margin-left: 70px;
-    width: calc(100% - 70px);
+    margin-left: var(--sidebar-collapsed-width);
+    width: calc(100% - var(--sidebar-collapsed-width));
     padding: 1rem;
   }
-  
+
   .stats-cards {
     grid-template-columns: 1fr;
   }
-  
+
   .data-table th,
   .data-table td {
-    padding: 0.8rem 0.5rem;
+    padding: 0.8rem;
+    white-space: normal; /* Allow wrapping on mobile */
   }
 }
 
@@ -345,12 +373,12 @@
     margin-left: 0;
     width: 100%;
   }
-  
+
   .actions {
     flex-direction: column;
     gap: 0.3rem;
   }
-  
+
   .btn-sm {
     width: 100%;
     justify-content: center;

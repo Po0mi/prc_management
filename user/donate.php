@@ -286,5 +286,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_donation'])) {
     <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
     <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
     <script src="js/darkmode.js?v=<?php echo time(); ?>"></script>
+    <script src="js/header.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>

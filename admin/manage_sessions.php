@@ -257,9 +257,23 @@ try {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Manage Training Sessions - PRC Admin</title>
+    <!-- Apply saved sidebar state BEFORE CSS -->
+  <?php $collapsed = isset($_COOKIE['sidebarCollapsed']) && $_COOKIE['sidebarCollapsed'] === 'true'; ?>
+  <script>
+    // Option 1: Set sidebar width early to prevent flicker
+    (function() {
+      var collapsed = document.cookie.split('; ').find(row => row.startsWith('sidebarCollapsed='));
+      var root = document.documentElement;
+      if (collapsed && collapsed.split('=')[1] === 'true') {
+        root.style.setProperty('--sidebar-width', '70px');
+      } else {
+        root.style.setProperty('--sidebar-width', '250px');
+      }
+    })();
+  </script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="../assets/sidebar_admin.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/styles.css?v=<?= time() ?>">
-  <link rel="stylesheet" href="../assets/sidebar.css?v=<?= time() ?>">
   <link rel="stylesheet" href="../assets/sessions.css?v=<?= time() ?>">
   <style>
     
@@ -675,5 +689,6 @@ try {
       }
   });
   </script>
+  <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>

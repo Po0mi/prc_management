@@ -1,7 +1,8 @@
 :root {
   --prc-red: #a00000;
   --prc-red-dark: #a00000;
-  --sidebar-width: 250px;
+  --sidebar-width: 220px;
+  --sidebar-collapsed-width: 70px;
   --blue: #0056b3;
   --green: #28a745;
   --orange: #fd7e14;
@@ -9,17 +10,24 @@
   --gray: #6c757d;
   --light: #f8f9fa;
   --dark: #343a40;
+  --transition-speed: 0.3s;
 }
 
+body {
+  overflow-x: hidden;
+  margin: 0;
+}
 
 .sessions-container {
+  width: calc(100vw - var(--sidebar-width));
   padding: 2rem;
   margin-left: var(--sidebar-width);
-  width: calc(100% - var(--sidebar-width));
   box-sizing: border-box;
   min-height: 100vh;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background-color: #f5f7fa;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  transition: margin-left var(--transition-speed) ease,
+    width var(--transition-speed) ease;
+  position: relative;
 }
 
 .page-header {
@@ -32,18 +40,17 @@
 
 .page-header h1 {
   color: var(--prc-red);
-  font-size: 2rem;
+  font-size: 2.2rem;
   margin-bottom: 0.5rem;
   font-weight: 700;
 }
 
 .page-header p {
   color: var(--gray);
-  font-size: 1rem;
+  font-size: 1.1rem;
   margin: 0;
 }
 
-/* Alert Messages */
 .alert {
   padding: 1rem;
   border-radius: 6px;
@@ -52,6 +59,7 @@
   align-items: center;
   gap: 0.8rem;
   font-weight: 500;
+  transition: all var(--transition-speed) ease;
 }
 
 .alert.error {
@@ -66,16 +74,16 @@
   border-left: 4px solid #28a745;
 }
 
-/* Card Styles */
 .card {
   background: white;
   border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-  padding: 1.5rem;
+  padding: 2rem;
   margin-bottom: 2rem;
+  transition: all var(--transition-speed) ease;
+  width: 100%;
 }
 
-/* Form Styles */
 .session-form {
   display: grid;
   gap: 1.5rem;
@@ -83,8 +91,8 @@
 
 .form-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 2rem;
 }
 
 .form-group {
@@ -103,11 +111,11 @@
 .form-group select,
 .form-group textarea {
   width: 100%;
-  padding: 0.75rem 1rem;
+  padding: 0.8rem 1rem;
   border: 1px solid #ced4da;
   border-radius: 6px;
-  font-size: 0.95rem;
-  transition: all 0.2s;
+  font-size: 1rem;
+  transition: all var(--transition-speed) ease;
 }
 
 .form-group input:focus,
@@ -126,6 +134,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  transition: all var(--transition-speed) ease;
 }
 
 .time-inputs input {
@@ -137,15 +146,14 @@ textarea {
   font-size: 0.9rem;
 }
 
-/* Button Styles */
 .btn {
-  padding: 0.75rem 1.5rem;
+  padding: 0.8rem 1.5rem;
   border: none;
   border-radius: 6px;
   font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all var(--transition-speed) ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -165,7 +173,7 @@ textarea {
 
 .btn-sm {
   padding: 0.5rem 1rem;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
 }
 
 .btn-update {
@@ -188,7 +196,6 @@ textarea {
   background: #ffd6d6;
 }
 
-/* Section Headers */
 .section-header {
   display: flex;
   justify-content: space-between;
@@ -196,6 +203,7 @@ textarea {
   margin-bottom: 1.5rem;
   flex-wrap: wrap;
   gap: 1rem;
+  transition: all var(--transition-speed) ease;
 }
 
 .section-header h2 {
@@ -208,7 +216,6 @@ textarea {
   color: var(--dark);
 }
 
-/* Search Box */
 .search-box {
   display: flex;
   align-items: center;
@@ -216,7 +223,8 @@ textarea {
   background: white;
   border-radius: 50px;
   overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all var(--transition-speed) ease;
 }
 
 .search-box input {
@@ -224,6 +232,7 @@ textarea {
   border: none;
   font-size: 0.95rem;
   min-width: 250px;
+  transition: all var(--transition-speed) ease;
 }
 
 .search-box button {
@@ -232,6 +241,7 @@ textarea {
   background: none;
   border: none;
   color: var(--gray);
+  transition: all var(--transition-speed) ease;
 }
 
 .clear-search {
@@ -239,24 +249,25 @@ textarea {
   right: 12px;
   color: var(--gray);
   text-decoration: none;
+  transition: all var(--transition-speed) ease;
 }
 
-/* Stats Cards */
 .stats-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.5rem;
   margin-bottom: 2rem;
 }
 
 .stat-card {
   background: white;
   border-radius: 8px;
-  padding: 1rem;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  padding: 1.5rem;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
   display: flex;
   align-items: center;
   gap: 1rem;
+  transition: all var(--transition-speed) ease;
 }
 
 .stat-icon {
@@ -268,6 +279,7 @@ textarea {
   justify-content: center;
   font-size: 1.25rem;
   color: white;
+  transition: all var(--transition-speed) ease;
 }
 
 .stat-icon.blue {
@@ -294,42 +306,48 @@ textarea {
 }
 
 .stat-content p {
-  font-size: 1.25rem;
+  font-size: 1.5rem;
   font-weight: 700;
   color: var(--dark);
   margin: 0;
 }
 
-/* Table Styles */
 .table-container {
   overflow-x: auto;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+  padding: 1rem;
+  width: 100%;
+  transition: all var(--transition-speed) ease;
 }
 
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  background: white;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  table-layout: auto;
+  transition: all var(--transition-speed) ease;
 }
 
 .data-table th {
   background: #f8f9fa;
-  padding: 1rem;
+  padding: 1rem 1.5rem;
   text-align: left;
   font-weight: 600;
   color: var(--dark);
   font-size: 0.85rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  white-space: nowrap;
+  transition: all var(--transition-speed) ease;
 }
 
 .data-table td {
-  padding: 1rem;
+  padding: 1rem 1.5rem;
   border-top: 1px solid #e9ecef;
   vertical-align: middle;
   font-size: 0.95rem;
+  transition: all var(--transition-speed) ease;
 }
 
 .data-table input,
@@ -340,7 +358,7 @@ textarea {
   border-radius: 4px;
   font-size: 0.9rem;
   width: 100%;
-  transition: all 0.2s;
+  transition: all var(--transition-speed) ease;
 }
 
 .data-table input:focus,
@@ -355,7 +373,6 @@ textarea {
   background-color: #f8f9fa;
 }
 
-/* Status Badges */
 .status-badge {
   display: inline-block;
   padding: 0.4rem 0.8rem;
@@ -364,6 +381,7 @@ textarea {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  transition: all var(--transition-speed) ease;
 }
 
 .status-badge.upcoming {
@@ -384,20 +402,20 @@ textarea {
   border: 1px solid #ced4da;
   background: white;
   font-size: 0.9rem;
+  transition: all var(--transition-speed) ease;
 }
 
-/* Action Buttons */
 .actions {
   display: flex;
   gap: 0.5rem;
   white-space: nowrap;
+  transition: all var(--transition-speed) ease;
 }
 
 .inline-form {
   display: inline;
 }
 
-/* Empty State */
 .empty-state {
   text-align: center;
   padding: 3rem 1rem;
@@ -405,6 +423,7 @@ textarea {
   border-radius: 8px;
   margin: 1.5rem 0;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  transition: all var(--transition-speed) ease;
 }
 
 .empty-state i {
@@ -412,6 +431,7 @@ textarea {
   color: var(--prc-red);
   margin-bottom: 1rem;
   opacity: 0.7;
+  transition: all var(--transition-speed) ease;
 }
 
 .empty-state h3 {
@@ -425,7 +445,6 @@ textarea {
   margin: 0;
 }
 
-/* Responsive Design */
 @media (max-width: 1200px) {
   .sessions-container {
     padding: 1.5rem;
@@ -440,31 +459,31 @@ textarea {
 
 @media (max-width: 768px) {
   .sessions-container {
-    margin-left: 70px;
-    width: calc(100% - 70px);
+    margin-left: var(--sidebar-collapsed-width);
+    width: calc(100% - var(--sidebar-collapsed-width));
     padding: 1rem;
   }
-  
+
   .data-table th,
   .data-table td {
     padding: 0.8rem;
     font-size: 0.85rem;
   }
-  
+
   .section-header {
     flex-direction: column;
     align-items: flex-start;
   }
-  
+
   .search-box input {
     min-width: 100%;
   }
-  
+
   .time-inputs {
     flex-direction: column;
     gap: 0.3rem;
   }
-  
+
   .time-inputs span {
     display: none;
   }
@@ -480,12 +499,12 @@ textarea {
     margin-left: 0;
     width: 100%;
   }
-  
+
   .btn {
     width: 100%;
     justify-content: center;
   }
-  
+
   .stats-cards {
     grid-template-columns: 1fr;
   }

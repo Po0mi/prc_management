@@ -6,6 +6,7 @@
   min-height: 100vh;
   background: #f8f9fa;
   width: 100%;
+  transition: margin-left 0.3s ease; /* Add smooth transition */
 }
 
 .page-header {

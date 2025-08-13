@@ -40,7 +40,7 @@
         </div>
         <div class="announcement-container">
             <div class="announcement-card">
-                <div class="announcement-image" style="background-image: url('assets/blood-drive.jpg');"></div>
+                <div class="announcement-image" style="background-image: url('assets/images/blood-drive.jpg');"></div>
                 <div class="announcement-content">
                     <h3>New Blood Donation Campaign</h3>
                     <p>Join our nationwide blood donation drive this July. Help save lives in your community.</p>
@@ -48,7 +48,7 @@
                 </div>
             </div>
             <div class="announcement-card">
-                <div class="announcement-image" style="background-image: url('assets/hero.jpeg');"></div>
+                <div class="announcement-image" style="background-image: url('assets/images/hero.jpeg');"></div>
                 <div class="announcement-content">
                     <h3>Disaster Preparedness Training</h3>
                     <p>Sign up for our free disaster preparedness workshops happening this month.</p>
@@ -73,7 +73,7 @@
                     <div class="event-details">
                         <h3>First Aid Training Workshop</h3>
                         <p>9:00 AM - 4:00 PM | PRC Manila Chapter</p>
-                        <div class="event-image" style="background-image: url('assets/first-aid.jpg');"></div>
+                        <div class="event-image" style="background-image: url('assets/images/first-aid.jpg');"></div>
                         <a href="#" class="btn btn-event">Register Now</a>
                     </div>
                 </div>
@@ -85,7 +85,7 @@
                     <div class="event-details">
                         <h3>Community Blood Drive</h3>
                         <p>8:00 AM - 5:00 PM | SM Megamall</p>
-                        <div class="event-image" style="background-image: url('assets/blood.jpg');"></div>
+                        <div class="event-image" style="background-image: url('assets/images/blood.jpg');"></div>
                         <a href="#" class="btn btn-event">Register Now</a>
                     </div>
                 </div>
@@ -100,7 +100,7 @@
         </div>
         <div class="news-container">
             <div class="news-card">
-                <div class="news-image" style="background-image: url('assets/update.png');"></div>
+                <div class="news-image" style="background-image: url('assets/images/update.png');"></div>
                 <div class="news-content">
                     <div class="news-icon">
                         <i class="fas fa-star"></i>
@@ -111,7 +111,7 @@
                 </div>
             </div>
             <div class="news-card">
-                <div class="news-image" style="background-image: url('assets/maintenance.png');"></div>
+                <div class="news-image" style="background-image: url('assets/images/maintenance.png');"></div>
                 <div class="news-content">
                     <div class="news-icon">
                         <i class="fas fa-tools"></i>
@@ -122,7 +122,7 @@
                 </div>
             </div>
             <div class="news-card">
-                <div class="news-image" style="background-image: url('assets/blood-update.png');"></div>
+                <div class="news-image" style="background-image: url('assets/images/blood-update.png');"></div>
                 <div class="news-content">
                     <div class="news-icon">
                         <i class="fas fa-hands-helping"></i>
@@ -143,9 +143,9 @@
         </div>
         <div class="slider">
             <div class="list">
-                <div class="item"><img src="assets/training.jpg" alt="Training"></div>
-                <div class="item"><img src="assets/feeding.jpg" alt="Feeding program"></div>
-                <div class="item"><img src="assets/blood-drive-pic.jpg" alt="Blood drive"></div>
+                <div class="item"><img src="assets/images/training.jpg" alt="Training"></div>
+                <div class="item"><img src="assets/images/feeding.jpg" alt="Feeding program"></div>
+                <div class="item"><img src="assets/images/blood-drive-pic.jpg" alt="Blood drive"></div>
             </div>
          <div class="buttons">
     <button id="prev">

@@ -1,13 +1,11 @@
 <?php
 
-
 require_once __DIR__ . '/../config.php';
 ensure_logged_in();
 ensure_admin();
 
 $username = current_username();
 $pdo = $GLOBALS['pdo'];
-
 
 $stats = [
     'users' => $pdo->query("SELECT COUNT(*) FROM users")->fetchColumn(),
@@ -22,10 +20,26 @@ $stats = [
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Dashboard - PRC Portal</title>
+
+  <!-- Apply saved sidebar state BEFORE CSS -->
+  <?php $collapsed = isset($_COOKIE['sidebarCollapsed']) && $_COOKIE['sidebarCollapsed'] === 'true'; ?>
+  <script>
+    // Option 1: Set sidebar width early to prevent flicker
+    (function() {
+      var collapsed = document.cookie.split('; ').find(row => row.startsWith('sidebarCollapsed='));
+      var root = document.documentElement;
+      if (collapsed && collapsed.split('=')[1] === 'true') {
+        root.style.setProperty('--sidebar-width', '70px');
+      } else {
+        root.style.setProperty('--sidebar-width', '250px');
+      }
+    })();
+  </script>
+
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="../assets/styles.css">
-  <link rel="stylesheet" href="../assets/sidebar.css">
-  <link rel="stylesheet" href="../assets/admin.css">
+  <link rel="stylesheet" href="../assets/styles.css?v=<?php echo time(); ?>">
+  <link rel="stylesheet" href="../assets/sidebar_admin.css?v=<?php echo time(); ?>">
+  <link rel="stylesheet" href="../assets/admin.css?v=<?php echo time(); ?>">
 </head>
 <body>
   <?php include 'sidebar.php'; ?>
@@ -90,13 +104,17 @@ $stats = [
             <i class="fas fa-plus-circle"></i>
             <span>Add New Event</span>
           </a>
-          <a href="manage_user.php" class="action-btn">
+          <a href="manage_users .php" class="action-btn">
             <i class="fas fa-user-plus"></i>
             <span>Create User</span>
           </a>
           <a href="manage_announcements.php?action=create" class="action-btn">
             <i class="fas fa-bullhorn"></i>
             <span>Post Announcement</span>
+          </a>
+          <a href="manage_donations.php?action=create" class="action-btn">
+            <i class="fas fa-donate"></i>
+            <span>View Donations</span>
           </a>
           <a href="manage_inventory.php?action=add" class="action-btn">
             <i class="fas fa-box-open"></i>
@@ -106,5 +124,6 @@ $stats = [
       </div>
     </div>
   </div>
+  <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>
