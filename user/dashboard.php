@@ -11,8 +11,48 @@ $pdo = $GLOBALS['pdo'];
 $userId = current_user_id();
 $username = current_username();
 
+// Get user statistics
+$userStats = [];
+
+// Events registered
+$stmt = $pdo->prepare("SELECT COUNT(*) FROM registrations WHERE user_id = ?");
+$stmt->execute([$userId]);
+$userStats['events_registered'] = $stmt->fetchColumn();
+
+// Events attended (approved)
+$stmt = $pdo->prepare("SELECT COUNT(*) FROM registrations WHERE user_id = ? AND status = 'approved'");
+$stmt->execute([$userId]);
+$userStats['events_attended'] = $stmt->fetchColumn();
+
+// Training sessions - check if session_registrations table exists and has correct columns
+try {
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM session_registrations WHERE user_id = ?");
+    $stmt->execute([$userId]);
+    $userStats['training_sessions'] = $stmt->fetchColumn();
+} catch (PDOException $e) {
+    // If table doesn't exist or column is different, set to 0
+    $userStats['training_sessions'] = 0;
+}
+
+// Donations made - check if donors table exists
+try {
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM donations WHERE donor_id IN (SELECT donor_id FROM donors WHERE user_id = ?)");
+    $stmt->execute([$userId]);
+    $userStats['donations_made'] = $stmt->fetchColumn();
+} catch (PDOException $e) {
+    // If table structure is different, try alternative approach
+    try {
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM donations WHERE user_id = ?");
+        $stmt->execute([$userId]);
+        $userStats['donations_made'] = $stmt->fetchColumn();
+    } catch (PDOException $e2) {
+        $userStats['donations_made'] = 0;
+    }
+}
+
+// Get latest registration status
 $regStmt = $pdo->prepare("
-    SELECT r.status, e.title 
+    SELECT r.status, r.registration_date, e.title, e.event_date, e.location
     FROM registrations r
     JOIN events e ON r.event_id = e.event_id
     WHERE r.user_id = ?
@@ -21,14 +61,89 @@ $regStmt = $pdo->prepare("
 $regStmt->execute([$userId]);
 $latestReg = $regStmt->fetch();
 
-$trainStmt = $pdo->prepare("
-    SELECT * FROM training_sessions 
-    WHERE session_date >= CURDATE() 
-    ORDER BY session_date ASC 
-    LIMIT 1
+// Get upcoming training sessions
+try {
+    $trainStmt = $pdo->prepare("
+        SELECT ts.*, sr.registration_date as user_registered
+        FROM training_sessions ts
+        LEFT JOIN session_registrations sr ON ts.session_id = sr.session_id AND sr.user_id = ?
+        WHERE ts.session_date >= CURDATE() 
+        ORDER BY ts.session_date ASC 
+        LIMIT 3
+    ");
+    $trainStmt->execute([$userId]);
+    $upcomingTraining = $trainStmt->fetchAll();
+} catch (PDOException $e) {
+    // If session_registrations table doesn't exist or has different structure
+    $trainStmt = $pdo->prepare("
+        SELECT * FROM training_sessions 
+        WHERE session_date >= CURDATE() 
+        ORDER BY session_date ASC 
+        LIMIT 3
+    ");
+    $trainStmt->execute();
+    $upcomingTraining = $trainStmt->fetchAll();
+    // Add user_registered as null for each session
+    foreach ($upcomingTraining as &$session) {
+        $session['user_registered'] = null;
+    }
+}
+
+// Get recent events
+$eventsStmt = $pdo->prepare("
+    SELECT e.*, r.status as registration_status
+    FROM events e
+    LEFT JOIN registrations r ON e.event_id = r.event_id AND r.user_id = ?
+    WHERE e.event_date >= CURDATE()
+    ORDER BY e.event_date ASC
+    LIMIT 3
 ");
-$trainStmt->execute();
-$trainingNotif = $trainStmt->fetch();
+$eventsStmt->execute([$userId]);
+$upcomingEvents = $eventsStmt->fetchAll();
+
+// Get recent announcements
+try {
+    $announcements = $pdo->query("
+        SELECT title, content, created_at 
+        FROM announcements 
+        WHERE status = 'published'
+        ORDER BY created_at DESC 
+        LIMIT 3
+    ")->fetchAll();
+} catch (PDOException $e) {
+    // Try alternative column names for announcements
+    try {
+        $announcements = $pdo->query("
+            SELECT title, content, announcement_date as created_at 
+            FROM announcements 
+            WHERE status = 'published'
+            ORDER BY announcement_date DESC 
+            LIMIT 3
+        ")->fetchAll();
+    } catch (PDOException $e2) {
+        // Try without status filter
+        try {
+            $announcements = $pdo->query("
+                SELECT title, content, announcement_date as created_at 
+                FROM announcements 
+                ORDER BY announcement_date DESC 
+                LIMIT 3
+            ")->fetchAll();
+        } catch (PDOException $e3) {
+            // Try basic query without date ordering
+            try {
+                $announcements = $pdo->query("
+                    SELECT title, content, announcement_id as created_at 
+                    FROM announcements 
+                    LIMIT 3
+                ")->fetchAll();
+            } catch (PDOException $e4) {
+                // If announcements table doesn't exist, set empty array
+                $announcements = [];
+            }
+        }
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -47,83 +162,244 @@ $trainingNotif = $trainStmt->fetch();
   <div class="header-content">
     <?php include 'header.php'; ?>
     
-    <div class="dashboard-content">
+    <div class="dashboard-container">
+      <!-- Welcome Section -->
       <div class="welcome-section">
-        <h1>Welcome, <?= htmlspecialchars($username) ?>!</h1>
-        <p>Thank you for being a valuable member of the Philippine Red Cross community. Your contributions save lives every day.</p>
-      </div>
-      
-      <div class="notification-grid">
-        <?php if ($latestReg): ?>
-          <div class="notification-card">
-            <h3><i class="fas fa-calendar-check"></i> Event Registration</h3>
-            <p><strong>Event:</strong> <?= htmlspecialchars($latestReg['title']) ?></p>
-            <p><strong>Status:</strong> 
-              <?php 
-                $status = $latestReg['status'];
-                $badgeClass = 'pending';
-                if ($status === 'approved') $badgeClass = 'approved';
-                if ($status === 'rejected') $badgeClass = 'rejected';
-              ?>
-              <span class="badge <?= $badgeClass ?>"><?= ucfirst($status) ?></span>
-            </p>
-            <p><small>Last updated: Today</small></p>
+        <div class="welcome-content">
+          <h1>Welcome back, <?= htmlspecialchars($username) ?>!</h1>
+          <p>Thank you for being a valuable member of the Philippine Red Cross community. Your contributions save lives every day.</p>
+        </div>
+        <div class="date-display">
+          <div class="current-date">
+            <i class="fas fa-calendar-day"></i>
+            <?php echo date('F d, Y'); ?>
           </div>
-        <?php endif; ?>
-        
-        <?php if ($trainingNotif): ?>
-          <div class="notification-card train">
-            <h3><i class="fas fa-chalkboard-teacher"></i> Upcoming Training</h3>
-            <p><strong>Session:</strong> <?= htmlspecialchars($trainingNotif['title']) ?></p>
-            <p><strong>Date:</strong> <?= htmlspecialchars(date('F j, Y', strtotime($trainingNotif['session_date']))) ?></p>
-            <p><strong>Time:</strong> <?= htmlspecialchars($trainingNotif['start_time']) ?> - <?= htmlspecialchars($trainingNotif['end_time']) ?></p>
-            <p><strong>Venue:</strong> <?= htmlspecialchars($trainingNotif['venue']) ?></p>
-          </div>
-        <?php endif; ?>
-        
-        <div class="notification-card">
-          <h3><i class="fas fa-tint"></i> Blood Donation</h3>
-          <p>Your last donation was 60 days ago. You're eligible to donate again.</p>
-          <p><strong>Next eligible date:</strong> <?= date('F j, Y', strtotime('+7 days')) ?></p>
-          <p><small>Thank you for your life-saving contributions!</small></p>
         </div>
       </div>
-      
-      <div class="dashboard-actions">
-        <div class="action-card" onclick="location.href='registration.php'">
-          <i class="fas fa-calendar-plus"></i>
-          <h3>Register for Events</h3>
-          <p>Sign up for upcoming blood drives and community events</p>
+
+      <!-- Important Notifications -->
+      <?php if ($latestReg && $latestReg['status'] === 'pending'): ?>
+        <div class="notification-banner warning">
+          <div class="notification-icon">
+            <i class="fas fa-clock"></i>
+          </div>
+          <div class="notification-content">
+            <h3>Registration Pending Review</h3>
+            <p>Your registration for "<strong><?= htmlspecialchars($latestReg['title']) ?></strong>" is awaiting approval. We'll notify you once it's processed.</p>
+          </div>
+          <button class="notification-close" onclick="this.parentElement.style.display='none'">
+            <i class="fas fa-times"></i>
+          </button>
         </div>
-        
-        <div class="action-card" onclick="location.href='schedule.php'">
-          <i class="fas fa-user-check"></i>
-          <h3>Mark Attendance</h3>
-          <p>Confirm your participation in training sessions</p>
+      <?php endif; ?>
+
+      <?php if ($latestReg && $latestReg['status'] === 'approved'): ?>
+        <div class="notification-banner success">
+          <div class="notification-icon">
+            <i class="fas fa-check-circle"></i>
+          </div>
+          <div class="notification-content">
+            <h3>Registration Approved!</h3>
+            <p>Great news! Your registration for "<strong><?= htmlspecialchars($latestReg['title']) ?></strong>" has been approved. Event date: <?= date('M d, Y', strtotime($latestReg['event_date'])) ?></p>
+          </div>
+          <button class="notification-close" onclick="this.parentElement.style.display='none'">
+            <i class="fas fa-times"></i>
+          </button>
         </div>
-        
-        <div class="action-card" onclick="location.href='donate.php'">
-          <i class="fas fa-hand-holding-usd"></i>
-          <h3>Submit Donation</h3>
-          <p>Support our life-saving mission financially</p>
+      <?php endif; ?>
+
+      <!-- Stats Grid -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon events">
+            <i class="fas fa-calendar-check"></i>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value"><?= number_format($userStats['events_registered']) ?></div>
+            <div class="stat-label">Events Registered</div>
+            <div class="stat-desc">Total registrations</div>
+          </div>
+          <a href="registration.php" class="stat-link">
+            <i class="fas fa-arrow-right"></i>
+          </a>
         </div>
-        
-        <div class="action-card" onclick="location.href='inventory.php'">
-          <i class="fas fa-warehouse"></i>
-          <h3>View Inventory</h3>
-          <p>Check current blood supply levels</p>
+
+        <div class="stat-card">
+          <div class="stat-icon attended">
+            <i class="fas fa-user-check"></i>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value"><?= number_format($userStats['events_attended']) ?></div>
+            <div class="stat-label">Events Attended</div>
+            <div class="stat-desc">Approved attendance</div>
+          </div>
+          <a href="schedule.php" class="stat-link">
+            <i class="fas fa-arrow-right"></i>
+          </a>
         </div>
-        
-        <div class="action-card" onclick="location.href='blood_map.php'">
-          <i class="fas fa-map-marked-alt"></i>
-          <h3>Blood Availability</h3>
-          <p>Find nearby blood banks and their stock</p>
+
+        <div class="stat-card">
+          <div class="stat-icon training">
+            <i class="fas fa-graduation-cap"></i>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value"><?= number_format($userStats['training_sessions']) ?></div>
+            <div class="stat-label">Training Sessions</div>
+            <div class="stat-desc">Enrolled sessions</div>
+          </div>
+          <a href="schedule.php" class="stat-link">
+            <i class="fas fa-arrow-right"></i>
+          </a>
         </div>
-        
-        <div class="action-card" onclick="location.href='announcements.php'">
-          <i class="fas fa-bullhorn"></i>
-          <h3>Read Announcements</h3>
-          <p>Stay updated with the latest news</p>
+
+        <div class="stat-card">
+          <div class="stat-icon donations">
+            <i class="fas fa-hand-holding-heart"></i>
+          </div>
+          <div class="stat-info">
+            <div class="stat-value"><?= number_format($userStats['donations_made']) ?></div>
+            <div class="stat-label">Donations Made</div>
+            <div class="stat-desc">Your contributions</div>
+          </div>
+          <a href="donate.php" class="stat-link">
+            <i class="fas fa-arrow-right"></i>
+          </a>
+        </div>
+      </div>
+
+      <div class="dashboard-main">
+        <!-- Quick Actions Section -->
+        <div class="quick-actions-section">
+          <h2><i class="fas fa-bolt"></i> Quick Actions</h2>
+          <div class="action-buttons">
+            <a href="registration.php" class="action-btn">
+              <i class="fas fa-calendar-plus"></i>
+              <span>Register for Events</span>
+            </a>
+            <a href="schedule.php" class="action-btn">
+              <i class="fas fa-user-check"></i>
+              <span>Mark Attendance</span>
+            </a>
+            <a href="donate.php" class="action-btn">
+              <i class="fas fa-hand-holding-usd"></i>
+              <span>Submit Donation</span>
+            </a>
+            <a href="inventory.php" class="action-btn">
+              <i class="fas fa-warehouse"></i>
+              <span>View Inventory</span>
+            </a>
+            <a href="blood_map.php" class="action-btn">
+              <i class="fas fa-map-marked-alt"></i>
+              <span>Blood Banks</span>
+            </a>
+            <a href="announcements.php" class="action-btn">
+              <i class="fas fa-bullhorn"></i>
+              <span>Announcements</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- Recent Activity Section -->
+        <div class="recent-activity-section">
+          <h2><i class="fas fa-history"></i> Recent Activity</h2>
+          
+          <!-- Upcoming Events -->
+          <div class="activity-card">
+            <div class="activity-header">
+              <h3>Upcoming Events</h3>
+              <a href="registration.php" class="view-all">View All</a>
+            </div>
+            <div class="activity-body">
+              <?php if (!empty($upcomingEvents)): ?>
+                <ul class="activity-list">
+                  <?php foreach ($upcomingEvents as $event): ?>
+                    <li class="activity-item">
+                      <div class="activity-icon event-icon">
+                        <i class="fas fa-calendar"></i>
+                      </div>
+                      <div class="activity-details">
+                        <div class="activity-main"><?= htmlspecialchars($event['title']) ?></div>
+                        <div class="activity-meta">
+                          <span class="location"><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($event['location']) ?></span>
+                          <span class="date"><i class="fas fa-calendar-day"></i> <?= date('M d, Y', strtotime($event['event_date'])) ?></span>
+                        </div>
+                        <?php if ($event['registration_status']): ?>
+                          <span class="status-badge <?= $event['registration_status'] ?>">
+                            <?= ucfirst($event['registration_status']) ?>
+                          </span>
+                        <?php endif; ?>
+                      </div>
+                    </li>
+                  <?php endforeach; ?>
+                </ul>
+              <?php else: ?>
+                <p class="no-data">No upcoming events</p>
+              <?php endif; ?>
+            </div>
+          </div>
+          
+          <!-- Training Sessions -->
+          <div class="activity-card">
+            <div class="activity-header">
+              <h3>Training Sessions</h3>
+              <a href="schedule.php" class="view-all">View All</a>
+            </div>
+            <div class="activity-body">
+              <?php if (!empty($upcomingTraining)): ?>
+                <ul class="activity-list">
+                  <?php foreach ($upcomingTraining as $training): ?>
+                    <li class="activity-item">
+                      <div class="activity-icon training-icon">
+                        <i class="fas fa-graduation-cap"></i>
+                      </div>
+                      <div class="activity-details">
+                        <div class="activity-main"><?= htmlspecialchars($training['title']) ?></div>
+                        <div class="activity-meta">
+                          <span class="service"><i class="fas fa-cog"></i> <?= htmlspecialchars($training['major_service']) ?></span>
+                          <span class="date"><i class="fas fa-calendar-day"></i> <?= date('M d, Y', strtotime($training['session_date'])) ?> at <?= date('g:i A', strtotime($training['start_time'])) ?></span>
+                        </div>
+                        <?php if ($training['user_registered']): ?>
+                          <span class="status-badge registered">Registered</span>
+                        <?php endif; ?>
+                      </div>
+                    </li>
+                  <?php endforeach; ?>
+                </ul>
+              <?php else: ?>
+                <p class="no-data">No upcoming training sessions</p>
+              <?php endif; ?>
+            </div>
+          </div>
+          
+          <!-- Recent Announcements -->
+          <div class="activity-card">
+            <div class="activity-header">
+              <h3>Latest Announcements</h3>
+              <a href="announcements.php" class="view-all">View All</a>
+            </div>
+            <div class="activity-body">
+              <?php if (!empty($announcements)): ?>
+                <ul class="activity-list">
+                  <?php foreach ($announcements as $announcement): ?>
+                    <li class="activity-item">
+                      <div class="activity-icon announcement-icon">
+                        <i class="fas fa-bullhorn"></i>
+                      </div>
+                      <div class="activity-details">
+                        <div class="activity-main"><?= htmlspecialchars($announcement['title']) ?></div>
+                        <div class="activity-content">
+                          <?= htmlspecialchars(substr($announcement['content'], 0, 80)) ?><?= strlen($announcement['content']) > 80 ? '...' : '' ?>
+                        </div>
+                        <div class="activity-time"><?= date('M d, Y', strtotime($announcement['created_at'])) ?></div>
+                      </div>
+                    </li>
+                  <?php endforeach; ?>
+                </ul>
+              <?php else: ?>
+                <p class="no-data">No recent announcements</p>
+              <?php endif; ?>
+            </div>
+          </div>
         </div>
       </div>
     </div>

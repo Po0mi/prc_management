@@ -11,7 +11,7 @@
     <header class="system-header">
    <div class="logo-title">
     <a href="index.php">
-        <img src="assets/logo.png" alt="PRC Logo" class="prc-logo">
+        <img src="./assets/images/logo.png" alt="PRC Logo" class="prc-logo">
     </a>
     
     <div>

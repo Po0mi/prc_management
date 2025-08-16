@@ -405,7 +405,7 @@ function sendLegacyRegistrationEmail($email, $firstName, $userType) {
   <header class="system-header">
     <div class="logo-title">
       <a href="index.php">
-        <img src="assets/logo.png" alt="PRC Logo" class="prc-logo">
+        <img src="./assets/images/logo.png" alt="PRC Logo" class="prc-logo">
       </a>
       <div>
         <h1>Philippine Red Cross</h1>
@@ -443,15 +443,15 @@ function sendLegacyRegistrationEmail($email, $firstName, $userType) {
               <input type="radio" name="user_type" value="guest" <?= ($userType ?? 'guest') === 'guest' ? 'checked' : '' ?>>
               <span class="checkmark"></span>
               <div>
-                <strong>Guest Account</strong> - Limited access to system features<br>
-                <small>View events, basic information access</small>
+                <strong>Guest Account</strong><br>
+                <small>Event registration, training sessions, donation tracking<</small>
               </div>
             </label>
             <label class="checkbox-label">
               <input type="radio" name="user_type" value="member" <?= ($userType ?? '') === 'member' ? 'checked' : '' ?>>
               <span class="checkmark"></span>
               <div>
-                <strong>Member Account</strong> - Full access to system features<br>
+                <strong>Member Account</strong><br>
                 <small>Event registration, training sessions, donation tracking</small>
               </div>
             </label>

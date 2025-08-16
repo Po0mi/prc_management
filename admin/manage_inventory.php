@@ -7,112 +7,54 @@ $pdo = $GLOBALS['pdo'];
 $errorMessage = '';
 $successMessage = '';
 
-// Add Category
+// Update your PHP code (replace the add_category section)
+// Add/Edit Category
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_category'])) {
     $category_name = trim($_POST['category_name']);
+    $category_id = isset($_POST['category_id']) ? (int)$_POST['category_id'] : 0;
     
     if ($category_name) {
         try {
-            $stmt = $pdo->prepare("INSERT INTO categories (category_name) VALUES (?)");
-            $stmt->execute([$category_name]);
-            $successMessage = "Category added successfully!";
+            if ($category_id) {
+                // Update existing category
+                $stmt = $pdo->prepare("UPDATE categories SET category_name = ? WHERE category_id = ?");
+                $stmt->execute([$category_name, $category_id]);
+                $successMessage = "Category updated successfully!";
+            } else {
+                // Add new category
+                $stmt = $pdo->prepare("INSERT INTO categories (category_name) VALUES (?)");
+                $stmt->execute([$category_name]);
+                $successMessage = "Category added successfully!";
+            }
         } catch (PDOException $e) {
-            $errorMessage = "Error adding category: " . $e->getMessage();
+            $errorMessage = "Error saving category: " . $e->getMessage();
         }
     } else {
         $errorMessage = "Please enter a category name.";
     }
 }
-
-// Add Item
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_item'])) {
-    $item_name = trim($_POST['item_name']);
-    $quantity = (int)$_POST['quantity'];
-    $expiry_date = $_POST['expiry_date'];
-    $category_id = (int)$_POST['category_id'];
-    $bank_id = !empty($_POST['bank_id']) ? (int)$_POST['bank_id'] : null;
-    $location = trim($_POST['location']) ?: 'Central Storage';
-
-    if ($item_name && $quantity >= 0 && $expiry_date && $category_id) {
-        try {
-            $stmt = $pdo->prepare("
-                INSERT INTO inventory_items (item_name, quantity, expiry_date, category_id, bank_id, location)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ");
-            $stmt->execute([$item_name, $quantity, $expiry_date, $category_id, $bank_id, $location]);
-            $successMessage = "Item added successfully!";
-        } catch (PDOException $e) {
-            $errorMessage = "Error adding item: " . $e->getMessage();
-        }
-    } else {
-        $errorMessage = "Please fill all required fields correctly (quantity must be ≥ 0).";
-    }
-}
-
-// Update Item
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_item'])) {
-    $item_id = (int)$_POST['item_id'];
-    $item_name = trim($_POST['item_name']);
-    $quantity = (int)$_POST['quantity'];
-    $expiry_date = $_POST['expiry_date'];
-    $category_id = (int)$_POST['category_id'];
-    $bank_id = !empty($_POST['bank_id']) ? (int)$_POST['bank_id'] : null;
-    $location = trim($_POST['location']) ?: 'Central Storage';
-
-    if ($item_id && $item_name && $quantity >= 0 && $expiry_date && $category_id) {
-        try {
-            $stmt = $pdo->prepare("
-                UPDATE inventory_items
-                SET item_name = ?, quantity = ?, expiry_date = ?, category_id = ?, bank_id = ?, location = ?
-                WHERE item_id = ?
-            ");
-            $stmt->execute([$item_name, $quantity, $expiry_date, $category_id, $bank_id, $location, $item_id]);
-            $successMessage = "Item updated successfully!";
-        } catch (PDOException $e) {
-            $errorMessage = "Error updating item: " . $e->getMessage();
-        }
-    } else {
-        $errorMessage = "Invalid data provided for update.";
-    }
-}
-
-// Delete Item
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_item'])) {
-    $item_id = (int)$_POST['item_id'];
-    if ($item_id) {
-        try {
-            $stmt = $pdo->prepare("DELETE FROM inventory_items WHERE item_id = ?");
-            $stmt->execute([$item_id]);
-            $successMessage = "Item deleted successfully.";
-        } catch (PDOException $e) {
-            $errorMessage = "Error deleting item: " . $e->getMessage();
-        }
-    }
-}
-
-// Delete Category
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_category'])) {
     $category_id = (int)$_POST['category_id'];
+    
     if ($category_id) {
         try {
-            // Check if category is in use
+            // Check if category has items
             $stmt = $pdo->prepare("SELECT COUNT(*) FROM inventory_items WHERE category_id = ?");
             $stmt->execute([$category_id]);
-            $count = $stmt->fetchColumn();
+            $itemCount = $stmt->fetchColumn();
             
-            if ($count > 0) {
-                $errorMessage = "Cannot delete category - it's being used by inventory items.";
+            if ($itemCount > 0) {
+                $errorMessage = "Cannot delete category with existing items.";
             } else {
                 $stmt = $pdo->prepare("DELETE FROM categories WHERE category_id = ?");
                 $stmt->execute([$category_id]);
-                $successMessage = "Category deleted successfully.";
+                $successMessage = "Category deleted successfully!";
             }
         } catch (PDOException $e) {
             $errorMessage = "Error deleting category: " . $e->getMessage();
         }
     }
 }
-
 // Update Blood Inventory - Now connected to blood banks
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_blood'])) {
     $blood_type = $_POST['blood_type'];
@@ -547,128 +489,93 @@ if ($selected_bank_id) {
       <!-- Inventory Content -->
       <div class="inventory-content">
         <!-- Categories Section -->
-
-<!-- Enhanced Categories Section - Replace the existing categories section with this -->
+<!-- Replace your existing categories section HTML with this: -->
 <section class="card categories-section">
   <div class="card-header">
-    <h2><i class="fas fa-tags"></i> Categories Management</h2>
+    <h2><i class="fas fa-tags"></i> Categories</h2>
   </div>
   <div class="card-body">
-    
-    <!-- Add Category Form -->
-    <form method="POST" class="category-form">
-      <input type="hidden" name="add_category" value="1">
-      <div class="form-group">
-        <label for="category_name">Add New Category</label>
-        <div class="input-group">
-          <input 
-            type="text" 
-            id="category_name" 
-            name="category_name" 
-            placeholder="Enter category name (e.g., Medical Supplies, Blood Products...)" 
-            required
-          >
-          <button type="submit" class="btn-submit">
-            <i class="fas fa-plus"></i> Add Category
-          </button>
-        </div>
-      </div>
-    </form>
-
-    <!-- Category Statistics -->
-    <div class="category-stats">
-      <div class="stat-item">
-        <div class="stat-number"><?= count($categories) ?></div>
-        <div class="stat-label">Total Categories</div>
-      </div>
-      <div class="stat-item">
-        <div class="stat-number"><?= $total_items ?></div>
-        <div class="stat-label">Total Items</div>
-      </div>
-      <div class="stat-item">
-        <div class="stat-number">
-          <?php
-          $active_categories = 0;
-          foreach ($categories as $category) {
-            try {
-              $stmt = $pdo->prepare("SELECT COUNT(*) FROM inventory_items WHERE category_id = ?");
-              $stmt->execute([$category['category_id']]);
-              if ($stmt->fetchColumn() > 0) $active_categories++;
-            } catch (PDOException $e) {}
-          }
-          echo $active_categories;
-          ?>
-        </div>
-        <div class="stat-label">Active Categories</div>
-      </div>
-    </div>
-    
-    <!-- Categories List -->
-    <div class="categories-list">
-      <h4><i class="fas fa-list"></i> Existing Categories</h4>
+    <div class="dropdown-container">
+      <button class="dropdown-toggle" onclick="toggleCategoryDropdown()" type="button">
+        <i class="fas fa-tags"></i> Manage Categories
+        <i class="fas fa-chevron-down"></i>
+      </button>
       
-      <?php if (empty($categories)): ?>
-        <div class="categories-empty">
-          <i class="fas fa-folder-open"></i>
-          <h4>No Categories Yet</h4>
-          <p>Add your first category above to get started organizing your inventory.</p>
-        </div>
-      <?php else: ?>
-        <div class="categories-items">
-          <?php foreach ($categories as $category): 
-            try {
-              $stmt = $pdo->prepare("SELECT COUNT(*) FROM inventory_items WHERE category_id = ?");
-              $stmt->execute([$category['category_id']]);
-              $itemCount = $stmt->fetchColumn();
-            } catch (PDOException $e) {
-              $itemCount = 0;
-            }
-            
-            // Generate a simple icon based on category name
-            $categoryLetter = strtoupper(substr($category['category_name'], 0, 1));
-          ?>
-            <div class="category-item">
-              <div class="category-item-info">
-                <div class="category-icon">
-                  <?= $categoryLetter ?>
-                </div>
-                <div class="category-details">
-                  <div class="category-name"><?= htmlspecialchars($category['category_name']) ?></div>
-                  <div class="category-count">
-                    <i class="fas fa-box"></i>
-                    <?= $itemCount ?> <?= $itemCount == 1 ? 'item' : 'items' ?>
-                  </div>
-                </div>
-              </div>
-              
-              <div class="category-actions">
-                <button 
-                  class="btn-view-category" 
-                  onclick="filterByCategory(<?= $category['category_id'] ?>)"
-                  title="View items in this category"
-                >
-                  <i class="fas fa-eye"></i> View Items
-                </button>
-                
-                <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this category? This cannot be undone.')">
-                  <input type="hidden" name="delete_category" value="1">
-                  <input type="hidden" name="category_id" value="<?= $category['category_id'] ?>">
-                  <button 
-                    type="submit" 
-                    class="btn-delete-category"
-                    title="Delete category"
-                    <?= $itemCount > 0 ? 'disabled title="Cannot delete category with items"' : '' ?>
-                  >
-                    <i class="fas fa-trash-alt"></i>
-                  </button>
-                </form>
-              </div>
-            </div>
-          <?php endforeach; ?>
-        </div>
-      <?php endif; ?>
+      <div class="dropdown-content" id="categoryDropdown">
+        <!-- Add/Edit Category Form -->
+<!-- Add/Edit Category Form - FIXED VERSION -->
+<form method="POST" class="category-form" id="categoryForm">
+  <input type="hidden" name="add_category" value="1">
+  <input type="hidden" name="category_id" id="editCategoryId">
+  <div class="form-group">
+    <label for="category_name" id="formTitle">Add New Category</label>
+    <div class="input-group">
+      <input 
+        type="text" 
+        id="category_name" 
+        name="category_name" 
+        placeholder="Enter category name" 
+        required
+        maxlength="50"
+      >
+      <button type="submit" class="btn-submit" id="categorySubmit">
+        <i class="fas fa-plus"></i> Add
+      </button>
+      <button 
+        type="button" 
+        class="btn-cancel" 
+        id="cancelEdit" 
+        style="display:none;" 
+        onclick="cancelEdit(); return false;"
+      >
+        <i class="fas fa-times"></i> Cancel
+      </button>
     </div>
-    
+  </div>
+</form>
+
+        <!-- Categories List -->
+        <div class="categories-list">
+          <?php if (empty($categories)): ?>
+            <div class="empty-message">
+              <i class="fas fa-tags"></i>
+              <p>No categories yet. Add your first category above.</p>
+            </div>
+          <?php else: ?>
+            <ul class="categories-items">
+              <?php foreach ($categories as $category): 
+                try {
+                  $stmt = $pdo->prepare("SELECT COUNT(*) FROM inventory_items WHERE category_id = ?");
+                  $stmt->execute([$category['category_id']]);
+                  $itemCount = $stmt->fetchColumn();
+                } catch (PDOException $e) {
+                  $itemCount = 0;
+                }
+              ?>
+                <li class="category-item">
+                  <div class="category-info" onclick="editCategory(<?= $category['category_id'] ?>, '<?= htmlspecialchars($category['category_name'], ENT_QUOTES) ?>')">
+                    <span class="category-name"><?= htmlspecialchars($category['category_name']) ?></span>
+                    <span class="category-count">(<?= $itemCount ?> items)</span>
+                  </div>
+                  <div class="category-actions">
+                    <button type="button" class="btn-edit-category" onclick="editCategory(<?= $category['category_id'] ?>, '<?= htmlspecialchars($category['category_name'], ENT_QUOTES) ?>')" title="Edit Category">
+                      <i class="fas fa-edit"></i>
+                    </button>
+                    <form method="POST" onsubmit="return confirmDelete('<?= htmlspecialchars($category['category_name']) ?>', <?= $itemCount ?>)" style="display: inline;">
+                      <input type="hidden" name="delete_category" value="1">
+                      <input type="hidden" name="category_id" value="<?= $category['category_id'] ?>">
+                      <button type="submit" class="btn-delete-category" <?= $itemCount > 0 ? 'disabled title="Cannot delete category with items"' : 'title="Delete Category"' ?>>
+                        <i class="fas fa-trash"></i>
+                      </button>
+                    </form>
+                  </div>
+                </li>
+              <?php endforeach; ?>
+            </ul>
+          <?php endif; ?>
+        </div>
+      </div>
+    </div>
   </div>
 </section>
         <!-- Inventory Table Section -->
@@ -749,8 +656,8 @@ if ($selected_bank_id) {
                     <tr>
                       <th>Item</th>
                       <th>Category</th>
+                      <th>Storange Location</th>
                       <th>Location</th>
-                      <th>Blood Bank</th>
                       <th>Quantity</th>
                       <th>Expiry Date</th>
                       <th>Status</th>
@@ -850,7 +757,7 @@ if ($selected_bank_id) {
         
         <div class="form-row">
           <div class="form-group">
-            <label for="bank_id">Blood Bank Location</label>
+            <label for="bank_id">Location</label>
             <select id="bank_id" name="bank_id">
               <option value="">Central Storage</option>
               <?php foreach ($blood_banks as $bank): ?>
@@ -958,661 +865,340 @@ if ($selected_bank_id) {
   </div>
 
   <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
-  <script>
-// Enhanced category management functions
-function filterByCategory(categoryId) {
-  const currentParams = new URLSearchParams(window.location.search);
-  if (categoryId && categoryId !== '0') {
-    currentParams.set('category', categoryId);
-  } else {
-    currentParams.delete('category');
+<script>
+// Category management functions
+function toggleCategoryDropdown() {
+  const dropdown = document.getElementById('categoryDropdown');
+  const toggle = document.querySelector('.dropdown-toggle');
+  
+  dropdown.classList.toggle('active');
+  toggle.classList.toggle('active');
+  
+  if (dropdown.classList.contains('active')) {
+    setTimeout(() => {
+      const input = document.getElementById('category_name');
+      if (input && !document.getElementById('editCategoryId').value) {
+        input.focus();
+      }
+    }, 100);
+  }
+}
+
+function editCategory(id, name) {
+  document.getElementById('editCategoryId').value = id;
+  document.getElementById('category_name').value = name;
+  document.getElementById('formTitle').textContent = 'Edit Category';
+  document.getElementById('categorySubmit').innerHTML = '<i class="fas fa-save"></i> Save';
+  document.getElementById('cancelEdit').style.display = 'inline-block';
+  
+  // Open dropdown if closed
+  const dropdown = document.getElementById('categoryDropdown');
+  const toggle = document.querySelector('.dropdown-toggle');
+  if (!dropdown.classList.contains('active')) {
+    dropdown.classList.add('active');
+    toggle.classList.add('active');
   }
   
-  // Smooth scroll to inventory table after filtering
-  window.location.href = `${window.location.pathname}?${currentParams.toString()}`;
-  
-  // Add visual feedback
+  // Focus and select input
   setTimeout(() => {
-    const inventorySection = document.querySelector('.inventory-table-section');
-    if (inventorySection) {
-      inventorySection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      inventorySection.style.animation = 'highlightSection 2s ease';
-    }
+    const input = document.getElementById('category_name');
+    input.focus();
+    input.select();
   }, 100);
 }
 
-// Add highlight animation for filtered results
-const style = document.createElement('style');
-style.textContent = `
-  @keyframes highlightSection {
-    0% { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05); }
-    50% { box-shadow: 0 8px 25px rgba(160, 0, 0, 0.2); }
-    100% { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05); }
+function cancelEdit() {
+  // Reset form
+  document.getElementById('categoryForm').reset();
+  document.getElementById('editCategoryId').value = '';
+  document.getElementById('formTitle').textContent = 'Add New Category';
+  document.getElementById('categorySubmit').innerHTML = '<i class="fas fa-plus"></i> Add';
+  document.getElementById('cancelEdit').style.display = 'none';
+  
+  // Clear input styling
+  const nameInput = document.getElementById('category_name');
+  nameInput.style.borderColor = '';
+  nameInput.style.backgroundColor = '';
+  
+  // Remove character counter
+  const existingCounter = nameInput.parentNode.querySelector('.char-counter');
+  if (existingCounter) {
+    existingCounter.remove();
   }
-`;
-document.head.appendChild(style);
+  
+  setTimeout(() => nameInput.focus(), 100);
+}
 
-// Auto-focus on category input after page load
+function confirmDelete(categoryName, itemCount) {
+  if (itemCount > 0) {
+    alert(`Cannot delete "${categoryName}" because it contains ${itemCount} item(s). Please remove or reassign the items first.`);
+    return false;
+  }
+  return confirm(`Are you sure you want to delete the category "${categoryName}"? This action cannot be undone.`);
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(event) {
+  const dropdownContainer = document.querySelector('.dropdown-container');
+  if (dropdownContainer && !dropdownContainer.contains(event.target)) {
+    document.getElementById('categoryDropdown').classList.remove('active');
+    document.querySelector('.dropdown-toggle').classList.remove('active');
+  }
+});
+
+// Form validation and character counter
 document.addEventListener('DOMContentLoaded', function() {
-  const categoryInput = document.getElementById('category_name');
-  if (categoryInput && !window.location.search.includes('category=')) {
-    // Only focus if not filtering results
-    setTimeout(() => categoryInput.focus(), 500);
-  }
+  const categoryForm = document.getElementById('categoryForm');
+  const categoryNameInput = document.getElementById('category_name');
+  
+  // Form submission validation
+  categoryForm.addEventListener('submit', function(e) {
+    const categoryName = categoryNameInput.value.trim();
+    
+    if (categoryName.length < 2) {
+      e.preventDefault();
+      alert('Category name must be at least 2 characters long.');
+      categoryNameInput.focus();
+      return false;
+    }
+    
+    if (categoryName.length > 50) {
+      e.preventDefault();
+      alert('Category name must be less than 50 characters long.');
+      categoryNameInput.focus();
+      return false;
+    }
+    
+    // Visual feedback during submission
+    const button = document.getElementById('categorySubmit');
+    const originalText = button.innerHTML;
+    const isEdit = document.getElementById('editCategoryId').value;
+    
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ' + (isEdit ? 'Saving...' : 'Adding...');
+    button.disabled = true;
+    
+    setTimeout(() => {
+      button.innerHTML = originalText;
+      button.disabled = false;
+    }, 5000);
+  });
+  
+  // Real-time character counter
+  categoryNameInput.addEventListener('input', function() {
+    const maxLength = 50;
+    const currentLength = this.value.length;
+    const remaining = maxLength - currentLength;
+    
+    // Remove existing counter
+    const existingCounter = this.parentNode.querySelector('.char-counter');
+    if (existingCounter) existingCounter.remove();
+    
+    // Add character counter if typing
+    if (currentLength > 0) {
+      const counter = document.createElement('div');
+      counter.className = 'char-counter';
+      counter.style.cssText = `
+        font-size: 0.75rem; 
+        color: ${remaining < 10 ? '#dc3545' : remaining < 20 ? '#fd7e14' : '#6c757d'}; 
+        margin-top: 0.25rem;
+        text-align: right;
+        position: absolute;
+        right: 0;
+        top: 100%;
+      `;
+      counter.textContent = `${remaining} characters remaining`;
+      
+      this.parentNode.style.position = 'relative';
+      this.parentNode.appendChild(counter);
+    }
+    
+    // Visual feedback for input
+    if (currentLength >= maxLength) {
+      this.style.borderColor = '#dc3545';
+      this.style.backgroundColor = '#fff5f5';
+    } else if (currentLength < 2 && currentLength > 0) {
+      this.style.borderColor = '#fd7e14';
+      this.style.backgroundColor = '#fff8f0';
+    } else {
+      this.style.borderColor = '#28a745';
+      this.style.backgroundColor = '#f8fff8';
+    }
+  });
+  
+  // Clear visual feedback on blur
+  categoryNameInput.addEventListener('blur', function() {
+    this.style.borderColor = '';
+    this.style.backgroundColor = '';
+  });
+  
+  // Keyboard navigation
+  categoryNameInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      const editIdField = document.getElementById('editCategoryId');
+      if (editIdField.value) {
+        cancelEdit();
+      } else {
+        toggleCategoryDropdown();
+      }
+    }
+  });
 });
 
-// Form validation and enhancement
-document.querySelector('.category-form').addEventListener('submit', function(e) {
-  const input = document.getElementById('category_name');
-  const value = input.value.trim();
+// Blood inventory management
+const bloodInventory = <?= json_encode($blood_inventory) ?>;
+const selectedBankId = <?= $selected_bank_id ?>;
+
+function openBloodInventoryModal(bloodType = null) {
+  if (!selectedBankId) {
+    alert('Please select a blood bank location first.');
+    return;
+  }
   
-  if (value.length < 2) {
+  const modal = document.getElementById('bloodModal');
+  modal.classList.add('active');
+  document.getElementById('bloodBankId').value = selectedBankId;
+  
+  if (bloodType) {
+    selectBloodType(document.querySelector(`.blood-type-option[data-type="${bloodType}"]`));
+  } else {
+    document.querySelectorAll('.blood-type-option').forEach(opt => opt.classList.remove('selected'));
+    document.getElementById('bloodType').value = '';
+    document.getElementById('current_units').value = '';
+    document.getElementById('bloodModalTitle').textContent = 'Manage Blood Inventory';
+  }
+}
+
+function selectBloodType(element) {
+  document.querySelectorAll('.blood-type-option').forEach(opt => opt.classList.remove('selected'));
+  element.classList.add('selected');
+  
+  const bloodType = element.getAttribute('data-type');
+  document.getElementById('bloodType').value = bloodType;
+  document.getElementById('bloodModalTitle').textContent = `Manage ${bloodType} Blood Inventory`;
+  document.getElementById('current_units').value = bloodInventory[bloodType] || 0;
+}
+
+function openAddItemModal() {
+  document.getElementById('modalTitle').textContent = 'Add New Item';
+  document.getElementById('formAction').name = 'add_item';
+  document.getElementById('itemForm').reset();
+  document.getElementById('itemId').value = '';
+  
+  if (selectedBankId) {
+    document.getElementById('bank_id').value = selectedBankId;
+  }
+  
+  document.getElementById('itemModal').classList.add('active');
+  
+  // Set default expiry date to today + 30 days
+  const futureDate = new Date();
+  futureDate.setDate(futureDate.getDate() + 30);
+  document.getElementById('expiry_date').value = futureDate.toISOString().split('T')[0];
+}
+
+function openEditItemModal(item) {
+  document.getElementById('modalTitle').textContent = 'Edit Item';
+  document.getElementById('formAction').name = 'update_item';
+  document.getElementById('itemId').value = item.item_id;
+  document.getElementById('item_name').value = item.item_name;
+  document.getElementById('category_id').value = item.category_id;
+  document.getElementById('quantity').value = item.quantity;
+  document.getElementById('expiry_date').value = item.expiry_date;
+  document.getElementById('bank_id').value = item.bank_id || '';
+  document.getElementById('location').value = item.location || 'Central Storage';
+  document.getElementById('itemModal').classList.add('active');
+}
+
+function closeModal(modalId) {
+  document.getElementById(modalId).classList.remove('active');
+}
+
+function filterByBank(bankId) {
+  const params = new URLSearchParams(window.location.search);
+  if (bankId && bankId !== '0') {
+    params.set('bank_filter', bankId);
+  } else {
+    params.delete('bank_filter');
+  }
+  window.location.href = `${window.location.pathname}?${params.toString()}`;
+}
+
+function changeBloodBank(bankId) {
+  window.location.href = `?bank=${bankId}`;
+}
+
+// Close modals when clicking outside
+document.querySelectorAll('.modal').forEach(modal => {
+  modal.addEventListener('click', function(e) {
+    if (e.target === this) {
+      this.classList.remove('active');
+    }
+  });
+});
+
+// Blood form validation
+document.getElementById('bloodForm').addEventListener('submit', function(e) {
+  const bloodType = document.getElementById('bloodType').value;
+  const actionType = document.getElementById('action_type').value;
+  const unitsCount = parseInt(document.getElementById('units_count').value);
+  const currentUnits = parseInt(document.getElementById('current_units').value) || 0;
+  const bankId = document.getElementById('bloodBankId').value;
+  
+  if (!bankId) {
     e.preventDefault();
-    alert('Category name must be at least 2 characters long.');
-    input.focus();
+    alert('Please select a blood bank location.');
     return false;
   }
   
-  if (value.length > 50) {
+  if (!bloodType) {
     e.preventDefault();
-    alert('Category name must be less than 50 characters long.');
-    input.focus();
+    alert('Please select a blood type.');
     return false;
   }
   
-  // Visual feedback during submission
-  const button = this.querySelector('.btn-submit');
-  button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Adding...';
-  button.disabled = true;
+  if (!actionType) {
+    e.preventDefault();
+    alert('Please select an action type.');
+    return false;
+  }
+  
+  if (!unitsCount || unitsCount <= 0) {
+    e.preventDefault();
+    alert('Please enter a valid number of units.');
+    return false;
+  }
+  
+  if (actionType === 'remove' && unitsCount > currentUnits) {
+    e.preventDefault();
+    alert(`Cannot remove ${unitsCount} units. Only ${currentUnits} units available for ${bloodType}.`);
+    return false;
+  }
 });
 
-// Real-time character count for category input
-document.getElementById('category_name').addEventListener('input', function() {
-  const maxLength = 50;
-  const currentLength = this.value.length;
-  const remaining = maxLength - currentLength;
+// Real-time validation for units input
+document.getElementById('units_count').addEventListener('input', function() {
+  const actionType = document.getElementById('action_type').value;
+  const unitsCount = parseInt(this.value);
+  const currentUnits = parseInt(document.getElementById('current_units').value) || 0;
   
-  // Remove existing counter
-  const existingCounter = document.querySelector('.char-counter');
-  if (existingCounter) existingCounter.remove();
-  
-  // Add character counter
-  if (currentLength > 0) {
-    const counter = document.createElement('div');
-    counter.className = 'char-counter';
-    counter.style.cssText = `
-      font-size: 0.8rem; 
-      color: ${remaining < 10 ? '#dc3545' : '#6c757d'}; 
-      margin-top: 0.3rem;
-      text-align: right;
-    `;
-    counter.textContent = `${remaining} characters remaining`;
-    this.parentNode.appendChild(counter);
+  if (actionType === 'remove' && unitsCount > currentUnits) {
+    this.style.borderColor = '#dc3545';
+    this.style.backgroundColor = '#fff5f5';
+  } else {
+    this.style.borderColor = '#e0e0e0';
+    this.style.backgroundColor = 'white';
   }
+});
+
+document.getElementById('action_type').addEventListener('change', function() {
+  document.getElementById('units_count').dispatchEvent(new Event('input'));
+});
+
+// Initialize date picker
+document.addEventListener('DOMContentLoaded', function() {
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('expiry_date').min = today;
 });
 </script>
-  <script>
-    // Blood inventory data from PHP
-    const bloodInventory = <?= json_encode($blood_inventory) ?>;
-    const bloodBanks = <?= json_encode($blood_banks) ?>;
-    const selectedBankId = <?= $selected_bank_id ?>;
-  
-    function openAddItemModal() {
-      document.getElementById('modalTitle').textContent = 'Add New Item';
-      document.getElementById('formAction').name = 'add_item';
-      document.getElementById('itemForm').reset();
-      document.getElementById('itemId').value = '';
-      
-      // Pre-select the current bank
-      if (selectedBankId) {
-        document.getElementById('bank_id').value = selectedBankId;
-      }
-      
-      document.getElementById('itemModal').classList.add('active');
-      
-      // Set default expiry date to today + 30 days
-      const today = new Date();
-      const futureDate = new Date(today);
-      futureDate.setDate(futureDate.getDate() + 30);
-      
-      const formattedDate = futureDate.toISOString().split('T')[0];
-      document.getElementById('expiry_date').value = formattedDate;
-    }
-    
-    function openEditItemModal(item) {
-      document.getElementById('modalTitle').textContent = 'Edit Item';
-      document.getElementById('formAction').name = 'update_item';
-      document.getElementById('itemId').value = item.item_id;
-      document.getElementById('item_name').value = item.item_name;
-      document.getElementById('category_id').value = item.category_id;
-      document.getElementById('quantity').value = item.quantity;
-      document.getElementById('expiry_date').value = item.expiry_date;
-      document.getElementById('bank_id').value = item.bank_id || '';
-      document.getElementById('location').value = item.location || 'Central Storage';
-      document.getElementById('itemModal').classList.add('active');
-    }
-    
-    function openBloodInventoryModal(bloodType = null) {
-      if (!selectedBankId) {
-        alert('Please select a blood bank location first.');
-        return;
-      }
-      
-      const modal = document.getElementById('bloodModal');
-      modal.classList.add('active');
-      
-      document.getElementById('bloodBankId').value = selectedBankId;
-      
-      if (bloodType) {
-        // Pre-select the blood type
-        selectBloodType(document.querySelector(`.blood-type-option[data-type="${bloodType}"]`));
-      } else {
-        // Clear any previous selection
-        document.querySelectorAll('.blood-type-option').forEach(opt => {
-          opt.classList.remove('selected');
-        });
-        document.getElementById('bloodType').value = '';
-        document.getElementById('current_units').value = '';
-        document.getElementById('bloodModalTitle').textContent = 'Manage Blood Inventory';
-      }
-    }
-    
-    function selectBloodType(element) {
-      // Clear all selected
-      document.querySelectorAll('.blood-type-option').forEach(opt => {
-        opt.classList.remove('selected');
-      });
-      
-      // Select this one
-      element.classList.add('selected');
-      
-      const bloodType = element.getAttribute('data-type');
-      document.getElementById('bloodType').value = bloodType;
-      document.getElementById('bloodModalTitle').textContent = `Manage ${bloodType} Blood Inventory`;
-      
-      // Set current units
-      document.getElementById('current_units').value = bloodInventory[bloodType] || 0;
-      updateBloodTypeDisplay();
-    }
-    
-    function changeBloodBank(bankId) {
-      document.getElementById('bloodBankId').value = bankId;
-      // Redirect to update the blood inventory data
-      window.location.href = `?bank=${bankId}`;
-    }
-    
-    function closeModal(modalId) {
-      document.getElementById(modalId).classList.remove('active');
-    }
-    
-    function filterByCategory(categoryId) {
-      const currentParams = new URLSearchParams(window.location.search);
-      if (categoryId && categoryId !== '0') {
-        currentParams.set('category', categoryId);
-      } else {
-        currentParams.delete('category');
-      }
-      window.location.href = `${window.location.pathname}?${currentParams.toString()}`;
-    }
-    
-    function filterByBank(bankId) {
-      const currentParams = new URLSearchParams(window.location.search);
-      if (bankId && bankId !== '0') {
-        currentParams.set('bank_filter', bankId);
-      } else {
-        currentParams.delete('bank_filter');
-      }
-      window.location.href = `${window.location.pathname}?${currentParams.toString()}`;
-    }
-    
-    // Close modal when clicking outside
-    document.querySelectorAll('.modal').forEach(modal => {
-      modal.addEventListener('click', function(e) {
-        if (e.target === this) {
-          this.classList.remove('active');
-        }
-      });
-    });
-
-    // Initialize date picker with min date as today
-    document.addEventListener('DOMContentLoaded', function() {
-      const today = new Date().toISOString().split('T')[0];
-      document.getElementById('expiry_date').min = today;
-    });
-    
-    // Form validation for blood inventory
-    document.getElementById('bloodForm').addEventListener('submit', function(e) {
-      const bloodType = document.getElementById('bloodType').value;
-      const actionType = document.getElementById('action_type').value;
-      const unitsCount = parseInt(document.getElementById('units_count').value);
-      const currentUnits = parseInt(document.getElementById('current_units').value) || 0;
-      const bankId = document.getElementById('bloodBankId').value;
-      
-      if (!bankId) {
-        e.preventDefault();
-        alert('Please select a blood bank location.');
-        return false;
-      }
-      
-      if (!bloodType) {
-        e.preventDefault();
-        alert('Please select a blood type.');
-        return false;
-      }
-      
-      if (!actionType) {
-        e.preventDefault();
-        alert('Please select an action type.');
-        return false;
-      }
-      
-      if (!unitsCount || unitsCount <= 0) {
-        e.preventDefault();
-        alert('Please enter a valid number of units.');
-        return false;
-      }
-      
-      // Check if removing more units than available
-      if (actionType === 'remove' && unitsCount > currentUnits) {
-        e.preventDefault();
-        alert(`Cannot remove ${unitsCount} units. Only ${currentUnits} units available for ${bloodType}.`);
-        return false;
-      }
-    });
-    
-    // Enhanced visual feedback for blood inventory management
-    function updateBloodTypeDisplay() {
-      const selectedType = document.getElementById('bloodType').value;
-      if (selectedType) {
-        document.getElementById('current_units').value = currentUnits;
-        
-        // Update visual feedback based on stock level
-        const inputField = document.getElementById('current_units');
-        inputField.className = '';
-        if (currentUnits < 10) {
-          inputField.style.borderColor = '#dc3545';
-          inputField.style.backgroundColor = '#fff5f5';
-        } else if (currentUnits > 50) {
-          inputField.style.borderColor = '#28a745';
-          inputField.style.backgroundColor = '#f8fff8';
-        } else {
-          inputField.style.borderColor = '#ffc107';
-          inputField.style.backgroundColor = '#fffef5';
-        }
-      }
-    }
-    
-    // Real-time validation for units input
-    document.getElementById('units_count').addEventListener('input', function() {
-      const actionType = document.getElementById('action_type').value;
-      const unitsCount = parseInt(this.value);
-      const currentUnits = parseInt(document.getElementById('current_units').value) || 0;
-      
-      if (actionType === 'remove' && unitsCount > currentUnits) {
-        this.style.borderColor = '#dc3545';
-        this.style.backgroundColor = '#fff5f5';
-      } else {
-        this.style.borderColor = '#e0e0e0';
-        this.style.backgroundColor = 'white';
-      }
-    });
-    
-    // Update validation when action type changes
-    document.getElementById('action_type').addEventListener('change', function() {
-      const unitsInput = document.getElementById('units_count');
-      unitsInput.dispatchEvent(new Event('input'));
-    });
-  </script>
-
-  <style>
-    /* Bank Selector Styles */
-    .bank-selector {
-      background: white;
-      border-radius: 12px;
-      padding: 1.5rem;
-      margin-bottom: 2rem;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-    }
-    
-    .bank-selector-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 1rem;
-      padding-bottom: 1rem;
-      border-bottom: 2px solid #f0f0f0;
-    }
-    
-    .bank-selector-header h3 {
-      margin: 0;
-      color: var(--dark);
-      font-size: 1.2rem;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    
-    .btn-manage-banks {
-      background: linear-gradient(135deg, var(--blue) 0%, #0056b3 100%);
-      color: white;
-      padding: 0.6rem 1.2rem;
-      border-radius: 8px;
-      text-decoration: none;
-      font-weight: 600;
-      font-size: 0.9rem;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      transition: all 0.3s ease;
-      box-shadow: 0 2px 8px rgba(0, 86, 179, 0.3);
-    }
-    
-    .btn-manage-banks:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(0, 86, 179, 0.4);
-    }
-    
-    .bank-options {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 1rem;
-    }
-    
-    .bank-option {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 1rem;
-      border: 2px solid #e0e0e0;
-      border-radius: 10px;
-      text-decoration: none;
-      color: var(--dark);
-      transition: all 0.3s ease;
-      background: #f8f9fa;
-    }
-    
-    .bank-option:hover {
-      border-color: var(--prc-red);
-      background: #fff5f5;
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    }
-    
-    .bank-option.active {
-      border-color: var(--prc-red);
-      background: linear-gradient(135deg, #fff5f5 0%, #ffe6e6 100%);
-      box-shadow: 0 4px 12px rgba(160, 0, 0, 0.2);
-    }
-    
-    .bank-info {
-      flex: 1;
-    }
-    
-    .bank-name {
-      font-weight: 600;
-      font-size: 1rem;
-      margin-bottom: 0.3rem;
-      color: var(--dark);
-    }
-    
-    .bank-address {
-      font-size: 0.85rem;
-      color: var(--gray);
-      line-height: 1.3;
-    }
-    
-    .bank-stats {
-      text-align: right;
-    }
-    
-    .blood-units {
-      background: var(--prc-red);
-      color: white;
-      padding: 0.4rem 0.8rem;
-      border-radius: 20px;
-      font-size: 0.8rem;
-      font-weight: 600;
-    }
-    
-    /* Action Buttons */
-    .action-buttons {
-      display: flex;
-      gap: 1rem;
-    }
-    
-    /* Table Filters */
-    .table-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 1rem;
-    }
-    
-    .table-filters {
-      display: flex;
-      gap: 0.5rem;
-    }
-    
-    .filter-select {
-      padding: 0.5rem;
-      border: 2px solid #e0e0e0;
-      border-radius: 6px;
-      font-size: 0.9rem;
-      min-width: 150px;
-    }
-    
-    .filter-select:focus {
-      border-color: var(--prc-red);
-      outline: none;
-    }
-    
-    .filter-tag {
-      background: #f0f0f0;
-      padding: 0.3rem 0.8rem;
-      border-radius: 20px;
-      font-size: 0.8rem;
-      margin-right: 0.5rem;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    
-    .filter-tag a {
-      color: var(--prc-red);
-      text-decoration: none;
-    }
-    
-    /* Enhanced blood inventory styles */
-    .activity-log {
-      border-top: 1px solid #e9ecef;
-      padding-top: 1.5rem;
-    }
-    
-    .activity-log h3 {
-      color: var(--dark);
-      margin-bottom: 1rem;
-      font-size: 1.1rem;
-    }
-    
-    .log-container {
-      max-height: 300px;
-      overflow-y: auto;
-    }
-    
-    .log-entry {
-      display: flex;
-      align-items: center;
-      padding: 0.75rem;
-      margin-bottom: 0.5rem;
-      background: #f8f9fa;
-      border-radius: 8px;
-      border-left: 4px solid transparent;
-    }
-    
-    .log-entry:hover {
-      background: #e9ecef;
-    }
-    
-    .log-icon {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-right: 1rem;
-      font-size: 0.8rem;
-    }
-    
-    .log-icon.add {
-      background: #d4edda;
-      color: #155724;
-    }
-    
-    .log-entry:has(.log-icon.add) {
-      border-left-color: #28a745;
-    }
-    
-    .log-icon.remove {
-      background: #f8d7da;
-      color: #721c24;
-    }
-    
-    .log-entry:has(.log-icon.remove) {
-      border-left-color: #dc3545;
-    }
-    
-    .log-details {
-      flex: 1;
-    }
-    
-    .log-main {
-      font-weight: 500;
-      margin-bottom: 0.25rem;
-    }
-    
-    .log-meta {
-      font-size: 0.85rem;
-      color: #6c757d;
-    }
-    
-    .units {
-      color: var(--prc-red);
-      font-weight: 600;
-    }
-    
-    .no-logs {
-      text-align: center;
-      color: #6c757d;
-      font-style: italic;
-      padding: 2rem;
-    }
-    
-    /* Blood type selection enhancements */
-    .blood-type-option {
-      cursor: pointer;
-      padding: 0.75rem 1rem;
-      margin: 0.25rem;
-      border: 2px solid #e0e0e0;
-      border-radius: 8px;
-      text-align: center;
-      font-weight: 600;
-      transition: all 0.3s ease;
-      background: white;
-    }
-    
-    .blood-type-option:hover {
-      border-color: var(--prc-red);
-      background: #fff5f5;
-    }
-    
-    .blood-type-option.selected {
-      border-color: var(--prc-red);
-      background: var(--prc-red);
-      color: white;
-    }
-    
-    .blood-type-options {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 0.5rem;
-      margin-bottom: 1.5rem;
-    }
-    
-    /* Form validation styles */
-    .form-group input.invalid {
-      border-color: #dc3545 !important;
-      background-color: #fff5f5 !important;
-    }
-    
-    .form-group input.valid {
-      border-color: #28a745 !important;
-      background-color: #f8fff8 !important;
-    }
-    
-    /* Responsive adjustments */
-    @media (max-width: 768px) {
-      .bank-options {
-        grid-template-columns: 1fr;
-      }
-      
-      .action-buttons {
-        width: 100%;
-      }
-      
-      .action-buttons .btn-create,
-      .action-buttons .btn-create-blood {
-        flex: 1;
-        justify-content: center;
-      }
-      
-      .blood-type-options {
-        grid-template-columns: repeat(2, 1fr);
-      }
-      
-      .stats-overview {
-        grid-template-columns: repeat(2, 1fr);
-      }
-      
-      .table-header {
-        flex-direction: column;
-        align-items: stretch;
-      }
-      
-      .table-filters {
-        width: 100%;
-      }
-      
-      .filter-select {
-        flex: 1;
-        min-width: auto;
-      }
-    }
-    
-    @media (max-width: 576px) {
-      .bank-selector-header {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 1rem;
-      }
-      
-      .btn-manage-banks {
-        justify-content: center;
-      }
-      
-      .blood-type-options {
-        grid-template-columns: 1fr;
-      }
-      
-      .stats-overview {
-        grid-template-columns: 1fr;
-      }
-      
-      .table-filters {
-        flex-direction: column;
-      }
-    }
-  </style>
 </body>
 </html>

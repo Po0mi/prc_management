@@ -760,6 +760,33 @@ select:focus-visible {
   outline: 2px solid var(--prc-red);
   outline-offset: 2px;
 }
+/* Add this to your sessions.css file */
+
+.fee-display {
+  text-align: center;
+}
+
+.fee-amount {
+  background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
+  color: white;
+  padding: 0.3rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: inline-block;
+  min-width: 60px;
+}
+
+.fee-free {
+  background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
+  color: white;
+  padding: 0.3rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: inline-block;
+  min-width: 60px;
+}
 
 /* Print Styles */
 @media print {

@@ -27,11 +27,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_event'])) {
     $description = trim($_POST['description']);
     $event_date = $_POST['event_date'];
     $location = trim($_POST['location']);
+    $capacity = isset($_POST['capacity']) ? (int)$_POST['capacity'] : 0;
+    $fee = isset($_POST['fee']) ? (float)$_POST['fee'] : 0.00;
 
     if ($title && $event_date && $location) {
         try {
-            $stmt = $pdo->prepare("INSERT INTO events (title, description, event_date, location) VALUES (?, ?, ?, ?)");
-            $stmt->execute([$title, $description, $event_date, $location]);
+            $stmt = $pdo->prepare("INSERT INTO events (title, description, event_date, location, capacity, fee) VALUES (?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$title, $description, $event_date, $location, $capacity, $fee]);
             $successMessage = "Event created successfully!";
         } catch (PDOException $e) {
             $errorMessage = "Error creating event: " . $e->getMessage();
@@ -47,11 +49,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_event'])) {
     $description = trim($_POST['description']);
     $event_date = $_POST['event_date'];
     $location = trim($_POST['location']);
+    $capacity = isset($_POST['capacity']) ? (int)$_POST['capacity'] : 0;
+    $fee = isset($_POST['fee']) ? (float)$_POST['fee'] : 0.00;
 
     if ($event_id && $title && $event_date && $location) {
         try {
-            $stmt = $pdo->prepare("UPDATE events SET title = ?, description = ?, event_date = ?, location = ? WHERE event_id = ?");
-            $stmt->execute([$title, $description, $event_date, $location, $event_id]);
+            $stmt = $pdo->prepare("UPDATE events SET title = ?, description = ?, event_date = ?, location = ?, capacity = ?, fee = ? WHERE event_id = ?");
+            $stmt->execute([$title, $description, $event_date, $location, $capacity, $fee, $event_id]);
             $successMessage = "Event updated successfully!";
         } catch (PDOException $e) {
             $errorMessage = "Error updating event: " . $e->getMessage();
@@ -97,8 +101,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_event'])) {
 // Initialize sample data if needed
 $stmt = $pdo->query("SELECT COUNT(*) FROM events");
 if ($stmt->fetchColumn() == 0) {
-    $pdo->prepare("INSERT INTO events (title, description, event_date, location) VALUES (?, ?, ?, ?)")
-        ->execute(['Tech Conference 2025', 'Join us for the annual tech gathering.', date('Y-m-d', strtotime('+1 month')), 'Tech Park Hall']);
+    $pdo->prepare("INSERT INTO events (title, description, event_date, location, capacity, fee) VALUES (?, ?, ?, ?, ?, ?)")
+        ->execute(['Tech Conference 2025', 'Join us for the annual tech gathering.', date('Y-m-d', strtotime('+1 month')), 'Tech Park Hall', 100, 50.00]);
 }
 
 // Get filter parameters
@@ -162,12 +166,14 @@ $total_registrations = $pdo->query("SELECT COUNT(*) FROM registrations")->fetchC
   <?php $collapsed = isset($_COOKIE['sidebarCollapsed']) && $_COOKIE['sidebarCollapsed'] === 'true'; ?>
   <script>
     (function() {
-      var collapsed = document.cookie.split('; ').find(row => row.startsWith('sidebarCollapsed='));
-      var root = document.documentElement;
-      if (collapsed && collapsed.split('=')[1] === 'true') {
-        root.style.setProperty('--sidebar-width', '70px');
-      } else {
-        root.style.setProperty('--sidebar-width', '250px');
+      if (typeof document !== 'undefined' && document.documentElement) {
+        var collapsed = document.cookie.split('; ').find(row => row.startsWith('sidebarCollapsed='));
+        var root = document.documentElement;
+        if (collapsed && collapsed.split('=')[1] === 'true') {
+          root.style.setProperty('--sidebar-width', '70px');
+        } else {
+          root.style.setProperty('--sidebar-width', '250px');
+        }
       }
     })();
   </script>
@@ -284,6 +290,7 @@ $total_registrations = $pdo->query("SELECT COUNT(*) FROM registrations")->fetchC
               <th>Date</th>
               <th>Location</th>
               <th>Registrations</th>
+              <th>Fee</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
@@ -293,6 +300,7 @@ $total_registrations = $pdo->query("SELECT COUNT(*) FROM registrations")->fetchC
               $eventDate = strtotime($e['event_date']);
               $today = strtotime('today');
               $isUpcoming = $eventDate >= $today;
+              $isFull = $e['capacity'] > 0 && $e['registrations_count'] >= $e['capacity'];
             ?>
               <tr>
                 <td>
@@ -308,9 +316,17 @@ $total_registrations = $pdo->query("SELECT COUNT(*) FROM registrations")->fetchC
                 </td>
                 <td><?= htmlspecialchars($e['location']) ?></td>
                 <td>
-                  <div class="registrations-badge">
+                  <div class="registrations-badge <?= $isFull ? 'full' : '' ?>">
                     <i class="fas fa-users"></i>
-                    <?= $e['registrations_count'] ?>
+                    <?= $e['registrations_count'] ?> / <?= $e['capacity'] ?: '∞' ?>
+                    <?php if ($isFull): ?>
+                      <span style="font-size: 0.7rem; background: var(--prc-red); color: white; padding: 0.2rem 0.4rem; border-radius: 4px;">FULL</span>
+                    <?php endif; ?>
+                  </div>
+                </td>
+                <td>
+                  <div style="font-weight: 600;">
+                    <?= $e['fee'] > 0 ? '₱' . number_format($e['fee'], 2) : 'Free' ?>
                   </div>
                 </td>
                 <td>
@@ -374,7 +390,8 @@ $total_registrations = $pdo->query("SELECT COUNT(*) FROM registrations")->fetchC
                 <td><?= htmlspecialchars($r['email']) ?></td>
                 <td><?= date('M d, Y', strtotime($r['registration_date'])) ?></td>
                 <td>
-                  <form method="POST" class="status-form">
+                  <!-- FIXED: Form now properly wraps both the status select and update button -->
+                  <form method="POST" class="status-form" style="display: flex; align-items: center; gap: 8px;">
                     <input type="hidden" name="update_status" value="1">
                     <input type="hidden" name="registration_id" value="<?= $r['registration_id'] ?>">
                     <select name="status" class="status-select">
@@ -384,6 +401,7 @@ $total_registrations = $pdo->query("SELECT COUNT(*) FROM registrations")->fetchC
                     </select>
                 </td>
                 <td>
+                    <!-- Button is now inside the form -->
                     <button type="submit" class="btn-action btn-update">
                       <i class="fas fa-sync-alt"></i> Update
                     </button>
@@ -419,7 +437,7 @@ $total_registrations = $pdo->query("SELECT COUNT(*) FROM registrations")->fetchC
         
         <div class="form-group">
           <label for="description">Description</label>
-          <textarea id="description" name="description" placeholder="Enter event description"></textarea>
+          <textarea id="description" name="description" rows="3" placeholder="Enter event description and details"></textarea>
         </div>
         
         <div class="form-row">
@@ -434,6 +452,18 @@ $total_registrations = $pdo->query("SELECT COUNT(*) FROM registrations")->fetchC
           </div>
         </div>
         
+        <div class="form-row">
+          <div class="form-group">
+            <label for="capacity">Capacity</label>
+            <input type="number" id="capacity" name="capacity" min="0" placeholder="0 for unlimited">
+          </div>
+          
+          <div class="form-group">
+            <label for="fee">Fee (₱)</label>
+            <input type="number" id="fee" name="fee" min="0" step="0.01" placeholder="0.00">
+          </div>
+        </div>
+        
         <button type="submit" class="btn-submit">
           <i class="fas fa-save"></i> Save Event
         </button>
@@ -443,6 +473,43 @@ $total_registrations = $pdo->query("SELECT COUNT(*) FROM registrations")->fetchC
 
   <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
   <script>
+    // Simplified status update handler
+    document.addEventListener('DOMContentLoaded', function() {
+      // Registration search functionality
+      const searchInput = document.getElementById('regSearch');
+      if (searchInput) {
+        searchInput.addEventListener('input', function() {
+          const searchTerm = this.value.toLowerCase();
+          const rows = document.querySelectorAll('#registrationsTable tbody tr');
+          
+          rows.forEach(function(row) {
+            const text = row.textContent.toLowerCase();
+            row.style.display = text.includes(searchTerm) ? '' : 'none';
+          });
+        });
+      }
+      
+      // Auto-submit form when status changes (optional enhancement)
+      const statusSelects = document.querySelectorAll('.status-select');
+      statusSelects.forEach(function(select) {
+        select.addEventListener('change', function() {
+          // Highlight the update button to show action is needed
+          const form = this.closest('form');
+          const button = form.querySelector('.btn-update');
+          if (button) {
+            button.style.backgroundColor = '#ffc107';
+            button.style.color = '#000';
+            button.style.transform = 'scale(1.05)';
+            setTimeout(function() {
+              button.style.backgroundColor = '';
+              button.style.color = '';
+              button.style.transform = '';
+            }, 2000);
+          }
+        });
+      });
+    });
+
     function openCreateModal() {
       document.getElementById('modalTitle').textContent = 'Create New Event';
       document.getElementById('formAction').name = 'create_event';
@@ -458,6 +525,8 @@ $total_registrations = $pdo->query("SELECT COUNT(*) FROM registrations")->fetchC
       document.getElementById('description').value = event.description || '';
       document.getElementById('event_date').value = event.event_date;
       document.getElementById('location').value = event.location;
+      document.getElementById('capacity').value = event.capacity || '';
+      document.getElementById('fee').value = event.fee || '';
       document.getElementById('eventModal').classList.add('active');
     }
     
@@ -475,104 +544,27 @@ $total_registrations = $pdo->query("SELECT COUNT(*) FROM registrations")->fetchC
       window.location.search = urlParams.toString();
     }
     
-    // Enhanced delete confirmation with registration count warning
     function confirmDelete(eventTitle, registrationCount) {
-      let message = `Are you sure you want to delete the event "${eventTitle}"?`;
+      let message = 'Are you sure you want to delete the event "' + eventTitle + '"?';
       if (registrationCount > 0) {
-        message += `\n\nWarning: This event has ${registrationCount} registration(s) that will also be deleted!`;
+        message += '\n\nWarning: This event has ' + registrationCount + ' registration(s) that will also be deleted!';
       }
       message += '\n\nThis action cannot be undone.';
       
       return confirm(message);
     }
     
-    // Close modal when clicking outside
-    document.getElementById('eventModal').addEventListener('click', function(e) {
-      if (e.target === this) {
-        closeModal();
+    // Modal close on outside click
+    document.addEventListener('DOMContentLoaded', function() {
+      const modal = document.getElementById('eventModal');
+      if (modal) {
+        modal.addEventListener('click', function(e) {
+          if (e.target === this) {
+            closeModal();
+          }
+        });
       }
     });
-    
-    // Registration search functionality
-    document.getElementById('regSearch').addEventListener('input', function() {
-      const searchTerm = this.value.toLowerCase();
-      const rows = document.querySelectorAll('#registrationsTable tbody tr');
-      
-      rows.forEach(row => {
-        const text = row.textContent.toLowerCase();
-        row.style.display = text.includes(searchTerm) ? '' : 'none';
-      });
-    });
-
-    // AJAX for updating registration status
-    document.querySelectorAll('.status-form').forEach(form => {
-      form.addEventListener('submit', function(e) {
-        e.preventDefault();
-        
-        const formData = new FormData(this);
-        const row = this.closest('tr');
-        const submitButton = this.querySelector('button[type="submit"]');
-        
-        // Disable the button and show loading state
-        submitButton.disabled = true;
-        submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-        
-        fetch(window.location.href, {
-          method: 'POST',
-          body: formData
-        })
-        .then(response => response.text())
-        .then(html => {
-          // Parse the response to check for success/error messages
-          const parser = new DOMParser();
-          const doc = parser.parseFromString(html, 'text/html');
-          const alert = doc.querySelector('.alert');
-          
-          if (alert) {
-            // Remove any existing alerts
-            document.querySelectorAll('.alert').forEach(a => a.remove());
-            
-            // Show the alert message
-            const alertsContainer = document.createElement('div');
-            alertsContainer.innerHTML = alert.outerHTML;
-            document.querySelector('.page-header').after(alertsContainer.firstChild);
-            
-            // Highlight the updated row briefly
-            row.style.backgroundColor = '#e8f5e9';
-            setTimeout(() => {
-              row.style.transition = 'background-color 0.5s';
-              row.style.backgroundColor = '';
-            }, 1000);
-            
-            // Remove alert after 5 seconds
-            setTimeout(() => {
-              document.querySelector('.alert')?.remove();
-            }, 5000);
-          }
-        })
-        .catch(error => {
-          console.error('Error:', error);
-          showAlert('An error occurred while updating the status', 'error');
-        })
-        .finally(() => {
-          // Re-enable the button
-          submitButton.disabled = false;
-          submitButton.innerHTML = '<i class="fas fa-sync-alt"></i> Update';
-        });
-      });
-    });
-
-    // Helper function to show alerts
-    function showAlert(message, type) {
-      // Remove any existing alerts
-      document.querySelectorAll('.alert').forEach(a => a.remove());
-      
-      const alert = document.createElement('div');
-      alert.className = `alert ${type}`;
-      alert.innerHTML = `<i class="fas fa-${type === 'success' ? 'check' : 'exclamation'}-circle"></i> ${message}`;
-      document.querySelector('.page-header').after(alert);
-      setTimeout(() => alert.remove(), 5000);
-    }
   </script>
 </body>
 </html>

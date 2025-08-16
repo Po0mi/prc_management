@@ -45,12 +45,13 @@ function validateSessionData($data) {
         }
     }
     
-    if (!preg_match('/^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/', $data['start_time'] ?? '')) {
-        $errors[] = "Invalid start time format. Please use HH:MM format (24-hour with leading zeros).";
+    // Simple validation - just check if times exist
+    if (empty($data['start_time'])) {
+        $errors[] = "Start time is required";
     }
     
-    if (!preg_match('/^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/', $data['end_time'] ?? '')) {
-        $errors[] = "Invalid end time format. Please use HH:MM format (24-hour with leading zeros).";
+    if (empty($data['end_time'])) {
+        $errors[] = "End time is required";
     }
     
     try {
@@ -62,19 +63,26 @@ function validateSessionData($data) {
             $errors[] = "Invalid date format. Please use YYYY-MM-DD.";
         }
         
-        if (empty($errors)) {
-            $start = DateTime::createFromFormat('Y-m-d H:i', $date . ' ' . $startTime);
-            $end = DateTime::createFromFormat('Y-m-d H:i', $date . ' ' . $endTime);
+        // Simple time comparison using strtotime
+        if (!empty($startTime) && !empty($endTime) && empty($errors)) {
+            $startTimestamp = strtotime($date . ' ' . $startTime);
+            $endTimestamp = strtotime($date . ' ' . $endTime);
             
-            if (!$start || !$end) {
-                $errors[] = "Invalid date/time combination. Please check your inputs.";
-            } elseif ($end <= $start) {
+            if ($startTimestamp === false) {
+                $errors[] = "Invalid start time format.";
+            } elseif ($endTimestamp === false) {
+                $errors[] = "Invalid end time format.";
+            } elseif ($endTimestamp <= $startTimestamp) {
                 $errors[] = "End time must be after start time.";
             }
         }
     } catch (Exception $e) {
         $errors[] = "Invalid date/time values: " . $e->getMessage();
     }
+    
+    // Ensure proper data types
+    $capacity = isset($data['capacity']) && $data['capacity'] !== '' ? (int)$data['capacity'] : 0;
+    $fee = isset($data['fee']) && $data['fee'] !== '' ? (float)$data['fee'] : 0.00;
     
     return [
         'valid' => empty($errors),
@@ -86,18 +94,19 @@ function validateSessionData($data) {
             'start_time' => trim($data['start_time'] ?? ''),
             'end_time' => trim($data['end_time'] ?? ''),
             'venue' => trim($data['venue'] ?? ''),
-            'capacity' => isset($data['capacity']) ? (int)$data['capacity'] : 0,
-            'fee' => isset($data['fee']) ? (float)$data['fee'] : 0.00
+            'capacity' => $capacity,
+            'fee' => $fee
         ]
     ];
 }
 
 function handleDatabaseError($e) {
     error_log("Database error: " . $e->getMessage());
-    return "A database error occurred. Please try again later.";
+    // Temporary: Show actual error for debugging
+    return "Database error: " . $e->getMessage();
 }
 
-// Handle form submissions
+// Handle CREATE session
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_session'])) {
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
         $errorMessage = "Security error: Invalid form submission. Please try again.";
@@ -107,14 +116,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_session'])) {
         
         if ($validation['valid']) {
             try {
+                // Debug: Show what we're inserting
+                error_log("Inserting data: " . json_encode($validation['data']));
+                
                 $stmt = $pdo->prepare("
                     INSERT INTO training_sessions 
                     (title, major_service, session_date, start_time, end_time, venue, capacity, fee)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ");
-                $stmt->execute(array_values($validation['data']));
-                $successMessage = "Training session created successfully!";
-                $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+                
+                $params = [
+                    $validation['data']['title'],
+                    $validation['data']['major_service'],
+                    $validation['data']['session_date'],
+                    $validation['data']['start_time'],
+                    $validation['data']['end_time'],
+                    $validation['data']['venue'],
+                    $validation['data']['capacity'],
+                    $validation['data']['fee']
+                ];
+                
+                error_log("Parameters: " . json_encode($params));
+                
+                $result = $stmt->execute($params);
+                
+                if ($result) {
+                    $successMessage = "Training session created successfully!";
+                    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+                } else {
+                    $errorInfo = $stmt->errorInfo();
+                    $errorMessage = "SQL Error: " . $errorInfo[2];
+                }
+                
             } catch (PDOException $e) {
                 $errorMessage = handleDatabaseError($e);
             }
@@ -124,6 +157,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_session'])) {
     }
 }
 
+// Handle UPDATE session - FIXED: Remove updated_at reference
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_session'])) {
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
         $errorMessage = "Security error: Invalid form submission. Please try again.";
@@ -134,15 +168,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_session'])) {
         
         if ($validation['valid'] && $session_id > 0) {
             try {
+                // FIXED: Removed updated_at = NOW() since the column doesn't exist
                 $stmt = $pdo->prepare("
                     UPDATE training_sessions
                     SET title = ?, major_service = ?, session_date = ?, 
                         start_time = ?, end_time = ?, venue = ?, 
-                        capacity = ?, fee = ?, updated_at = NOW()
+                        capacity = ?, fee = ?
                     WHERE session_id = ?
                 ");
-                $params = array_values($validation['data']);
-                $params[] = $session_id;
+                
+                $params = [
+                    $validation['data']['title'],
+                    $validation['data']['major_service'],
+                    $validation['data']['session_date'],
+                    $validation['data']['start_time'],
+                    $validation['data']['end_time'],
+                    $validation['data']['venue'],
+                    $validation['data']['capacity'],
+                    $validation['data']['fee'],
+                    $session_id
+                ];
+                
                 $stmt->execute($params);
                 $successMessage = "Session updated successfully!";
                 $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -426,6 +472,7 @@ try {
               <th>Service</th>
               <th>Date & Time</th>
               <th>Venue</th>
+              <th>Fee</th>
               <th>Registrations</th>
               <th>Status</th>
               <th>Actions</th>
@@ -441,7 +488,7 @@ try {
               <tr>
                 <td>
                   <div class="session-title"><?= htmlspecialchars($session['title']) ?></div>
-                  <div style="font-size: 0.85rem; color: var(--gray);">ID: #<?= $session['session_id'] ?></div>
+                  <div style="font-size: 0.75rem; color: var(--gray); margin-top: 0.2rem;">ID: #<?= $session['session_id'] ?></div>
                 </td>
                 <td>
                   <span class="session-service"><?= htmlspecialchars($session['major_service']) ?></span>
@@ -453,6 +500,15 @@ try {
                   </div>
                 </td>
                 <td><?= htmlspecialchars($session['venue']) ?></td>
+                <td>
+                  <div class="fee-display">
+                    <?php if ($session['fee'] > 0): ?>
+                      <span class="fee-amount">₱<?= number_format($session['fee'], 2) ?></span>
+                    <?php else: ?>
+                      <span class="fee-free">FREE</span>
+                    <?php endif; ?>
+                  </div>
+                </td>
                 <td>
                   <a href="view_registrations.php?session_id=<?= $session['session_id'] ?>" 
                      class="registrations-badge <?= $isFull ? 'full' : '' ?>">
