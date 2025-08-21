@@ -7,21 +7,112 @@ $pdo = $GLOBALS['pdo'];
 $errorMessage = '';
 $successMessage = '';
 
-// Update your PHP code (replace the add_category section)
-// Add/Edit Category
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_category'])) {
+// Get user info
+$user_id = $_SESSION['user_id'];
+$user_role = get_user_role();
+$user_email = $_SESSION['email'] ?? '';
+
+// Get active tab from query parameter
+$activeTab = isset($_GET['tab']) ? $_GET['tab'] : 'inventory';
+
+// Get or create admin branch
+function getOrCreateAdminBranch($pdo, $user_id) {
+    // Check if admin_branches table exists, if not create it
+    $stmt = $pdo->query("SHOW TABLES LIKE 'admin_branches'");
+    if ($stmt->rowCount() == 0) {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `admin_branches` (
+              `branch_id` int(11) NOT NULL AUTO_INCREMENT,
+              `user_id` int(11) NOT NULL,
+              `branch_name` varchar(100) NOT NULL,
+              `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (`branch_id`),
+              UNIQUE KEY `user_id` (`user_id`),
+              FOREIGN KEY (`user_id`) REFERENCES `users`(`user_id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        ");
+    }
+    
+    $stmt = $pdo->prepare("SELECT branch_name FROM admin_branches WHERE user_id = ?");
+    $stmt->execute([$user_id]);
+    $result = $stmt->fetch();
+    
+    if (!$result) {
+        // Create branch name based on admin role or email
+        $stmt = $pdo->prepare("SELECT email, admin_role FROM users WHERE user_id = ?");
+        $stmt->execute([$user_id]);
+        $user = $stmt->fetch();
+        
+        $branch_name = $user['admin_role'] ? ucfirst($user['admin_role']) . ' Branch' : explode('@', $user['email'])[0] . '_branch';
+        
+        $stmt = $pdo->prepare("INSERT INTO admin_branches (user_id, branch_name, created_at) VALUES (?, ?, NOW())");
+        $stmt->execute([$user_id, $branch_name]);
+        
+        return $branch_name;
+    }
+    
+    return $result['branch_name'];
+}
+
+$admin_branch = getOrCreateAdminBranch($pdo, $user_id);
+
+// Create vehicles table if it doesn't exist
+$pdo->exec("
+    CREATE TABLE IF NOT EXISTS `vehicles` (
+      `vehicle_id` int(11) NOT NULL AUTO_INCREMENT,
+      `vehicle_type` enum('ambulance','van','truck','car','motorcycle') NOT NULL,
+      `plate_number` varchar(20) NOT NULL,
+      `model` varchar(100) NOT NULL,
+      `year` int(4) NOT NULL,
+      `status` enum('operational','maintenance','out_of_service') NOT NULL DEFAULT 'operational',
+      `fuel_type` enum('gasoline','diesel','hybrid','electric') NOT NULL,
+      `current_mileage` int(11) DEFAULT 0,
+      `admin_id` int(11) NOT NULL,
+      `branch_name` varchar(100) DEFAULT NULL,
+      `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (`vehicle_id`),
+      UNIQUE KEY `plate_number_admin` (`plate_number`, `admin_id`),
+      KEY `admin_id` (`admin_id`),
+      KEY `status` (`status`),
+      FOREIGN KEY (`admin_id`) REFERENCES `users`(`user_id`) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+");
+
+// Create vehicle_maintenance table if it doesn't exist
+$pdo->exec("
+    CREATE TABLE IF NOT EXISTS `vehicle_maintenance` (
+      `maintenance_id` int(11) NOT NULL AUTO_INCREMENT,
+      `vehicle_id` int(11) NOT NULL,
+      `maintenance_type` enum('routine','oil_change','tire_rotation','brake_service','engine_repair','transmission','electrical','bodywork','inspection','other') NOT NULL,
+      `description` text DEFAULT NULL,
+      `cost` decimal(10,2) DEFAULT 0.00,
+      `maintenance_date` date NOT NULL,
+      `next_maintenance_date` date DEFAULT NULL,
+      `service_provider` varchar(100) DEFAULT NULL,
+      `mileage_at_service` int(11) DEFAULT NULL,
+      `admin_id` int(11) NOT NULL,
+      `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (`maintenance_id`),
+      KEY `vehicle_id` (`vehicle_id`),
+      KEY `admin_id` (`admin_id`),
+      FOREIGN KEY (`vehicle_id`) REFERENCES `vehicles`(`vehicle_id`) ON DELETE CASCADE,
+      FOREIGN KEY (`admin_id`) REFERENCES `users`(`user_id`) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+");
+
+// Handle Category Management
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_category'])) {
     $category_name = trim($_POST['category_name']);
     $category_id = isset($_POST['category_id']) ? (int)$_POST['category_id'] : 0;
     
     if ($category_name) {
         try {
             if ($category_id) {
-                // Update existing category
                 $stmt = $pdo->prepare("UPDATE categories SET category_name = ? WHERE category_id = ?");
                 $stmt->execute([$category_name, $category_id]);
                 $successMessage = "Category updated successfully!";
             } else {
-                // Add new category
                 $stmt = $pdo->prepare("INSERT INTO categories (category_name) VALUES (?)");
                 $stmt->execute([$category_name]);
                 $successMessage = "Category added successfully!";
@@ -29,169 +120,243 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_category'])) {
         } catch (PDOException $e) {
             $errorMessage = "Error saving category: " . $e->getMessage();
         }
-    } else {
-        $errorMessage = "Please enter a category name.";
     }
 }
+
+// Handle Delete Category
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_category'])) {
     $category_id = (int)$_POST['category_id'];
     
-    if ($category_id) {
-        try {
-            // Check if category has items
-            $stmt = $pdo->prepare("SELECT COUNT(*) FROM inventory_items WHERE category_id = ?");
+    try {
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM inventory_items WHERE category_id = ?");
+        $stmt->execute([$category_id]);
+        $itemCount = $stmt->fetchColumn();
+        
+        if ($itemCount > 0) {
+            $errorMessage = "Cannot delete category with existing items.";
+        } else {
+            $stmt = $pdo->prepare("DELETE FROM categories WHERE category_id = ?");
             $stmt->execute([$category_id]);
-            $itemCount = $stmt->fetchColumn();
-            
-            if ($itemCount > 0) {
-                $errorMessage = "Cannot delete category with existing items.";
+            $successMessage = "Category deleted successfully!";
+        }
+    } catch (PDOException $e) {
+        $errorMessage = "Error deleting category: " . $e->getMessage();
+    }
+}
+
+// Handle Add/Edit Inventory Item
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_item'])) {
+    $item_name = trim($_POST['item_name']);
+    $category_id = (int)$_POST['category_id'];
+    $quantity = (int)$_POST['quantity'];
+    $bank_id = !empty($_POST['bank_id']) ? (int)$_POST['bank_id'] : null;
+    $location = trim($_POST['location']);
+    $expiry_date = $_POST['expiry_date'];
+    $item_id = isset($_POST['item_id']) ? (int)$_POST['item_id'] : 0;
+    
+    if ($item_name && $category_id) {
+        try {
+            if ($item_id) {
+                $stmt = $pdo->prepare("
+                    UPDATE inventory_items 
+                    SET item_name = ?, category_id = ?, quantity = ?, bank_id = ?, 
+                        location = ?, expiry_date = ?
+                    WHERE item_id = ?
+                ");
+                $stmt->execute([$item_name, $category_id, $quantity, $bank_id, 
+                               $location, $expiry_date, $item_id]);
+                $successMessage = "Item updated successfully!";
             } else {
-                $stmt = $pdo->prepare("DELETE FROM categories WHERE category_id = ?");
-                $stmt->execute([$category_id]);
-                $successMessage = "Category deleted successfully!";
+                $stmt = $pdo->prepare("
+                    INSERT INTO inventory_items 
+                    (item_name, category_id, quantity, bank_id, location, expiry_date, created_at) 
+                    VALUES (?, ?, ?, ?, ?, ?, NOW())
+                ");
+                $stmt->execute([$item_name, $category_id, $quantity, $bank_id, 
+                               $location, $expiry_date]);
+                $successMessage = "Item added successfully!";
             }
         } catch (PDOException $e) {
-            $errorMessage = "Error deleting category: " . $e->getMessage();
+            $errorMessage = "Error saving item: " . $e->getMessage();
         }
     }
 }
-// Update Blood Inventory - Now connected to blood banks
+
+// Handle Delete Item
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_item'])) {
+    $item_id = (int)$_POST['item_id'];
+    
+    try {
+        $stmt = $pdo->prepare("DELETE FROM inventory_items WHERE item_id = ?");
+        $stmt->execute([$item_id]);
+        $successMessage = "Item deleted successfully!";
+    } catch (PDOException $e) {
+        $errorMessage = "Error deleting item: " . $e->getMessage();
+    }
+}
+
+// Handle Blood Inventory Update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_blood'])) {
     $blood_type = $_POST['blood_type'];
     $action_type = $_POST['action_type'];
     $units = (int)$_POST['units_count'];
-    $notes = trim($_POST['blood_note'] ?? '');
+    $bank_id = (int)$_POST['bank_id'];
     $location = trim($_POST['location'] ?? 'Main Storage');
-    $bank_id = (int)$_POST['bank_id']; // Now required
+    $notes = trim($_POST['blood_note'] ?? '');
     
     if ($blood_type && $action_type && $units > 0 && $bank_id) {
         try {
-            // Check if blood type exists in inventory for this bank
             $stmt = $pdo->prepare("SELECT units_available, inventory_id FROM blood_inventory WHERE blood_type = ? AND bank_id = ?");
             $stmt->execute([$blood_type, $bank_id]);
             $result = $stmt->fetch();
             
             if ($result) {
-                // Blood type exists, update the units
                 $current_units = $result['units_available'];
                 $inventory_id = $result['inventory_id'];
-                $new_units = ($action_type === 'add') 
-                    ? $current_units + $units 
-                    : $current_units - $units;
+                $new_units = ($action_type === 'add') ? $current_units + $units : $current_units - $units;
                 
-                // Check if we have enough units to remove
                 if ($action_type === 'remove' && $new_units < 0) {
-                    $errorMessage = "Not enough units available for removal.";
+                    $errorMessage = "Not enough units available.";
                 } else {
                     $stmt = $pdo->prepare("UPDATE blood_inventory SET units_available = ?, location = ? WHERE inventory_id = ?");
                     $stmt->execute([$new_units, $location, $inventory_id]);
-                    
-                    // Log the transaction
-                    $stmt = $pdo->prepare("
-                        INSERT INTO blood_inventory_log (inventory_id, bank_id, blood_type, action_type, units, notes)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    ");
-                    $stmt->execute([$inventory_id, $bank_id, $blood_type, $action_type, $units, $notes]);
-                    
                     $successMessage = "Blood inventory updated successfully!";
                 }
             } else {
-                // Blood type doesn't exist, create new record (only if adding units)
                 if ($action_type === 'add') {
                     $stmt = $pdo->prepare("INSERT INTO blood_inventory (bank_id, blood_type, units_available, location) VALUES (?, ?, ?, ?)");
                     $stmt->execute([$bank_id, $blood_type, $units, $location]);
-                    
-                    $inventory_id = $pdo->lastInsertId();
-                    
-                    // Log the transaction
-                    $stmt = $pdo->prepare("
-                        INSERT INTO blood_inventory_log (inventory_id, bank_id, blood_type, action_type, units, notes)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    ");
-                    $stmt->execute([$inventory_id, $bank_id, $blood_type, $action_type, $units, $notes]);
-                    
                     $successMessage = "Blood inventory added successfully!";
                 } else {
-                    $errorMessage = "Cannot remove units from a blood type that doesn't exist.";
+                    $errorMessage = "Cannot remove units from non-existent blood type.";
                 }
             }
         } catch (PDOException $e) {
             $errorMessage = "Error updating blood inventory: " . $e->getMessage();
         }
-    } else {
-        $errorMessage = "Please fill all required fields correctly including blood bank selection.";
     }
 }
 
-// Get all categories
+// Handle Vehicle Operations
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_vehicle'])) {
+    $vehicle_type = trim($_POST['vehicle_type']);
+    $plate_number = trim($_POST['plate_number']);
+    $model = trim($_POST['model']);
+    $year = (int)$_POST['year'];
+    $status = $_POST['status'];
+    $fuel_type = $_POST['fuel_type'];
+    $current_mileage = (int)$_POST['current_mileage'];
+    $vehicle_id = isset($_POST['vehicle_id']) ? (int)$_POST['vehicle_id'] : 0;
+    
+    if ($vehicle_type && $plate_number) {
+        try {
+            if ($vehicle_id) {
+                $stmt = $pdo->prepare("
+                    UPDATE vehicles 
+                    SET vehicle_type = ?, plate_number = ?, model = ?, year = ?, 
+                        status = ?, fuel_type = ?, current_mileage = ?
+                    WHERE vehicle_id = ? AND admin_id = ?
+                ");
+                $stmt->execute([$vehicle_type, $plate_number, $model, $year, 
+                               $status, $fuel_type, $current_mileage, $vehicle_id, $user_id]);
+                $successMessage = "Vehicle updated successfully!";
+            } else {
+                $stmt = $pdo->prepare("
+                    INSERT INTO vehicles 
+                    (vehicle_type, plate_number, model, year, status, fuel_type, 
+                     current_mileage, admin_id, branch_name, created_at) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                ");
+                $stmt->execute([$vehicle_type, $plate_number, $model, $year, 
+                               $status, $fuel_type, $current_mileage, $user_id, $admin_branch]);
+                $successMessage = "Vehicle added successfully!";
+            }
+        } catch (PDOException $e) {
+            $errorMessage = "Error saving vehicle: " . $e->getMessage();
+        }
+    }
+}
+
+// Handle Delete Vehicle
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_vehicle'])) {
+    $vehicle_id = (int)$_POST['vehicle_id'];
+    
+    try {
+        $stmt = $pdo->prepare("DELETE FROM vehicles WHERE vehicle_id = ? AND admin_id = ?");
+        $stmt->execute([$vehicle_id, $user_id]);
+        $successMessage = "Vehicle deleted successfully!";
+    } catch (PDOException $e) {
+        $errorMessage = "Error deleting vehicle: " . $e->getMessage();
+    }
+}
+
+// Handle Add Maintenance
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_maintenance'])) {
+    $vehicle_id = (int)$_POST['vehicle_id'];
+    $maintenance_type = trim($_POST['maintenance_type']);
+    $description = trim($_POST['description']);
+    $cost = (float)$_POST['cost'];
+    $maintenance_date = $_POST['maintenance_date'];
+    $next_maintenance = $_POST['next_maintenance'] ?: null;
+    $service_provider = trim($_POST['service_provider']);
+    $mileage_at_service = (int)$_POST['mileage_at_service'];
+    
+    if ($vehicle_id && $maintenance_type && $maintenance_date) {
+        try {
+            $stmt = $pdo->prepare("
+                INSERT INTO vehicle_maintenance 
+                (vehicle_id, maintenance_type, description, cost, maintenance_date, 
+                 next_maintenance_date, service_provider, mileage_at_service, admin_id, created_at) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+            ");
+            $stmt->execute([$vehicle_id, $maintenance_type, $description, $cost, 
+                           $maintenance_date, $next_maintenance, $service_provider, 
+                           $mileage_at_service, $user_id]);
+            
+            if ($mileage_at_service > 0) {
+                $stmt = $pdo->prepare("
+                    UPDATE vehicles SET current_mileage = ? 
+                    WHERE vehicle_id = ? AND admin_id = ? AND current_mileage < ?
+                ");
+                $stmt->execute([$mileage_at_service, $vehicle_id, $user_id, $mileage_at_service]);
+            }
+            
+            $successMessage = "Maintenance record added successfully!";
+        } catch (PDOException $e) {
+            $errorMessage = "Error adding maintenance: " . $e->getMessage();
+        }
+    }
+}
+
+// Get data based on active tab
+$categories = [];
+$items = [];
+$blood_banks = [];
+$blood_inventory = [];
+$vehicles = [];
+$maintenance_records = [];
+
+// Get categories
 try {
     $categories = $pdo->query("SELECT * FROM categories ORDER BY category_name")->fetchAll();
 } catch (PDOException $e) {
     $categories = [];
-    if (empty($errorMessage)) {
-        $errorMessage = "Categories table not found. Please create the required tables.";
-    }
 }
 
-// Get all blood banks
+// Get blood banks
 try {
     $blood_banks = $pdo->query("SELECT * FROM blood_banks ORDER BY branch_name")->fetchAll();
 } catch (PDOException $e) {
     $blood_banks = [];
 }
 
-// Get selected bank or default to first bank
-$selected_bank_id = isset($_GET['bank']) ? (int)$_GET['bank'] : (!empty($blood_banks) ? $blood_banks[0]['bank_id'] : 0);
-
-// Get blood inventory for selected bank
-try {
-    if ($selected_bank_id) {
-        $stmt = $pdo->prepare("
-            SELECT blood_type, units_available, location 
-            FROM blood_inventory 
-            WHERE bank_id = ?
-            ORDER BY blood_type
-        ");
-        $stmt->execute([$selected_bank_id]);
-        $blood_results = $stmt->fetchAll();
-        
-        // Convert to associative array
-        $blood_inventory = [];
-        foreach ($blood_results as $row) {
-            $blood_inventory[$row['blood_type']] = $row['units_available'];
-        }
-        
-        // Ensure all blood types are present
-        $all_blood_types = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
-        foreach ($all_blood_types as $type) {
-            if (!isset($blood_inventory[$type])) {
-                $blood_inventory[$type] = 0;
-            }
-        }
-    } else {
-        $blood_inventory = array_fill_keys(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'], 0);
-    }
-} catch (PDOException $e) {
-    $blood_inventory = array_fill_keys(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'], 0);
-}
-
-// Determine blood status for each type
-$blood_status = [];
-foreach ($blood_inventory as $type => $units) {
-    if ($units < 10) {
-        $blood_status[$type] = ['status' => 'low', 'text' => 'Low Stock'];
-    } elseif ($units > 50) {
-        $blood_status[$type] = ['status' => 'high', 'text' => 'High Stock'];
-    } else {
-        $blood_status[$type] = ['status' => 'normal', 'text' => 'Normal'];
-    }
-}
-
-// Search functionality
+// Search and filter
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 $category_filter = isset($_GET['category']) ? (int)$_GET['category'] : 0;
-$bank_filter = isset($_GET['bank_filter']) ? (int)$_GET['bank_filter'] : 0;
+$bank_filter = isset($_GET['bank']) ? (int)$_GET['bank'] : 0;
+$selected_bank_id = $bank_filter ?: (!empty($blood_banks) ? $blood_banks[0]['bank_id'] : 0);
 
+// Get inventory items
 try {
     $query = "
         SELECT i.*, c.category_name, b.branch_name 
@@ -223,12 +388,10 @@ try {
     $stmt->execute($params);
     $items = $stmt->fetchAll();
 
-    // Get inventory stats
+    // Get stats
     $total_items = $pdo->query("SELECT COUNT(*) FROM inventory_items")->fetchColumn();
     $expiring_soon = $pdo->query("SELECT COUNT(*) FROM inventory_items WHERE expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)")->fetchColumn();
     $expired_items = $pdo->query("SELECT COUNT(*) FROM inventory_items WHERE expiry_date < CURDATE()")->fetchColumn();
-    
-    // Get total blood units across all banks
     $total_blood_units = $pdo->query("SELECT SUM(units_available) FROM blood_inventory")->fetchColumn() ?: 0;
 } catch (PDOException $e) {
     $items = [];
@@ -236,19 +399,84 @@ try {
     $expiring_soon = 0;
     $expired_items = 0;
     $total_blood_units = 0;
-    if (empty($errorMessage)) {
-        $errorMessage = "Database tables not found. Please create the required tables first.";
-    }
 }
 
-// Get selected bank name for display
-$selected_bank_name = 'Central Inventory';
+// Get blood inventory for selected bank
 if ($selected_bank_id) {
-    foreach ($blood_banks as $bank) {
-        if ($bank['bank_id'] == $selected_bank_id) {
-            $selected_bank_name = $bank['branch_name'];
-            break;
+    try {
+        $stmt = $pdo->prepare("
+            SELECT blood_type, units_available, location 
+            FROM blood_inventory 
+            WHERE bank_id = ?
+            ORDER BY blood_type
+        ");
+        $stmt->execute([$selected_bank_id]);
+        $blood_results = $stmt->fetchAll();
+        
+        $blood_inventory = [];
+        foreach ($blood_results as $row) {
+            $blood_inventory[$row['blood_type']] = $row['units_available'];
         }
+        
+        $all_blood_types = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+        foreach ($all_blood_types as $type) {
+            if (!isset($blood_inventory[$type])) {
+                $blood_inventory[$type] = 0;
+            }
+        }
+    } catch (PDOException $e) {
+        $blood_inventory = array_fill_keys(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'], 0);
+    }
+} else {
+    $blood_inventory = array_fill_keys(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'], 0);
+}
+
+// Get vehicles
+try {
+    $query = "SELECT * FROM vehicles WHERE admin_id = ?";
+    $params = [$user_id];
+    
+    if ($search && $activeTab === 'vehicles') {
+        $query .= " AND (plate_number LIKE ? OR model LIKE ?)";
+        $params[] = "%$search%";
+        $params[] = "%$search%";
+    }
+    
+    $query .= " ORDER BY vehicle_type, plate_number";
+    
+    $stmt = $pdo->prepare($query);
+    $stmt->execute($params);
+    $vehicles = $stmt->fetchAll();
+    
+    // Get vehicle stats
+    $stmt = $pdo->prepare("
+        SELECT 
+            COUNT(*) as total,
+            SUM(CASE WHEN status = 'operational' THEN 1 ELSE 0 END) as operational,
+            SUM(CASE WHEN status = 'maintenance' THEN 1 ELSE 0 END) as maintenance,
+            SUM(CASE WHEN status = 'out_of_service' THEN 1 ELSE 0 END) as out_of_service
+        FROM vehicles WHERE admin_id = ?
+    ");
+    $stmt->execute([$user_id]);
+    $vehicle_stats = $stmt->fetch();
+} catch (PDOException $e) {
+    $vehicles = [];
+    $vehicle_stats = ['total' => 0, 'operational' => 0, 'maintenance' => 0, 'out_of_service' => 0];
+}
+
+// Get selected vehicle's maintenance history
+$selected_vehicle_id = isset($_GET['vehicle']) ? (int)$_GET['vehicle'] : 0;
+if ($selected_vehicle_id) {
+    try {
+        $stmt = $pdo->prepare("
+            SELECT * FROM vehicle_maintenance 
+            WHERE vehicle_id = ? AND admin_id = ?
+            ORDER BY maintenance_date DESC
+        ");
+        $stmt->execute([$selected_vehicle_id, $user_id]);
+        $maintenance_records = $stmt->fetchAll();
+    } catch (PDOException $e) {
+        $maintenance_records = [];
     }
 }
 ?>
@@ -257,7 +485,7 @@ if ($selected_bank_id) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Manage Inventory - PRC Admin</title>
+  <title>Inventory & Fleet Management - <?= htmlspecialchars($admin_branch) ?> - PRC Admin</title>
   <?php $collapsed = isset($_COOKIE['sidebarCollapsed']) && $_COOKIE['sidebarCollapsed'] === 'true'; ?>
   <script>
     (function() {
@@ -278,94 +506,371 @@ if ($selected_bank_id) {
 <body>
   <?php include 'sidebar.php'; ?>
   
-  <div class="admin-content">
-    <div class="inventory-container">
-      <div class="page-header">
-        <h1><i class="fas fa-boxes"></i> Inventory Management</h1>
-        <p>Manage blood inventory and medical supplies across all blood bank locations</p>
+  <div class="main-container">
+    <div class="page-header">
+      <div class="header-content">
+        <h1><i class="fas fa-warehouse"></i> Inventory & Fleet Management</h1>
+        <p>Comprehensive management system for <?= htmlspecialchars($admin_branch) ?></p>
       </div>
+      <div class="branch-indicator">
+        <i class="fas fa-building"></i>
+        <span><?= htmlspecialchars($admin_branch) ?></span>
+      </div>
+    </div>
 
-      <?php if ($errorMessage): ?>
-        <div class="alert error">
-          <i class="fas fa-exclamation-circle"></i>
-          <?= htmlspecialchars($errorMessage) ?>
-        </div>
-      <?php endif; ?>
-      
-      <?php if ($successMessage): ?>
-        <div class="alert success">
-          <i class="fas fa-check-circle"></i>
-          <?= htmlspecialchars($successMessage) ?>
-        </div>
-      <?php endif; ?>
+    <?php if ($errorMessage): ?>
+      <div class="alert error">
+        <i class="fas fa-exclamation-circle"></i>
+        <?= htmlspecialchars($errorMessage) ?>
+      </div>
+    <?php endif; ?>
+    
+    <?php if ($successMessage): ?>
+      <div class="alert success">
+        <i class="fas fa-check-circle"></i>
+        <?= htmlspecialchars($successMessage) ?>
+      </div>
+    <?php endif; ?>
 
-      <!-- Bank Selector -->
-      <div class="bank-selector">
-        <div class="bank-selector-header">
-          <h3><i class="fas fa-hospital"></i> Select Blood Bank Location</h3>
-          <a href="manage_blood_banks.php" class="btn-manage-banks">
-            <i class="fas fa-map-marked-alt"></i> Manage Locations
-          </a>
+    <!-- Tab Navigation -->
+    <div class="tab-navigation">
+      <a href="?tab=inventory" class="tab-link <?= $activeTab === 'inventory' ? 'active' : '' ?>">
+        <i class="fas fa-boxes"></i>
+        <span>Medical Inventory</span>
+      </a>
+      <a href="?tab=blood" class="tab-link <?= $activeTab === 'blood' ? 'active' : '' ?>">
+        <i class="fas fa-tint"></i>
+        <span>Blood Bank</span>
+      </a>
+      <a href="?tab=vehicles" class="tab-link <?= $activeTab === 'vehicles' ? 'active' : '' ?>">
+        <i class="fas fa-truck"></i>
+        <span>Fleet Management</span>
+      </a>
+    </div>
+
+    <!-- Medical Inventory Tab -->
+    <div class="tab-content <?= $activeTab === 'inventory' ? 'active' : '' ?>" id="inventory-tab">
+      <!-- Stats Overview -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+            <i class="fas fa-box"></i>
+          </div>
+          <div class="stat-details">
+            <div class="stat-number"><?= $total_items ?></div>
+            <div class="stat-label">Total Items</div>
+          </div>
         </div>
-        <div class="bank-options">
-          <?php foreach ($blood_banks as $bank): ?>
-            <a href="?bank=<?= $bank['bank_id'] ?>" 
-               class="bank-option <?= $bank['bank_id'] == $selected_bank_id ? 'active' : '' ?>">
-              <div class="bank-info">
-                <div class="bank-name"><?= htmlspecialchars($bank['branch_name']) ?></div>
-                <div class="bank-address"><?= htmlspecialchars($bank['address']) ?></div>
-              </div>
-              <?php
-              // Get blood units count for this bank
-              try {
-                $stmt = $pdo->prepare("SELECT SUM(units_available) FROM blood_inventory WHERE bank_id = ?");
-                $stmt->execute([$bank['bank_id']]);
-                $bank_blood_units = $stmt->fetchColumn() ?: 0;
-              } catch (PDOException $e) {
-                $bank_blood_units = 0;
-              }
-              ?>
-              <div class="bank-stats">
-                <span class="blood-units"><?= $bank_blood_units ?> units</span>
-              </div>
-            </a>
-          <?php endforeach; ?>
+        
+        <div class="stat-card">
+          <div class="stat-icon" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+            <i class="fas fa-exclamation-triangle"></i>
+          </div>
+          <div class="stat-details">
+            <div class="stat-number"><?= $expiring_soon ?></div>
+            <div class="stat-label">Expiring Soon</div>
+          </div>
+        </div>
+        
+        <div class="stat-card">
+          <div class="stat-icon" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
+            <i class="fas fa-skull-crossbones"></i>
+          </div>
+          <div class="stat-details">
+            <div class="stat-number"><?= $expired_items ?></div>
+            <div class="stat-label">Expired</div>
+          </div>
         </div>
       </div>
 
       <!-- Action Bar -->
       <div class="action-bar">
-        <form method="GET" class="search-box">
-          <i class="fas fa-search"></i>
-          <input type="text" name="search" placeholder="Search inventory..." value="<?= htmlspecialchars($search) ?>">
-          <input type="hidden" name="bank" value="<?= $selected_bank_id ?>">
-          <button type="submit"><i class="fas fa-arrow-right"></i></button>
-          <?php if ($search): ?>
-            <a href="manage_inventory.php?bank=<?= $selected_bank_id ?>" class="clear-search">
-              <i class="fas fa-times"></i>
-            </a>
-          <?php endif; ?>
-        </form>
+        <div class="search-filters">
+          <form method="GET" class="search-form">
+            <input type="hidden" name="tab" value="inventory">
+            <div class="search-box">
+              <i class="fas fa-search"></i>
+              <input type="text" name="search" placeholder="Search items..." value="<?= htmlspecialchars($search) ?>">
+            </div>
+            
+            <select name="category" class="filter-select" onchange="this.form.submit()">
+              <option value="">All Categories</option>
+              <?php foreach ($categories as $cat): ?>
+                <option value="<?= $cat['category_id'] ?>" <?= $category_filter == $cat['category_id'] ? 'selected' : '' ?>>
+                  <?= htmlspecialchars($cat['category_name']) ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+            
+            <select name="bank" class="filter-select" onchange="this.form.submit()">
+              <option value="">All Locations</option>
+              <?php foreach ($blood_banks as $bank): ?>
+                <option value="<?= $bank['bank_id'] ?>" <?= $bank_filter == $bank['bank_id'] ? 'selected' : '' ?>>
+                  <?= htmlspecialchars($bank['branch_name']) ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+          </form>
+        </div>
         
         <div class="action-buttons">
-          <button class="btn-create" onclick="openAddItemModal()">
-            <i class="fas fa-plus-circle"></i> Add Medical Item
+          <button class="btn-primary" onclick="openAddItemModal()">
+            <i class="fas fa-plus"></i> Add Item
           </button>
-          <button class="btn-create-blood" onclick="openBloodInventoryModal()">
-            <i class="fas fa-tint"></i> Manage Blood Inventory
+          <button class="btn-secondary" onclick="toggleCategoryManager()">
+            <i class="fas fa-tags"></i> Categories
           </button>
         </div>
       </div>
 
-      <!-- Statistics Overview -->
-      <div class="stats-overview">
+      <!-- Category Manager (Hidden by default) -->
+      <div class="category-manager" id="categoryManager" style="display: none;">
+        <div class="manager-header">
+          <h3><i class="fas fa-tags"></i> Manage Categories</h3>
+          <button class="close-btn" onclick="toggleCategoryManager()">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        
+        <form method="POST" class="category-form">
+          <input type="hidden" name="save_category" value="1">
+          <input type="hidden" name="category_id" id="categoryId">
+          <div class="form-inline">
+            <input type="text" name="category_name" id="categoryName" placeholder="Category name" required>
+            <button type="submit" class="btn-primary">
+              <i class="fas fa-save"></i> Save
+            </button>
+            <button type="button" class="btn-secondary" onclick="resetCategoryForm()">
+              <i class="fas fa-times"></i> Cancel
+            </button>
+          </div>
+        </form>
+        
+        <div class="categories-list">
+          <?php foreach ($categories as $category): ?>
+            <?php
+            $stmt = $pdo->prepare("SELECT COUNT(*) FROM inventory_items WHERE category_id = ?");
+            $stmt->execute([$category['category_id']]);
+            $itemCount = $stmt->fetchColumn();
+            ?>
+            <div class="category-item">
+              <span class="category-name"><?= htmlspecialchars($category['category_name']) ?></span>
+              <span class="item-count">(<?= $itemCount ?> items)</span>
+              <div class="category-actions">
+                <button onclick="editCategory(<?= $category['category_id'] ?>, '<?= htmlspecialchars($category['category_name'], ENT_QUOTES) ?>')" class="btn-sm btn-edit">
+                  <i class="fas fa-edit"></i>
+                </button>
+                <?php if ($itemCount == 0): ?>
+                  <form method="POST" style="display: inline;" onsubmit="return confirm('Delete this category?')">
+                    <input type="hidden" name="delete_category" value="1">
+                    <input type="hidden" name="category_id" value="<?= $category['category_id'] ?>">
+                    <button type="submit" class="btn-sm btn-delete">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </form>
+                <?php endif; ?>
+              </div>
+            </div>
+          <?php endforeach; ?>
+        </div>
+      </div>
+
+      <!-- Inventory Table -->
+      <div class="table-container">
+        <?php if (empty($items)): ?>
+          <div class="empty-state">
+            <i class="fas fa-box-open"></i>
+            <h3>No Inventory Items Found</h3>
+            <p>Add your first inventory item to get started</p>
+          </div>
+        <?php else: ?>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Item Name</th>
+                <th>Category</th>
+                <th>Quantity</th>
+                <th>Location</th>
+                <th>Branch</th>
+                <th>Expiry Date</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($items as $item): 
+                $expiryDate = strtotime($item['expiry_date']);
+                $today = strtotime('today');
+                $soon = strtotime('+30 days');
+                
+                if ($expiryDate < $today) {
+                  $statusClass = 'expired';
+                  $statusText = 'Expired';
+                } elseif ($expiryDate < $soon) {
+                  $statusClass = 'warning';
+                  $statusText = 'Expiring Soon';
+                } else {
+                  $statusClass = 'good';
+                  $statusText = 'Good';
+                }
+              ?>
+                <tr>
+                  <td><?= htmlspecialchars($item['item_name']) ?></td>
+                  <td><?= htmlspecialchars($item['category_name'] ?? 'Uncategorized') ?></td>
+                  <td><?= $item['quantity'] ?></td>
+                  <td><?= htmlspecialchars($item['location']) ?></td>
+                  <td><?= htmlspecialchars($item['branch_name'] ?? 'Central') ?></td>
+                  <td><?= date('M d, Y', $expiryDate) ?></td>
+                  <td>
+                    <span class="status-badge <?= $statusClass ?>">
+                      <?= $statusText ?>
+                    </span>
+                  </td>
+                  <td class="actions">
+                    <button onclick='openEditItemModal(<?= json_encode($item) ?>)' class="btn-sm btn-edit">
+                      <i class="fas fa-edit"></i>
+                    </button>
+                    <form method="POST" style="display: inline;" onsubmit="return confirm('Delete this item?')">
+                      <input type="hidden" name="delete_item" value="1">
+                      <input type="hidden" name="item_id" value="<?= $item['item_id'] ?>">
+                      <button type="submit" class="btn-sm btn-delete">
+                        <i class="fas fa-trash"></i>
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        <?php endif; ?>
+      </div>
+    </div>
+
+    <!-- Blood Bank Tab -->
+    <div class="tab-content <?= $activeTab === 'blood' ? 'active' : '' ?>" id="blood-tab">
+      <!-- Blood Bank Stats -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon" style="background: linear-gradient(135deg, #dc143c 0%, #b91c1c 100%);">
+            <i class="fas fa-tint"></i>
+          </div>
+          <div class="stat-details">
+            <div class="stat-number"><?= $total_blood_units ?></div>
+            <div class="stat-label">Total Blood Units</div>
+          </div>
+        </div>
+        
+        <div class="stat-card">
+          <div class="stat-icon" style="background: linear-gradient(135deg, #00c853 0%, #64dd17 100%);">
+            <i class="fas fa-hospital"></i>
+          </div>
+          <div class="stat-details">
+            <div class="stat-number"><?= count($blood_banks) ?></div>
+            <div class="stat-label">Blood Banks</div>
+          </div>
+        </div>
+        
+        <div class="stat-card">
+          <div class="stat-icon" style="background: linear-gradient(135deg, #ffd93d 0%, #ff9800 100%);">
+            <i class="fas fa-vial"></i>
+          </div>
+          <div class="stat-details">
+            <div class="stat-number">8</div>
+            <div class="stat-label">Blood Types</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Blood Bank Selector -->
+      <div class="bank-selector">
+        <h3><i class="fas fa-hospital"></i> Select Blood Bank</h3>
+        <div class="bank-grid">
+          <?php foreach ($blood_banks as $bank): ?>
+            <a href="?tab=blood&bank=<?= $bank['bank_id'] ?>" 
+               class="bank-card <?= $bank['bank_id'] == $selected_bank_id ? 'active' : '' ?>">
+              <div class="bank-name"><?= htmlspecialchars($bank['branch_name']) ?></div>
+              <div class="bank-address"><?= htmlspecialchars($bank['address']) ?></div>
+              <?php
+              $stmt = $pdo->prepare("SELECT SUM(units_available) FROM blood_inventory WHERE bank_id = ?");
+              $stmt->execute([$bank['bank_id']]);
+              $bank_units = $stmt->fetchColumn() ?: 0;
+              ?>
+              <div class="bank-units"><?= $bank_units ?> units</div>
+            </a>
+          <?php endforeach; ?>
+        </div>
+      </div>
+
+      <?php if ($selected_bank_id): ?>
+        <!-- Blood Inventory Grid -->
+        <div class="blood-inventory-section">
+          <div class="section-header">
+            <h3><i class="fas fa-tint"></i> Blood Inventory</h3>
+            <button class="btn-primary" onclick="openBloodModal()">
+              <i class="fas fa-plus"></i> Update Blood Stock
+            </button>
+          </div>
+          
+          <div class="blood-grid">
+            <?php foreach ($blood_inventory as $type => $units): 
+              $status = 'normal';
+              if ($units < 10) $status = 'low';
+              elseif ($units > 50) $status = 'high';
+            ?>
+              <div class="blood-card <?= $status ?>">
+                <div class="blood-type"><?= $type ?></div>
+                <div class="blood-units"><?= $units ?></div>
+                <div class="blood-label">units</div>
+                <div class="blood-status">
+                  <?= $status === 'low' ? 'Low Stock' : ($status === 'high' ? 'High Stock' : 'Normal') ?>
+                </div>
+                <button onclick="openBloodModal('<?= $type ?>')" class="btn-sm btn-primary">
+                  <i class="fas fa-edit"></i> Update
+                </button>
+              </div>
+            <?php endforeach; ?>
+          </div>
+        </div>
+      <?php else: ?>
+        <div class="empty-state">
+          <i class="fas fa-hospital"></i>
+          <h3>No Blood Bank Selected</h3>
+          <p>Please select a blood bank from above to manage blood inventory</p>
+        </div>
+      <?php endif; ?>
+    </div>
+
+    <!-- Vehicles Tab -->
+    <div class="tab-content <?= $activeTab === 'vehicles' ? 'active' : '' ?>" id="vehicles-tab">
+      <!-- Vehicle Stats -->
+      <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-            <i class="fas fa-box"></i>
+            <i class="fas fa-truck"></i>
           </div>
-          <div>
-            <div class="stat-number"><?= $total_items ?></div>
-            <div class="stat-label">Total Items</div>
+          <div class="stat-details">
+            <div class="stat-number"><?= $vehicle_stats['total'] ?></div>
+            <div class="stat-label">Total Vehicles</div>
+          </div>
+        </div>
+        
+        <div class="stat-card">
+          <div class="stat-icon" style="background: linear-gradient(135deg, #00c853 0%, #64dd17 100%);">
+            <i class="fas fa-check-circle"></i>
+          </div>
+          <div class="stat-details">
+            <div class="stat-number"><?= $vehicle_stats['operational'] ?></div>
+            <div class="stat-label">Operational</div>
+          </div>
+        </div>
+        
+        <div class="stat-card">
+          <div class="stat-icon" style="background: linear-gradient(135deg, #ffd93d 0%, #ff9800 100%);">
+            <i class="fas fa-tools"></i>
+          </div>
+          <div class="stat-details">
+            <div class="stat-number"><?= $vehicle_stats['maintenance'] ?></div>
+            <div class="stat-label">In Maintenance</div>
           </div>
         </div>
         
@@ -373,415 +878,205 @@ if ($selected_bank_id) {
           <div class="stat-icon" style="background: linear-gradient(135deg, #ff6b6b 0%, #ff8e53 100%);">
             <i class="fas fa-exclamation-triangle"></i>
           </div>
-          <div>
-            <div class="stat-number"><?= $expiring_soon ?></div>
-            <div class="stat-label">Expiring Soon</div>
-          </div>
-        </div>
-        
-        <div class="stat-card">
-          <div class="stat-icon" style="background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);">
-            <i class="fas fa-skull-crossbones"></i>
-          </div>
-          <div>
-            <div class="stat-number"><?= $expired_items ?></div>
-            <div class="stat-label">Expired</div>
-          </div>
-        </div>
-        
-        <div class="stat-card">
-          <div class="stat-icon" style="background: linear-gradient(135deg, #dc143c 0%, #b91c1c 100%);">
-            <i class="fas fa-tint"></i>
-          </div>
-          <div>
-            <div class="stat-number"><?= $total_blood_units ?></div>
-            <div class="stat-label">Total Blood Units</div>
+          <div class="stat-details">
+            <div class="stat-number"><?= $vehicle_stats['out_of_service'] ?></div>
+            <div class="stat-label">Out of Service</div>
           </div>
         </div>
       </div>
 
-      <!-- Blood Inventory Section -->
-      <section class="card blood-inventory-section">
-        <div class="card-header">
-          <h2><i class="fas fa-tint"></i> Blood Inventory - <?= htmlspecialchars($selected_bank_name) ?></h2>
-          <p style="margin: 0; color: #666; font-size: 0.9rem;">
-            <?= $selected_bank_id ? 'Manage blood inventory for this specific location' : 'Select a blood bank location to manage inventory' ?>
-          </p>
+      <!-- Vehicle Action Bar -->
+      <div class="action-bar">
+        <div class="search-filters">
+          <form method="GET" class="search-form">
+            <input type="hidden" name="tab" value="vehicles">
+            <div class="search-box">
+              <i class="fas fa-search"></i>
+              <input type="text" name="search" placeholder="Search vehicles..." value="<?= htmlspecialchars($search) ?>">
+            </div>
+          </form>
         </div>
-        <div class="card-body">
-          <?php if ($selected_bank_id): ?>
-            <div class="blood-inventory-grid">
-              <?php foreach ($blood_inventory as $type => $units): ?>
-                <div class="blood-type-card">
-                  <div class="blood-type"><?= $type ?></div>
-                  <div class="blood-quantity"><?= $units ?></div>
-                  <div class="blood-unit">units</div>
-                  <div class="blood-status <?= $blood_status[$type]['status'] ?>">
-                    <?= $blood_status[$type]['text'] ?>
-                  </div>
-                  <button class="blood-manage-btn" onclick="openBloodInventoryModal('<?= $type ?>')">
-                    <i class="fas fa-edit"></i> Manage
-                  </button>
+        
+        <div class="action-buttons">
+          <button class="btn-primary" onclick="openVehicleModal()">
+            <i class="fas fa-plus"></i> Add Vehicle
+          </button>
+          <button class="btn-secondary" onclick="openMaintenanceModal()">
+            <i class="fas fa-wrench"></i> Add Maintenance
+          </button>
+        </div>
+      </div>
+
+      <!-- Vehicles Grid -->
+      <div class="vehicles-grid">
+        <?php if (empty($vehicles)): ?>
+          <div class="empty-state">
+            <i class="fas fa-truck"></i>
+            <h3>No Vehicles Found</h3>
+            <p>Add your first vehicle to get started</p>
+          </div>
+        <?php else: ?>
+          <?php foreach ($vehicles as $vehicle): ?>
+            <div class="vehicle-card <?= $vehicle['status'] ?>">
+              <div class="vehicle-header">
+                <div class="vehicle-type">
+                  <i class="fas fa-<?= $vehicle['vehicle_type'] === 'ambulance' ? 'ambulance' : 'truck' ?>"></i>
+                  <?= ucfirst($vehicle['vehicle_type']) ?>
                 </div>
-              <?php endforeach; ?>
-            </div>
-            
-            <!-- Blood Inventory Activity Log -->
-            <div class="activity-log" style="margin-top: 2rem;">
-              <h3><i class="fas fa-history"></i> Recent Blood Activity - <?= htmlspecialchars($selected_bank_name) ?></h3>
-              <div class="log-container">
-                <?php
-                try {
-                  $stmt = $pdo->prepare("
-                    SELECT bil.*, bi.location, bb.branch_name
-                    FROM blood_inventory_log bil
-                    LEFT JOIN blood_inventory bi ON bil.inventory_id = bi.inventory_id
-                    LEFT JOIN blood_banks bb ON bil.bank_id = bb.bank_id
-                    WHERE bil.bank_id = ?
-                    ORDER BY bil.log_date DESC 
-                    LIMIT 5
-                  ");
-                  $stmt->execute([$selected_bank_id]);
-                  $recent_logs = $stmt->fetchAll();
-                  
-                  if ($recent_logs): ?>
-                    <?php foreach ($recent_logs as $log): ?>
-                      <div class="log-entry">
-                        <div class="log-icon <?= $log['action_type'] === 'add' ? 'add' : 'remove' ?>">
-                          <i class="fas fa-<?= $log['action_type'] === 'add' ? 'plus' : 'minus' ?>"></i>
-                        </div>
-                        <div class="log-details">
-                          <div class="log-main">
-                            <strong><?= htmlspecialchars($log['blood_type']) ?></strong> - 
-                            <?= $log['action_type'] === 'add' ? 'Added' : 'Removed' ?> 
-                            <span class="units"><?= $log['units'] ?> units</span>
-                          </div>
-                          <div class="log-meta">
-                            <?= date('M d, Y H:i', strtotime($log['log_date'])) ?>
-                            <?php if ($log['notes']): ?>
-                              - <?= htmlspecialchars($log['notes']) ?>
-                            <?php endif; ?>
-                            <?php if ($log['location']): ?>
-                              - Location: <?= htmlspecialchars($log['location']) ?>
-                            <?php endif; ?>
-                          </div>
-                        </div>
-                      </div>
-                    <?php endforeach; ?>
+                <div class="vehicle-status">
+                  <?php if ($vehicle['status'] === 'operational'): ?>
+                    <i class="fas fa-check-circle" style="color: #28a745;"></i>
+                  <?php elseif ($vehicle['status'] === 'maintenance'): ?>
+                    <i class="fas fa-tools" style="color: #ffc107;"></i>
                   <?php else: ?>
-                    <p class="no-logs">No recent activity found for this location</p>
+                    <i class="fas fa-times-circle" style="color: #dc3545;"></i>
                   <?php endif; ?>
-                <?php } catch (PDOException $e) {
-                  echo '<p class="no-logs">Activity log unavailable</p>';
-                } ?>
+                </div>
               </div>
-            </div>
-          <?php else: ?>
-            <div class="empty-state">
-              <i class="fas fa-hospital"></i>
-              <h3>No Blood Bank Selected</h3>
-              <p>Please select a blood bank location above to manage its blood inventory</p>
-            </div>
-          <?php endif; ?>
-        </div>
-      </section>
-
-      <!-- Inventory Content -->
-      <div class="inventory-content">
-        <!-- Categories Section -->
-<!-- Replace your existing categories section HTML with this: -->
-<section class="card categories-section">
-  <div class="card-header">
-    <h2><i class="fas fa-tags"></i> Categories</h2>
-  </div>
-  <div class="card-body">
-    <div class="dropdown-container">
-      <button class="dropdown-toggle" onclick="toggleCategoryDropdown()" type="button">
-        <i class="fas fa-tags"></i> Manage Categories
-        <i class="fas fa-chevron-down"></i>
-      </button>
-      
-      <div class="dropdown-content" id="categoryDropdown">
-        <!-- Add/Edit Category Form -->
-<!-- Add/Edit Category Form - FIXED VERSION -->
-<form method="POST" class="category-form" id="categoryForm">
-  <input type="hidden" name="add_category" value="1">
-  <input type="hidden" name="category_id" id="editCategoryId">
-  <div class="form-group">
-    <label for="category_name" id="formTitle">Add New Category</label>
-    <div class="input-group">
-      <input 
-        type="text" 
-        id="category_name" 
-        name="category_name" 
-        placeholder="Enter category name" 
-        required
-        maxlength="50"
-      >
-      <button type="submit" class="btn-submit" id="categorySubmit">
-        <i class="fas fa-plus"></i> Add
-      </button>
-      <button 
-        type="button" 
-        class="btn-cancel" 
-        id="cancelEdit" 
-        style="display:none;" 
-        onclick="cancelEdit(); return false;"
-      >
-        <i class="fas fa-times"></i> Cancel
-      </button>
-    </div>
-  </div>
-</form>
-
-        <!-- Categories List -->
-        <div class="categories-list">
-          <?php if (empty($categories)): ?>
-            <div class="empty-message">
-              <i class="fas fa-tags"></i>
-              <p>No categories yet. Add your first category above.</p>
-            </div>
-          <?php else: ?>
-            <ul class="categories-items">
-              <?php foreach ($categories as $category): 
-                try {
-                  $stmt = $pdo->prepare("SELECT COUNT(*) FROM inventory_items WHERE category_id = ?");
-                  $stmt->execute([$category['category_id']]);
-                  $itemCount = $stmt->fetchColumn();
-                } catch (PDOException $e) {
-                  $itemCount = 0;
-                }
-              ?>
-                <li class="category-item">
-                  <div class="category-info" onclick="editCategory(<?= $category['category_id'] ?>, '<?= htmlspecialchars($category['category_name'], ENT_QUOTES) ?>')">
-                    <span class="category-name"><?= htmlspecialchars($category['category_name']) ?></span>
-                    <span class="category-count">(<?= $itemCount ?> items)</span>
+              
+              <div class="vehicle-body">
+                <h4><?= htmlspecialchars($vehicle['plate_number']) ?></h4>
+                <p class="vehicle-model"><?= htmlspecialchars($vehicle['model']) ?> (<?= $vehicle['year'] ?>)</p>
+                
+                <div class="vehicle-info">
+                  <div class="info-item">
+                    <i class="fas fa-gas-pump"></i>
+                    <span><?= ucfirst($vehicle['fuel_type']) ?></span>
                   </div>
-                  <div class="category-actions">
-                    <button type="button" class="btn-edit-category" onclick="editCategory(<?= $category['category_id'] ?>, '<?= htmlspecialchars($category['category_name'], ENT_QUOTES) ?>')" title="Edit Category">
-                      <i class="fas fa-edit"></i>
+                  <div class="info-item">
+                    <i class="fas fa-tachometer-alt"></i>
+                    <span><?= number_format($vehicle['current_mileage']) ?> km</span>
+                  </div>
+                </div>
+                
+                <div class="vehicle-actions">
+                  <button onclick='openEditVehicleModal(<?= json_encode($vehicle) ?>)' class="btn-sm btn-edit">
+                    <i class="fas fa-edit"></i>
+                  </button>
+                  <a href="?tab=vehicles&vehicle=<?= $vehicle['vehicle_id'] ?>" class="btn-sm btn-info">
+                    <i class="fas fa-history"></i>
+                  </a>
+                  <form method="POST" style="display: inline;" onsubmit="return confirm('Delete this vehicle?')">
+                    <input type="hidden" name="delete_vehicle" value="1">
+                    <input type="hidden" name="vehicle_id" value="<?= $vehicle['vehicle_id'] ?>">
+                    <button type="submit" class="btn-sm btn-delete">
+                      <i class="fas fa-trash"></i>
                     </button>
-                    <form method="POST" onsubmit="return confirmDelete('<?= htmlspecialchars($category['category_name']) ?>', <?= $itemCount ?>)" style="display: inline;">
-                      <input type="hidden" name="delete_category" value="1">
-                      <input type="hidden" name="category_id" value="<?= $category['category_id'] ?>">
-                      <button type="submit" class="btn-delete-category" <?= $itemCount > 0 ? 'disabled title="Cannot delete category with items"' : 'title="Delete Category"' ?>>
-                        <i class="fas fa-trash"></i>
-                      </button>
-                    </form>
-                  </div>
-                </li>
-              <?php endforeach; ?>
-            </ul>
-          <?php endif; ?>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-        <!-- Inventory Table Section -->
-        <section class="card inventory-table-section">
-          <div class="card-header">
-            <div class="table-header">
-              <h2><i class="fas fa-boxes"></i> Medical Supplies Inventory</h2>
-              <div class="table-filters">
-                <select onchange="filterByBank(this.value)" class="filter-select">
-                  <option value="0">All Locations</option>
-                  <?php foreach ($blood_banks as $bank): ?>
-                    <option value="<?= $bank['bank_id'] ?>" <?= $bank_filter == $bank['bank_id'] ? 'selected' : '' ?>>
-                      <?= htmlspecialchars($bank['branch_name']) ?>
-                    </option>
-                  <?php endforeach; ?>
-                </select>
-                
-                <select onchange="filterByCategory(this.value)" class="filter-select">
-                  <option value="0">All Categories</option>
-                  <?php foreach ($categories as $category): ?>
-                    <option value="<?= $category['category_id'] ?>" <?= $category_filter == $category['category_id'] ? 'selected' : '' ?>>
-                      <?= htmlspecialchars($category['category_name']) ?>
-                    </option>
-                  <?php endforeach; ?>
-                </select>
+                  </form>
+                </div>
               </div>
             </div>
-            
-            <?php if ($category_filter || $bank_filter): ?>
-              <div style="margin-top: 10px; font-size: 0.9rem;">
-                <?php if ($category_filter): 
-                  $filtered_category = '';
-                  foreach ($categories as $cat) {
-                    if ($cat['category_id'] == $category_filter) {
-                      $filtered_category = $cat['category_name'];
-                      break;
-                    }
-                  }
-                ?>
-                  <span class="filter-tag">
-                    Category: <?= htmlspecialchars($filtered_category) ?>
-                    <a href="?bank=<?= $selected_bank_id ?>">
-                      <i class="fas fa-times"></i>
-                    </a>
-                  </span>
-                <?php endif; ?>
-                
-                <?php if ($bank_filter): 
-                  $filtered_bank = '';
-                  foreach ($blood_banks as $bank) {
-                    if ($bank['bank_id'] == $bank_filter) {
-                      $filtered_bank = $bank['branch_name'];
-                      break;
-                    }
-                  }
-                ?>
-                  <span class="filter-tag">
-                    Location: <?= htmlspecialchars($filtered_bank) ?>
-                    <a href="?bank=<?= $selected_bank_id ?>">
-                      <i class="fas fa-times"></i>
-                    </a>
-                  </span>
-                <?php endif; ?>
-              </div>
-            <?php endif; ?>
-          </div>
-          <div class="card-body">
-            <?php if (empty($items)): ?>
-              <div class="empty-state">
-                <i class="fas fa-box-open"></i>
-                <h3>No Inventory Items Found</h3>
-                <p><?= $search || $category_filter || $bank_filter ? 'Try different search criteria' : 'Add your first inventory item' ?></p>
-              </div>
-            <?php else: ?>
-              <div class="table-responsive">
-                <table class="data-table">
-                  <thead>
-                    <tr>
-                      <th>Item</th>
-                      <th>Category</th>
-                      <th>Storange Location</th>
-                      <th>Location</th>
-                      <th>Quantity</th>
-                      <th>Expiry Date</th>
-                      <th>Status</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <?php foreach ($items as $item): 
-                      $expiryDate = strtotime($item['expiry_date']);
-                      $today = strtotime('today');
-                      $soon = strtotime('+30 days');
-                      
-                      if ($expiryDate < $today) {
-                        $statusClass = 'expired';
-                        $statusText = 'Expired';
-                      } elseif ($expiryDate < $soon) {
-                        $statusClass = 'warning';
-                        $statusText = 'Expiring Soon';
-                      } else {
-                        $statusClass = 'good';
-                        $statusText = 'Good';
-                      }
-                    ?>
-                      <tr>
-                        <td><?= htmlspecialchars($item['item_name']) ?></td>
-                        <td><?= htmlspecialchars($item['category_name'] ?? 'No Category') ?></td>
-                        <td><?= htmlspecialchars($item['location'] ?? 'Central Storage') ?></td>
-                        <td><?= htmlspecialchars($item['branch_name'] ?? 'Central') ?></td>
-                        <td><?= (int)$item['quantity'] ?></td>
-                        <td><?= date('M d, Y', $expiryDate) ?></td>
-                        <td>
-                          <span class="status-badge <?= $statusClass ?>">
-                            <?= $statusText ?>
-                          </span>
-                        </td>
-                        <td class="actions">
-                          <button class="btn-action btn-edit" onclick="openEditItemModal(<?= htmlspecialchars(json_encode($item)) ?>)">
-                            <i class="fas fa-edit"></i>
-                          </button>
-                          <form method="POST" onsubmit="return confirm('Are you sure you want to delete this item?')" style="display: inline;">
-                            <input type="hidden" name="delete_item" value="1">
-                            <input type="hidden" name="item_id" value="<?= $item['item_id'] ?>">
-                            <button type="submit" class="btn-action btn-delete">
-                              <i class="fas fa-trash"></i>
-                            </button>
-                          </form>
-                        </td>
-                      </tr>
-                    <?php endforeach; ?>
-                  </tbody>
-                </table>
-              </div>
-            <?php endif; ?>
-          </div>
-        </section>
+          <?php endforeach; ?>
+        <?php endif; ?>
       </div>
+
+      <!-- Maintenance History -->
+      <?php if ($selected_vehicle_id && !empty($maintenance_records)): ?>
+        <div class="maintenance-section">
+          <h3><i class="fas fa-history"></i> Maintenance History</h3>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Description</th>
+                <th>Provider</th>
+                <th>Mileage</th>
+                <th>Cost</th>
+                <th>Next Due</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($maintenance_records as $record): ?>
+                <tr>
+                  <td><?= date('M d, Y', strtotime($record['maintenance_date'])) ?></td>
+                  <td><?= ucfirst(str_replace('_', ' ', $record['maintenance_type'])) ?></td>
+                  <td><?= htmlspecialchars($record['description']) ?></td>
+                  <td><?= htmlspecialchars($record['service_provider']) ?></td>
+                  <td><?= number_format($record['mileage_at_service']) ?> km</td>
+                  <td>₱<?= number_format($record['cost'], 2) ?></td>
+                  <td>
+                    <?= $record['next_maintenance_date'] ? 
+                        date('M d, Y', strtotime($record['next_maintenance_date'])) : 
+                        '-' ?>
+                  </td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        </div>
+      <?php endif; ?>
     </div>
   </div>
 
+  <!-- Modals -->
+  
   <!-- Add/Edit Item Modal -->
   <div class="modal" id="itemModal">
     <div class="modal-content">
       <div class="modal-header">
-        <h2 class="modal-title" id="modalTitle">Add New Item</h2>
-        <button class="close-modal" onclick="closeModal('itemModal')">
+        <h2 id="itemModalTitle">Add New Item</h2>
+        <button class="close-btn" onclick="closeModal('itemModal')">
           <i class="fas fa-times"></i>
         </button>
       </div>
       
-      <form method="POST" id="itemForm">
-        <input type="hidden" name="add_item" value="1" id="formAction">
+      <form method="POST">
+        <input type="hidden" name="save_item" value="1">
         <input type="hidden" name="item_id" id="itemId">
         
         <div class="form-group">
-          <label for="item_name">Item Name *</label>
-          <input type="text" id="item_name" name="item_name" required>
+          <label>Item Name *</label>
+          <input type="text" name="item_name" id="itemName" required>
         </div>
         
         <div class="form-row">
           <div class="form-group">
-            <label for="category_id">Category *</label>
-            <select id="category_id" name="category_id" required>
-              <option value="">Select a category</option>
-              <?php foreach ($categories as $category): ?>
-                <option value="<?= $category['category_id'] ?>">
-                  <?= htmlspecialchars($category['category_name']) ?>
-                </option>
+            <label>Category *</label>
+            <select name="category_id" id="itemCategory" required>
+              <option value="">Select Category</option>
+              <?php foreach ($categories as $cat): ?>
+                <option value="<?= $cat['category_id'] ?>"><?= htmlspecialchars($cat['category_name']) ?></option>
               <?php endforeach; ?>
             </select>
           </div>
           
           <div class="form-group">
-            <label for="quantity">Quantity *</label>
-            <input type="number" id="quantity" name="quantity" min="0" required>
+            <label>Quantity *</label>
+            <input type="number" name="quantity" id="itemQuantity" min="0" required>
           </div>
         </div>
         
         <div class="form-row">
           <div class="form-group">
-            <label for="bank_id">Location</label>
-            <select id="bank_id" name="bank_id">
+            <label>Blood Bank Location</label>
+            <select name="bank_id" id="itemBank">
               <option value="">Central Storage</option>
               <?php foreach ($blood_banks as $bank): ?>
-                <option value="<?= $bank['bank_id'] ?>" <?= $bank['bank_id'] == $selected_bank_id ? 'selected' : '' ?>>
-                  <?= htmlspecialchars($bank['branch_name']) ?>
-                </option>
+                <option value="<?= $bank['bank_id'] ?>"><?= htmlspecialchars($bank['branch_name']) ?></option>
               <?php endforeach; ?>
             </select>
           </div>
           
           <div class="form-group">
-            <label for="location">Storage Location</label>
-            <input type="text" id="location" name="location" placeholder="e.g., Storage Room A, Refrigerator" value="Central Storage">
+            <label>Storage Location *</label>
+            <input type="text" name="location" id="itemLocation" placeholder="e.g., Room A, Shelf 1" required>
           </div>
         </div>
         
         <div class="form-group">
-          <label for="expiry_date">Expiry Date *</label>
-          <input type="date" id="expiry_date" name="expiry_date" required>
+          <label>Expiry Date *</label>
+          <input type="date" name="expiry_date" id="itemExpiry" required>
         </div>
         
-        <button type="submit" class="btn-submit">
-          <i class="fas fa-save"></i> Save Item
-        </button>
+        <div class="modal-footer">
+          <button type="submit" class="btn-primary">
+            <i class="fas fa-save"></i> Save Item
+          </button>
+          <button type="button" class="btn-secondary" onclick="closeModal('itemModal')">
+            Cancel
+          </button>
+        </div>
       </form>
     </div>
   </div>
@@ -790,415 +1085,624 @@ if ($selected_bank_id) {
   <div class="modal" id="bloodModal">
     <div class="modal-content">
       <div class="modal-header">
-        <h2 class="modal-title" id="bloodModalTitle">Manage Blood Inventory</h2>
-        <button class="close-modal" onclick="closeModal('bloodModal')">
+        <h2>Update Blood Inventory</h2>
+        <button class="close-btn" onclick="closeModal('bloodModal')">
           <i class="fas fa-times"></i>
         </button>
       </div>
       
-      <form method="POST" id="bloodForm">
+      <form method="POST">
         <input type="hidden" name="update_blood" value="1">
         <input type="hidden" name="blood_type" id="bloodType">
-        <input type="hidden" name="bank_id" id="bloodBankId" value="<?= $selected_bank_id ?>">
+        <input type="hidden" name="bank_id" value="<?= $selected_bank_id ?>">
         
-        <div class="form-group">
-          <label>Blood Bank Location</label>
-          <select onchange="changeBloodBank(this.value)" class="form-control">
-            <?php foreach ($blood_banks as $bank): ?>
-              <option value="<?= $bank['bank_id'] ?>" <?= $bank['bank_id'] == $selected_bank_id ? 'selected' : '' ?>>
-                <?= htmlspecialchars($bank['branch_name']) ?>
-              </option>
-            <?php endforeach; ?>
-          </select>
-        </div>
-        
-        <div class="blood-type-select">
+        <div class="blood-type-selector">
           <label>Select Blood Type</label>
-          <div class="blood-type-options">
-            <div class="blood-type-option" data-type="A+" onclick="selectBloodType(this)">A+</div>
-            <div class="blood-type-option" data-type="A-" onclick="selectBloodType(this)">A-</div>
-            <div class="blood-type-option" data-type="B+" onclick="selectBloodType(this)">B+</div>
-            <div class="blood-type-option" data-type="B-" onclick="selectBloodType(this)">B-</div>
-            <div class="blood-type-option" data-type="AB+" onclick="selectBloodType(this)">AB+</div>
-            <div class="blood-type-option" data-type="AB-" onclick="selectBloodType(this)">AB-</div>
-            <div class="blood-type-option" data-type="O+" onclick="selectBloodType(this)">O+</div>
-            <div class="blood-type-option" data-type="O-" onclick="selectBloodType(this)">O-</div>
+          <div class="blood-type-grid">
+            <?php foreach (['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as $type): ?>
+              <div class="blood-type-option" data-type="<?= $type ?>" onclick="selectBloodType('<?= $type ?>')">
+                <?= $type ?>
+              </div>
+            <?php endforeach; ?>
           </div>
         </div>
         
         <div class="form-row">
           <div class="form-group">
-            <label for="current_units">Current Units</label>
-            <input type="number" id="current_units" name="current_units" readonly>
+            <label>Action Type *</label>
+            <select name="action_type" required>
+              <option value="">Select Action</option>
+              <option value="add">Add Units</option>
+              <option value="remove">Remove Units</option>
+            </select>
           </div>
           
           <div class="form-group">
-            <label for="action_type">Action Type</label>
-            <select id="action_type" name="action_type" required>
-              <option value="">Select action</option>
-              <option value="add">Add Units</option>
-              <option value="remove">Remove Units</option>
+            <label>Number of Units *</label>
+            <input type="number" name="units_count" min="1" required>
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label>Storage Location</label>
+          <input type="text" name="location" placeholder="e.g., Main Storage, Refrigerator A" value="Main Storage">
+        </div>
+        
+        <div class="form-group">
+          <label>Notes</label>
+          <input type="text" name="blood_note" placeholder="Optional notes">
+        </div>
+        
+        <div class="modal-footer">
+          <button type="submit" class="btn-primary">
+            <i class="fas fa-save"></i> Update Blood Stock
+          </button>
+          <button type="button" class="btn-secondary" onclick="closeModal('bloodModal')">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Vehicle Modal -->
+  <div class="modal" id="vehicleModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="vehicleModalTitle">Add New Vehicle</h2>
+        <button class="close-btn" onclick="closeModal('vehicleModal')">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      
+      <form method="POST">
+        <input type="hidden" name="save_vehicle" value="1">
+        <input type="hidden" name="vehicle_id" id="vehicleId">
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>Vehicle Type *</label>
+            <select name="vehicle_type" id="vehicleType" required>
+              <option value="ambulance">Ambulance</option>
+              <option value="van">Van</option>
+              <option value="truck">Truck</option>
+              <option value="car">Car</option>
+              <option value="motorcycle">Motorcycle</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label>Plate Number *</label>
+            <input type="text" name="plate_number" id="plateNumber" required>
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>Model *</label>
+            <input type="text" name="model" id="vehicleModel" required>
+          </div>
+          
+          <div class="form-group">
+            <label>Year *</label>
+            <input type="number" name="year" id="vehicleYear" min="1900" max="<?= date('Y') + 1 ?>" required>
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>Status *</label>
+            <select name="status" id="vehicleStatus" required>
+              <option value="operational">Operational</option>
+              <option value="maintenance">In Maintenance</option>
+              <option value="out_of_service">Out of Service</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label>Fuel Type *</label>
+            <select name="fuel_type" id="fuelType" required>
+              <option value="gasoline">Gasoline</option>
+              <option value="diesel">Diesel</option>
+              <option value="hybrid">Hybrid</option>
+              <option value="electric">Electric</option>
             </select>
           </div>
         </div>
         
         <div class="form-group">
-          <label for="units_count">Number of Units *</label>
-          <input type="number" id="units_count" name="units_count" min="1" required>
+          <label>Current Mileage (km)</label>
+          <input type="number" name="current_mileage" id="currentMileage" min="0">
         </div>
         
-        <div class="form-group">
-          <label for="blood_location">Storage Location</label>
-          <input type="text" id="blood_location" name="location" placeholder="e.g., Main Storage, Refrigerator A, etc." value="Main Storage">
+        <div class="modal-footer">
+          <button type="submit" class="btn-primary">
+            <i class="fas fa-save"></i> Save Vehicle
+          </button>
+          <button type="button" class="btn-secondary" onclick="closeModal('vehicleModal')">
+            Cancel
+          </button>
         </div>
-        
-        <div class="form-group">
-          <label for="blood_note">Note (Optional)</label>
-          <input type="text" id="blood_note" name="blood_note" placeholder="Donation source, usage purpose, or other notes">
-        </div>
-        
-        <button type="submit" class="btn-submit">
-          <i class="fas fa-save"></i> Update Blood Inventory
+      </form>
+    </div>
+  </div>
+
+  <!-- Maintenance Modal -->
+  <div class="modal" id="maintenanceModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Add Maintenance Record</h2>
+        <button class="close-btn" onclick="closeModal('maintenanceModal')">
+          <i class="fas fa-times"></i>
         </button>
+      </div>
+      
+      <form method="POST">
+        <input type="hidden" name="add_maintenance" value="1">
+        
+        <div class="form-group">
+          <label>Vehicle *</label>
+          <select name="vehicle_id" required>
+            <option value="">Select Vehicle</option>
+            <?php foreach ($vehicles as $vehicle): ?>
+              <option value="<?= $vehicle['vehicle_id'] ?>">
+                <?= htmlspecialchars($vehicle['vehicle_type']) ?> - 
+                <?= htmlspecialchars($vehicle['plate_number']) ?>
+              </option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>Maintenance Type *</label>
+            <select name="maintenance_type" required>
+              <option value="routine">Routine Service</option>
+              <option value="oil_change">Oil Change</option>
+              <option value="tire_rotation">Tire Rotation</option>
+              <option value="brake_service">Brake Service</option>
+              <option value="engine_repair">Engine Repair</option>
+              <option value="transmission">Transmission Service</option>
+              <option value="electrical">Electrical Repair</option>
+              <option value="bodywork">Bodywork</option>
+              <option value="inspection">Inspection</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label>Maintenance Date *</label>
+            <input type="date" name="maintenance_date" required max="<?= date('Y-m-d') ?>">
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label>Description</label>
+          <textarea name="description" rows="3"></textarea>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>Service Provider</label>
+            <input type="text" name="service_provider">
+          </div>
+          
+          <div class="form-group">
+            <label>Cost (₱)</label>
+            <input type="number" name="cost" min="0" step="0.01">
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>Mileage at Service</label>
+            <input type="number" name="mileage_at_service" min="0">
+          </div>
+          
+          <div class="form-group">
+            <label>Next Maintenance Date</label>
+            <input type="date" name="next_maintenance" min="<?= date('Y-m-d') ?>">
+          </div>
+        </div>
+        
+        <div class="modal-footer">
+          <button type="submit" class="btn-primary">
+            <i class="fas fa-save"></i> Save Record
+          </button>
+          <button type="button" class="btn-secondary" onclick="closeModal('maintenanceModal')">
+            Cancel
+          </button>
+        </div>
       </form>
     </div>
   </div>
 
   <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
-<script>
-// Category management functions
-function toggleCategoryDropdown() {
-  const dropdown = document.getElementById('categoryDropdown');
-  const toggle = document.querySelector('.dropdown-toggle');
-  
-  dropdown.classList.toggle('active');
-  toggle.classList.toggle('active');
-  
-  if (dropdown.classList.contains('active')) {
-    setTimeout(() => {
-      const input = document.getElementById('category_name');
-      if (input && !document.getElementById('editCategoryId').value) {
-        input.focus();
-      }
-    }, 100);
-  }
+  <script>// Unified Inventory & Fleet Management JavaScript
+
+// Toggle Category Manager
+function toggleCategoryManager() {
+    const manager = document.getElementById('categoryManager');
+    if (manager) {
+        manager.style.display = manager.style.display === 'none' ? 'block' : 'none';
+    }
 }
 
+// Category Management
 function editCategory(id, name) {
-  document.getElementById('editCategoryId').value = id;
-  document.getElementById('category_name').value = name;
-  document.getElementById('formTitle').textContent = 'Edit Category';
-  document.getElementById('categorySubmit').innerHTML = '<i class="fas fa-save"></i> Save';
-  document.getElementById('cancelEdit').style.display = 'inline-block';
-  
-  // Open dropdown if closed
-  const dropdown = document.getElementById('categoryDropdown');
-  const toggle = document.querySelector('.dropdown-toggle');
-  if (!dropdown.classList.contains('active')) {
-    dropdown.classList.add('active');
-    toggle.classList.add('active');
-  }
-  
-  // Focus and select input
-  setTimeout(() => {
-    const input = document.getElementById('category_name');
-    input.focus();
-    input.select();
-  }, 100);
-}
-
-function cancelEdit() {
-  // Reset form
-  document.getElementById('categoryForm').reset();
-  document.getElementById('editCategoryId').value = '';
-  document.getElementById('formTitle').textContent = 'Add New Category';
-  document.getElementById('categorySubmit').innerHTML = '<i class="fas fa-plus"></i> Add';
-  document.getElementById('cancelEdit').style.display = 'none';
-  
-  // Clear input styling
-  const nameInput = document.getElementById('category_name');
-  nameInput.style.borderColor = '';
-  nameInput.style.backgroundColor = '';
-  
-  // Remove character counter
-  const existingCounter = nameInput.parentNode.querySelector('.char-counter');
-  if (existingCounter) {
-    existingCounter.remove();
-  }
-  
-  setTimeout(() => nameInput.focus(), 100);
-}
-
-function confirmDelete(categoryName, itemCount) {
-  if (itemCount > 0) {
-    alert(`Cannot delete "${categoryName}" because it contains ${itemCount} item(s). Please remove or reassign the items first.`);
-    return false;
-  }
-  return confirm(`Are you sure you want to delete the category "${categoryName}"? This action cannot be undone.`);
-}
-
-// Close dropdown when clicking outside
-document.addEventListener('click', function(event) {
-  const dropdownContainer = document.querySelector('.dropdown-container');
-  if (dropdownContainer && !dropdownContainer.contains(event.target)) {
-    document.getElementById('categoryDropdown').classList.remove('active');
-    document.querySelector('.dropdown-toggle').classList.remove('active');
-  }
-});
-
-// Form validation and character counter
-document.addEventListener('DOMContentLoaded', function() {
-  const categoryForm = document.getElementById('categoryForm');
-  const categoryNameInput = document.getElementById('category_name');
-  
-  // Form submission validation
-  categoryForm.addEventListener('submit', function(e) {
-    const categoryName = categoryNameInput.value.trim();
+    document.getElementById('categoryId').value = id;
+    document.getElementById('categoryName').value = name;
     
-    if (categoryName.length < 2) {
-      e.preventDefault();
-      alert('Category name must be at least 2 characters long.');
-      categoryNameInput.focus();
-      return false;
+    // Show category manager if hidden
+    const manager = document.getElementById('categoryManager');
+    if (manager && manager.style.display === 'none') {
+        manager.style.display = 'block';
     }
     
-    if (categoryName.length > 50) {
-      e.preventDefault();
-      alert('Category name must be less than 50 characters long.');
-      categoryNameInput.focus();
-      return false;
-    }
-    
-    // Visual feedback during submission
-    const button = document.getElementById('categorySubmit');
-    const originalText = button.innerHTML;
-    const isEdit = document.getElementById('editCategoryId').value;
-    
-    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ' + (isEdit ? 'Saving...' : 'Adding...');
-    button.disabled = true;
-    
-    setTimeout(() => {
-      button.innerHTML = originalText;
-      button.disabled = false;
-    }, 5000);
-  });
-  
-  // Real-time character counter
-  categoryNameInput.addEventListener('input', function() {
-    const maxLength = 50;
-    const currentLength = this.value.length;
-    const remaining = maxLength - currentLength;
-    
-    // Remove existing counter
-    const existingCounter = this.parentNode.querySelector('.char-counter');
-    if (existingCounter) existingCounter.remove();
-    
-    // Add character counter if typing
-    if (currentLength > 0) {
-      const counter = document.createElement('div');
-      counter.className = 'char-counter';
-      counter.style.cssText = `
-        font-size: 0.75rem; 
-        color: ${remaining < 10 ? '#dc3545' : remaining < 20 ? '#fd7e14' : '#6c757d'}; 
-        margin-top: 0.25rem;
-        text-align: right;
-        position: absolute;
-        right: 0;
-        top: 100%;
-      `;
-      counter.textContent = `${remaining} characters remaining`;
-      
-      this.parentNode.style.position = 'relative';
-      this.parentNode.appendChild(counter);
-    }
-    
-    // Visual feedback for input
-    if (currentLength >= maxLength) {
-      this.style.borderColor = '#dc3545';
-      this.style.backgroundColor = '#fff5f5';
-    } else if (currentLength < 2 && currentLength > 0) {
-      this.style.borderColor = '#fd7e14';
-      this.style.backgroundColor = '#fff8f0';
-    } else {
-      this.style.borderColor = '#28a745';
-      this.style.backgroundColor = '#f8fff8';
-    }
-  });
-  
-  // Clear visual feedback on blur
-  categoryNameInput.addEventListener('blur', function() {
-    this.style.borderColor = '';
-    this.style.backgroundColor = '';
-  });
-  
-  // Keyboard navigation
-  categoryNameInput.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') {
-      const editIdField = document.getElementById('editCategoryId');
-      if (editIdField.value) {
-        cancelEdit();
-      } else {
-        toggleCategoryDropdown();
-      }
-    }
-  });
-});
-
-// Blood inventory management
-const bloodInventory = <?= json_encode($blood_inventory) ?>;
-const selectedBankId = <?= $selected_bank_id ?>;
-
-function openBloodInventoryModal(bloodType = null) {
-  if (!selectedBankId) {
-    alert('Please select a blood bank location first.');
-    return;
-  }
-  
-  const modal = document.getElementById('bloodModal');
-  modal.classList.add('active');
-  document.getElementById('bloodBankId').value = selectedBankId;
-  
-  if (bloodType) {
-    selectBloodType(document.querySelector(`.blood-type-option[data-type="${bloodType}"]`));
-  } else {
-    document.querySelectorAll('.blood-type-option').forEach(opt => opt.classList.remove('selected'));
-    document.getElementById('bloodType').value = '';
-    document.getElementById('current_units').value = '';
-    document.getElementById('bloodModalTitle').textContent = 'Manage Blood Inventory';
-  }
+    // Focus on input
+    document.getElementById('categoryName').focus();
 }
 
-function selectBloodType(element) {
-  document.querySelectorAll('.blood-type-option').forEach(opt => opt.classList.remove('selected'));
-  element.classList.add('selected');
-  
-  const bloodType = element.getAttribute('data-type');
-  document.getElementById('bloodType').value = bloodType;
-  document.getElementById('bloodModalTitle').textContent = `Manage ${bloodType} Blood Inventory`;
-  document.getElementById('current_units').value = bloodInventory[bloodType] || 0;
+function resetCategoryForm() {
+    document.getElementById('categoryId').value = '';
+    document.getElementById('categoryName').value = '';
 }
 
+// Item Management
 function openAddItemModal() {
-  document.getElementById('modalTitle').textContent = 'Add New Item';
-  document.getElementById('formAction').name = 'add_item';
-  document.getElementById('itemForm').reset();
-  document.getElementById('itemId').value = '';
-  
-  if (selectedBankId) {
-    document.getElementById('bank_id').value = selectedBankId;
-  }
-  
-  document.getElementById('itemModal').classList.add('active');
-  
-  // Set default expiry date to today + 30 days
-  const futureDate = new Date();
-  futureDate.setDate(futureDate.getDate() + 30);
-  document.getElementById('expiry_date').value = futureDate.toISOString().split('T')[0];
+    document.getElementById('itemModalTitle').textContent = 'Add New Item';
+    document.getElementById('itemId').value = '';
+    document.getElementById('itemName').value = '';
+    document.getElementById('itemCategory').value = '';
+    document.getElementById('itemQuantity').value = '';
+    document.getElementById('itemBank').value = '';
+    document.getElementById('itemLocation').value = '';
+    document.getElementById('itemExpiry').value = '';
+    
+    // Set default expiry date to 6 months from now
+    const futureDate = new Date();
+    futureDate.setMonth(futureDate.getMonth() + 6);
+    document.getElementById('itemExpiry').value = futureDate.toISOString().split('T')[0];
+    
+    openModal('itemModal');
 }
 
 function openEditItemModal(item) {
-  document.getElementById('modalTitle').textContent = 'Edit Item';
-  document.getElementById('formAction').name = 'update_item';
-  document.getElementById('itemId').value = item.item_id;
-  document.getElementById('item_name').value = item.item_name;
-  document.getElementById('category_id').value = item.category_id;
-  document.getElementById('quantity').value = item.quantity;
-  document.getElementById('expiry_date').value = item.expiry_date;
-  document.getElementById('bank_id').value = item.bank_id || '';
-  document.getElementById('location').value = item.location || 'Central Storage';
-  document.getElementById('itemModal').classList.add('active');
+    document.getElementById('itemModalTitle').textContent = 'Edit Item';
+    document.getElementById('itemId').value = item.item_id;
+    document.getElementById('itemName').value = item.item_name;
+    document.getElementById('itemCategory').value = item.category_id || '';
+    document.getElementById('itemQuantity').value = item.quantity;
+    document.getElementById('itemBank').value = item.bank_id || '';
+    document.getElementById('itemLocation').value = item.location || '';
+    document.getElementById('itemExpiry').value = item.expiry_date;
+    
+    openModal('itemModal');
+}
+
+// Blood Inventory Management
+let selectedBloodType = null;
+
+function openBloodModal(bloodType = null) {
+    selectedBloodType = bloodType;
+    
+    // Clear previous selection
+    document.querySelectorAll('.blood-type-option').forEach(option => {
+        option.classList.remove('selected');
+    });
+    
+    if (bloodType) {
+        document.getElementById('bloodType').value = bloodType;
+        // Select the blood type option
+        document.querySelector(`.blood-type-option[data-type="${bloodType}"]`)?.classList.add('selected');
+    } else {
+        document.getElementById('bloodType').value = '';
+    }
+    
+    openModal('bloodModal');
+}
+
+function selectBloodType(type) {
+    selectedBloodType = type;
+    document.getElementById('bloodType').value = type;
+    
+    // Update visual selection
+    document.querySelectorAll('.blood-type-option').forEach(option => {
+        option.classList.remove('selected');
+    });
+    document.querySelector(`.blood-type-option[data-type="${type}"]`)?.classList.add('selected');
+}
+
+// Vehicle Management
+function openVehicleModal() {
+    document.getElementById('vehicleModalTitle').textContent = 'Add New Vehicle';
+    document.getElementById('vehicleId').value = '';
+    document.getElementById('vehicleType').value = 'ambulance';
+    document.getElementById('plateNumber').value = '';
+    document.getElementById('vehicleModel').value = '';
+    document.getElementById('vehicleYear').value = '';
+    document.getElementById('vehicleStatus').value = 'operational';
+    document.getElementById('fuelType').value = 'gasoline';
+    document.getElementById('currentMileage').value = '';
+    
+    openModal('vehicleModal');
+}
+
+function openEditVehicleModal(vehicle) {
+    document.getElementById('vehicleModalTitle').textContent = 'Edit Vehicle';
+    document.getElementById('vehicleId').value = vehicle.vehicle_id;
+    document.getElementById('vehicleType').value = vehicle.vehicle_type;
+    document.getElementById('plateNumber').value = vehicle.plate_number;
+    document.getElementById('vehicleModel').value = vehicle.model;
+    document.getElementById('vehicleYear').value = vehicle.year;
+    document.getElementById('vehicleStatus').value = vehicle.status;
+    document.getElementById('fuelType').value = vehicle.fuel_type;
+    document.getElementById('currentMileage').value = vehicle.current_mileage;
+    
+    openModal('vehicleModal');
+}
+
+function openMaintenanceModal() {
+    openModal('maintenanceModal');
+}
+
+// Modal Management
+function openModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.classList.add('active');
+        modal.style.display = 'flex';
+    }
 }
 
 function closeModal(modalId) {
-  document.getElementById(modalId).classList.remove('active');
-}
-
-function filterByBank(bankId) {
-  const params = new URLSearchParams(window.location.search);
-  if (bankId && bankId !== '0') {
-    params.set('bank_filter', bankId);
-  } else {
-    params.delete('bank_filter');
-  }
-  window.location.href = `${window.location.pathname}?${params.toString()}`;
-}
-
-function changeBloodBank(bankId) {
-  window.location.href = `?bank=${bankId}`;
-}
-
-// Close modals when clicking outside
-document.querySelectorAll('.modal').forEach(modal => {
-  modal.addEventListener('click', function(e) {
-    if (e.target === this) {
-      this.classList.remove('active');
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.classList.remove('active');
+        setTimeout(() => {
+            modal.style.display = 'none';
+        }, 300);
     }
-  });
-});
+}
 
-// Blood form validation
-document.getElementById('bloodForm').addEventListener('submit', function(e) {
-  const bloodType = document.getElementById('bloodType').value;
-  const actionType = document.getElementById('action_type').value;
-  const unitsCount = parseInt(document.getElementById('units_count').value);
-  const currentUnits = parseInt(document.getElementById('current_units').value) || 0;
-  const bankId = document.getElementById('bloodBankId').value;
-  
-  if (!bankId) {
-    e.preventDefault();
-    alert('Please select a blood bank location.');
-    return false;
-  }
-  
-  if (!bloodType) {
-    e.preventDefault();
-    alert('Please select a blood type.');
-    return false;
-  }
-  
-  if (!actionType) {
-    e.preventDefault();
-    alert('Please select an action type.');
-    return false;
-  }
-  
-  if (!unitsCount || unitsCount <= 0) {
-    e.preventDefault();
-    alert('Please enter a valid number of units.');
-    return false;
-  }
-  
-  if (actionType === 'remove' && unitsCount > currentUnits) {
-    e.preventDefault();
-    alert(`Cannot remove ${unitsCount} units. Only ${currentUnits} units available for ${bloodType}.`);
-    return false;
-  }
-});
-
-// Real-time validation for units input
-document.getElementById('units_count').addEventListener('input', function() {
-  const actionType = document.getElementById('action_type').value;
-  const unitsCount = parseInt(this.value);
-  const currentUnits = parseInt(document.getElementById('current_units').value) || 0;
-  
-  if (actionType === 'remove' && unitsCount > currentUnits) {
-    this.style.borderColor = '#dc3545';
-    this.style.backgroundColor = '#fff5f5';
-  } else {
-    this.style.borderColor = '#e0e0e0';
-    this.style.backgroundColor = 'white';
-  }
-});
-
-document.getElementById('action_type').addEventListener('change', function() {
-  document.getElementById('units_count').dispatchEvent(new Event('input'));
-});
-
-// Initialize date picker
+// Close modal when clicking outside
 document.addEventListener('DOMContentLoaded', function() {
-  const today = new Date().toISOString().split('T')[0];
-  document.getElementById('expiry_date').min = today;
+    // Modal click outside to close
+    document.querySelectorAll('.modal').forEach(modal => {
+        modal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                this.classList.remove('active');
+                setTimeout(() => {
+                    this.style.display = 'none';
+                }, 300);
+            }
+        });
+    });
+
+    // Blood type option click handlers
+    document.querySelectorAll('.blood-type-option').forEach(option => {
+        option.addEventListener('click', function() {
+            const type = this.getAttribute('data-type');
+            selectBloodType(type);
+        });
+    });
+
+    // Auto-dismiss alerts after 5 seconds
+    const alerts = document.querySelectorAll('.alert');
+    alerts.forEach(alert => {
+        setTimeout(() => {
+            alert.style.opacity = '0';
+            alert.style.transform = 'translateY(-20px)';
+            setTimeout(() => {
+                alert.remove();
+            }, 300);
+        }, 5000);
+    });
+
+    // Tab persistence based on URL parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const activeTab = urlParams.get('tab') || 'inventory';
+    
+    // Ensure the correct tab is shown
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.querySelectorAll('.tab-link').forEach(link => {
+        link.classList.remove('active');
+    });
+    
+    const activeContent = document.getElementById(activeTab + '-tab');
+    if (activeContent) {
+        activeContent.classList.add('active');
+    }
+    
+    const activeLink = document.querySelector(`.tab-link[href*="tab=${activeTab}"]`);
+    if (activeLink) {
+        activeLink.classList.add('active');
+    }
+
+    // Form validation
+    const forms = document.querySelectorAll('form');
+    forms.forEach(form => {
+        form.addEventListener('submit', function(e) {
+            const requiredFields = this.querySelectorAll('[required]');
+            let valid = true;
+            
+            requiredFields.forEach(field => {
+                if (!field.value.trim()) {
+                    valid = false;
+                    field.style.borderColor = '#dc3545';
+                } else {
+                    field.style.borderColor = '#e0e0e0';
+                }
+            });
+            
+            if (!valid) {
+                e.preventDefault();
+                alert('Please fill all required fields');
+            }
+        });
+    });
+
+    // Clear form validation styles on input
+    document.querySelectorAll('input, select, textarea').forEach(field => {
+        field.addEventListener('input', function() {
+            if (this.value.trim()) {
+                this.style.borderColor = '#e0e0e0';
+            }
+        });
+    });
+
+    // Initialize date inputs with min/max values
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Set min date for expiry dates (today)
+    document.querySelectorAll('input[type="date"][name="expiry_date"]').forEach(input => {
+        input.min = today;
+    });
+    
+    // Set max date for maintenance dates (today)
+    document.querySelectorAll('input[type="date"][name="maintenance_date"]').forEach(input => {
+        input.max = today;
+    });
+    
+    // Set min date for next maintenance dates (tomorrow)
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    document.querySelectorAll('input[type="date"][name="next_maintenance"]').forEach(input => {
+        input.min = tomorrow.toISOString().split('T')[0];
+    });
+
+    // Search form enhancement
+    const searchBoxes = document.querySelectorAll('.search-box input');
+    searchBoxes.forEach(input => {
+        // Add clear button functionality
+        input.addEventListener('keyup', function(e) {
+            if (e.key === 'Escape') {
+                this.value = '';
+                this.form.submit();
+            }
+        });
+    });
+
+    // Enhance table row interactions
+    const tableRows = document.querySelectorAll('.data-table tbody tr');
+    tableRows.forEach(row => {
+        row.addEventListener('mouseenter', function() {
+            this.style.backgroundColor = '#f8f9fa';
+        });
+        
+        row.addEventListener('mouseleave', function() {
+            this.style.backgroundColor = '';
+        });
+    });
+
+    // Print functionality
+    window.printInventory = function() {
+        window.print();
+    };
+
+    // Export functionality placeholder
+    window.exportInventory = function(format = 'csv') {
+        // This would typically make an AJAX request to export data
+        alert('Export functionality would be implemented here for format: ' + format);
+    };
 });
-</script>
+
+// Keyboard shortcuts
+document.addEventListener('keydown', function(e) {
+    // Escape key to close modals
+    if (e.key === 'Escape') {
+        document.querySelectorAll('.modal.active').forEach(modal => {
+            modal.classList.remove('active');
+            setTimeout(() => {
+                modal.style.display = 'none';
+            }, 300);
+        });
+    }
+    
+    // Ctrl/Cmd + I to add inventory item
+    if ((e.ctrlKey || e.metaKey) && e.key === 'i') {
+        e.preventDefault();
+        const activeTab = document.querySelector('.tab-content.active');
+        if (activeTab && activeTab.id === 'inventory-tab') {
+            openAddItemModal();
+        }
+    }
+    
+    // Ctrl/Cmd + V to add vehicle
+    if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        e.preventDefault();
+        const activeTab = document.querySelector('.tab-content.active');
+        if (activeTab && activeTab.id === 'vehicles-tab') {
+            openVehicleModal();
+        }
+    }
+});
+
+// Utility function to format numbers
+function formatNumber(num) {
+    return new Intl.NumberFormat('en-US').format(num);
+}
+
+// Utility function to format currency
+function formatCurrency(amount) {
+    return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'PHP',
+        minimumFractionDigits: 2
+    }).format(amount);
+}
+
+// Enhanced table sorting (can be implemented if needed)
+function sortTable(columnIndex, tableId) {
+    const table = document.getElementById(tableId);
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    
+    // Determine sort direction
+    const isAscending = table.getAttribute('data-sort-order') === 'asc';
+    table.setAttribute('data-sort-order', isAscending ? 'desc' : 'asc');
+    
+    // Sort rows
+    rows.sort((a, b) => {
+        const aValue = a.children[columnIndex].textContent.trim();
+        const bValue = b.children[columnIndex].textContent.trim();
+        
+        // Try to parse as number first
+        const aNum = parseFloat(aValue.replace(/[^0-9.-]/g, ''));
+        const bNum = parseFloat(bValue.replace(/[^0-9.-]/g, ''));
+        
+        if (!isNaN(aNum) && !isNaN(bNum)) {
+            return isAscending ? aNum - bNum : bNum - aNum;
+        }
+        
+        // Otherwise sort as string
+        return isAscending ? 
+            aValue.localeCompare(bValue) : 
+            bValue.localeCompare(aValue);
+    });
+    
+    // Re-append sorted rows
+    rows.forEach(row => tbody.appendChild(row));
+}
+
+// Touch device enhancements
+if ('ontouchstart' in window) {
+    document.body.classList.add('touch-device');
+    
+    // Add touch-friendly classes
+    document.querySelectorAll('button, .btn-primary, .btn-secondary').forEach(button => {
+        button.addEventListener('touchstart', function() {
+            this.classList.add('touch-active');
+        });
+        
+        button.addEventListener('touchend', function() {
+            setTimeout(() => {
+                this.classList.remove('touch-active');
+            }, 150);
+        });
+    });
+}</script>
 </body>
 </html>

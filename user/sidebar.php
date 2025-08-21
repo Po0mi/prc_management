@@ -28,10 +28,6 @@
         <i class="fas fa-calendar-alt"></i>
         <span class="link-text">Training Schedule</span>
       </a>
-      <a href="blood_map.php" class="nav-link">
-        <i class="fas fa-map-marker-alt"></i>
-        <span class="link-text">Blood Map</span>
-      </a>
       <a href="donate.php" class="nav-link">
         <i class="fas fa-hand-holding-heart"></i>
         <span class="link-text">Donate</span>

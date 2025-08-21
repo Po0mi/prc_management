@@ -37,10 +37,6 @@
         <i class="fas fa-chalkboard-teacher"></i>
         <span>Training Sessions</span>
       </a>
-      <a href="view_registrations.php" class="nav-link sub-item">
-        <i class="fas fa-user-check"></i>
-        <span>View Registrations</span>
-      </a>
     </div>
     <a href="manage_donations.php" class="nav-link">
       <i class="fas fa-donate"></i>
@@ -49,10 +45,6 @@
     <a href="manage_inventory.php" class="nav-link">
       <i class="fas fa-warehouse"></i>
       <span>Inventory</span>
-    </a>
-    <a href="manage_blood_banks.php" class="nav-link">
-      <i class="fas fa-tint"></i>
-      <span>Blood Banks</span>
     </a>
     <a href="manage_announcements.php" class="nav-link">
       <i class="fas fa-bullhorn"></i>

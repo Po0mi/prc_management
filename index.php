@@ -172,7 +172,7 @@
     <footer class="system-footer">
         <div class="footer-content">
             <div class="footer-logo">
-                <img src="assets/logo.png" alt="PRC Logo" class="prc-logo">
+                <img src="./assets/images   /logo.png" alt="PRC Logo" class="prc-logo">
                 <p>Philippine Red Cross<br>Management System</p>
             </div>
             <div class="footer-links">

@@ -3,7 +3,9 @@
 
 require_once __DIR__ . '/../config.php';
 ensure_logged_in();
-if (current_user_role() !== 'user') {
+$user_role = get_user_role();
+if ($user_role) {
+    // If user has an admin role, redirect to admin dashboard
     header("Location: /admin/dashboard.php");
     exit;
 }

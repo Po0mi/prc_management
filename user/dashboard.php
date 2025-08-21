@@ -2,7 +2,9 @@
 require_once __DIR__ . '/../config.php';
 ensure_logged_in();
 
-if (current_user_role() !== 'user') {
+$user_role = get_user_role();
+if ($user_role) {
+    // If user has an admin role, redirect to admin dashboard
     header("Location: /admin/dashboard.php");
     exit;
 }
@@ -267,53 +269,26 @@ try {
         </div>
       </div>
 
+      <!-- REDESIGNED LAYOUT: Recent Activity First (Left), Quick Actions Second (Right) -->
       <div class="dashboard-main">
-        <!-- Quick Actions Section -->
-        <div class="quick-actions-section">
-          <h2><i class="fas fa-bolt"></i> Quick Actions</h2>
-          <div class="action-buttons">
-            <a href="registration.php" class="action-btn">
-              <i class="fas fa-calendar-plus"></i>
-              <span>Register for Events</span>
-            </a>
-            <a href="schedule.php" class="action-btn">
-              <i class="fas fa-user-check"></i>
-              <span>Mark Attendance</span>
-            </a>
-            <a href="donate.php" class="action-btn">
-              <i class="fas fa-hand-holding-usd"></i>
-              <span>Submit Donation</span>
-            </a>
-            <a href="inventory.php" class="action-btn">
-              <i class="fas fa-warehouse"></i>
-              <span>View Inventory</span>
-            </a>
-            <a href="blood_map.php" class="action-btn">
-              <i class="fas fa-map-marked-alt"></i>
-              <span>Blood Banks</span>
-            </a>
-            <a href="announcements.php" class="action-btn">
-              <i class="fas fa-bullhorn"></i>
-              <span>Announcements</span>
-            </a>
+        <!-- Recent Activity Section - NOW ON THE LEFT (Primary Focus) -->
+        <div class="recent-activity-section priority-section">
+          <div class="section-header">
+            <h2><i class="fas fa-history"></i> Recent Activity</h2>
+            <div class="section-badge">Priority</div>
           </div>
-        </div>
-
-        <!-- Recent Activity Section -->
-        <div class="recent-activity-section">
-          <h2><i class="fas fa-history"></i> Recent Activity</h2>
           
           <!-- Upcoming Events -->
-          <div class="activity-card">
+          <div class="activity-card featured">
             <div class="activity-header">
-              <h3>Upcoming Events</h3>
+              <h3><i class="fas fa-calendar"></i> Upcoming Events</h3>
               <a href="registration.php" class="view-all">View All</a>
             </div>
             <div class="activity-body">
               <?php if (!empty($upcomingEvents)): ?>
                 <ul class="activity-list">
                   <?php foreach ($upcomingEvents as $event): ?>
-                    <li class="activity-item">
+                    <li class="activity-item enhanced">
                       <div class="activity-icon event-icon">
                         <i class="fas fa-calendar"></i>
                       </div>
@@ -329,26 +304,32 @@ try {
                           </span>
                         <?php endif; ?>
                       </div>
+                      <div class="activity-action">
+                        <i class="fas fa-chevron-right"></i>
+                      </div>
                     </li>
                   <?php endforeach; ?>
                 </ul>
               <?php else: ?>
-                <p class="no-data">No upcoming events</p>
+                <div class="no-data">
+                  <i class="fas fa-calendar-alt"></i>
+                  <p>No upcoming events</p>
+                </div>
               <?php endif; ?>
             </div>
           </div>
           
           <!-- Training Sessions -->
-          <div class="activity-card">
+          <div class="activity-card featured">
             <div class="activity-header">
-              <h3>Training Sessions</h3>
+              <h3><i class="fas fa-graduation-cap"></i> Training Sessions</h3>
               <a href="schedule.php" class="view-all">View All</a>
             </div>
             <div class="activity-body">
               <?php if (!empty($upcomingTraining)): ?>
                 <ul class="activity-list">
                   <?php foreach ($upcomingTraining as $training): ?>
-                    <li class="activity-item">
+                    <li class="activity-item enhanced">
                       <div class="activity-icon training-icon">
                         <i class="fas fa-graduation-cap"></i>
                       </div>
@@ -362,11 +343,17 @@ try {
                           <span class="status-badge registered">Registered</span>
                         <?php endif; ?>
                       </div>
+                      <div class="activity-action">
+                        <i class="fas fa-chevron-right"></i>
+                      </div>
                     </li>
                   <?php endforeach; ?>
                 </ul>
               <?php else: ?>
-                <p class="no-data">No upcoming training sessions</p>
+                <div class="no-data">
+                  <i class="fas fa-graduation-cap"></i>
+                  <p>No upcoming training sessions</p>
+                </div>
               <?php endif; ?>
             </div>
           </div>
@@ -374,7 +361,7 @@ try {
           <!-- Recent Announcements -->
           <div class="activity-card">
             <div class="activity-header">
-              <h3>Latest Announcements</h3>
+              <h3><i class="fas fa-bullhorn"></i> Latest Announcements</h3>
               <a href="announcements.php" class="view-all">View All</a>
             </div>
             <div class="activity-body">
@@ -396,8 +383,67 @@ try {
                   <?php endforeach; ?>
                 </ul>
               <?php else: ?>
-                <p class="no-data">No recent announcements</p>
+                <div class="no-data">
+                  <i class="fas fa-bullhorn"></i>
+                  <p>No recent announcements</p>
+                </div>
               <?php endif; ?>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Actions Section - NOW ON THE RIGHT (Secondary) -->
+        <div class="quick-actions-section secondary-section">
+          <div class="section-header">
+            <h2><i class="fas fa-bolt"></i> Quick Actions</h2>
+          </div>
+          <div class="action-buttons">
+            <a href="registration.php" class="action-btn primary">
+              <i class="fas fa-calendar-plus"></i>
+              <span>Register for Events</span>
+              <div class="action-desc">Join upcoming activities</div>
+            </a>
+            <a href="schedule.php" class="action-btn">
+              <i class="fas fa-user-check"></i>
+              <span>Mark Attendance</span>
+              <div class="action-desc">Confirm your presence</div>
+            </a>
+            <a href="donate.php" class="action-btn">
+              <i class="fas fa-hand-holding-usd"></i>
+              <span>Submit Donation</span>
+              <div class="action-desc">Make a contribution</div>
+            </a>
+            <a href="inventory.php" class="action-btn">
+              <i class="fas fa-warehouse"></i>
+              <span>View Inventory</span>
+              <div class="action-desc">Check supplies</div>
+            </a>
+            <a href="blood_map.php" class="action-btn">
+              <i class="fas fa-map-marked-alt"></i>
+              <span>Blood Banks</span>
+              <div class="action-desc">Find locations</div>
+            </a>
+            <a href="announcements.php" class="action-btn">
+              <i class="fas fa-bullhorn"></i>
+              <span>Announcements</span>
+              <div class="action-desc">Latest updates</div>
+            </a>
+          </div>
+
+          <!-- Additional Quick Stats -->
+          <div class="quick-stats-summary">
+            <h3><i class="fas fa-chart-line"></i> This Month</h3>
+            <div class="quick-stat-item">
+              <span class="quick-stat-label">Events Joined</span>
+              <span class="quick-stat-value">3</span>
+            </div>
+            <div class="quick-stat-item">
+              <span class="quick-stat-label">Training Hours</span>
+              <span class="quick-stat-value">8</span>
+            </div>
+            <div class="quick-stat-item">
+              <span class="quick-stat-label">Volunteer Hours</span>
+              <span class="quick-stat-value">12</span>
             </div>
           </div>
         </div>
