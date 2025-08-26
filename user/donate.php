@@ -94,6 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_donation'])) {
   <link rel="stylesheet" href="../assets/styles.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/sidebar.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/donate.css?v=<?php echo time(); ?>">
+  <link rel="stylesheet" href="../assets/header.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/dashboard.css?v=<?php echo time(); ?>">
 </head>
 <body>
@@ -287,7 +288,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_donation'])) {
   <script src="js/donate.js"></script>
     <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
     <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
-    <script src="js/darkmode.js?v=<?php echo time(); ?>"></script>
     <script src="js/header.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>

@@ -24,6 +24,8 @@ $announcements = $stmt->fetchAll();
   <link rel="stylesheet" href="../assets/sidebar.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/announcements.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/dashboard.css?v=<?php echo time(); ?>">
+     <link rel="stylesheet" href="../assets/header.css?v=<?php echo time(); ?>">
+
 </head>
 <body>
   <?php include '../user/sidebar.php'; ?>
@@ -104,6 +106,6 @@ $announcements = $stmt->fetchAll();
     <script src="js/announcements.js"></script>
     <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
     <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
-    <script src="js/darkmode.js?v=<?php echo time(); ?>"></script>
+    <script src="js/header.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>

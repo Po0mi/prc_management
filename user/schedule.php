@@ -365,108 +365,7 @@ try {
   <link rel="stylesheet" href="../assets/sidebar.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/dashboard.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/schedule.css?v=<?php echo time(); ?>">
-  <link rel="stylesheet" href="../assets/user-events.css?v=<?php echo time(); ?>">
-  <style>
-    :root {
-      --health-color: #4CAF50;
-      --safety-color: #FF9800;
-      --welfare-color: #2196F3;
-      --disaster-color: #F44336;
-      --rcy-color: #9C27B0;
-      --general-color: #607D8B;
-      --calendar-sidebar-width: 350px;
-    }
-    
-    /* Override sessions-container with events-layout */
-    .events-layout {
-      display: flex;
-      gap: 2rem;
-      min-height: 100vh;
-      background: #f5f7fa;
-      padding: 2rem;
-      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-      transition: margin-left var(--transition-speed) ease;
-    }
-
-    .main-content {
-      flex: 1;
-      min-width: 0; /* Prevents flex item from overflowing */
-    }
-
-    /* Training Calendar Sidebar Positioning */
-    .training-calendar-sidebar {
-      width: var(--calendar-sidebar-width);
-      background: white;
-      border-radius: 12px;
-      padding: 1.5rem;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-      height: fit-content;
-      position: sticky;
-      top: 2rem;
-      max-height: calc(100vh - 4rem);
-      overflow-y: auto;
-      border: 1px solid #e9ecef;
-    }
-
-    /* Responsive adjustments */
-    @media (max-width: 1400px) {
-      .training-calendar-sidebar {
-        width: 300px;
-      }
-    }
-
-    @media (max-width: 1200px) {
-      .events-layout {
-        padding: 1.5rem;
-        gap: 1.5rem;
-      }
-
-      .training-calendar-sidebar {
-        width: 280px;
-      }
-    }
-
-    @media (max-width: 992px) {
-      .events-layout {
-        flex-direction: column;
-        gap: 2rem;
-      }
-
-      .training-calendar-sidebar {
-        width: 100%;
-        position: relative;
-        top: auto;
-        max-height: none;
-        order: -1; /* Show calendar at the top on mobile */
-      }
-
-      .training-calendar-container {
-        flex-direction: row;
-        overflow-x: auto;
-        gap: 1rem;
-        padding-bottom: 1rem;
-      }
-
-      .training-month-calendar {
-        flex-shrink: 0;
-        min-width: 320px;
-      }
-    }
-
-    @media (max-width: 768px) {
-      .events-layout {
-        padding: 1rem;
-      }
-
-      .training-calendar-container {
-        flex-direction: column;
-      }
-
-      .training-month-calendar {
-        min-width: auto;
-      }
-    }
-  </style>
+  <link rel="stylesheet" href="../assets/header.css?v=<?php echo time(); ?>">
 </head>
 <body>
   <?php include 'sidebar.php'; ?>
@@ -1251,7 +1150,6 @@ try {
 
   <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
   <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
-  <script src="js/darkmode.js?v=<?php echo time(); ?>"></script>
   <script src="js/header.js?v=<?php echo time(); ?>"></script>
 <script>
     // Training calendar data
