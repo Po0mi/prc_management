@@ -1372,6 +1372,128 @@ input[type="file"]:hover {
   position: absolute;
   left: 0;
 }
+ /* Success Modal Styles */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(0, 0, 0, 0.7);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s ease;
+    }
+    
+    .modal-overlay.active {
+      opacity: 1;
+      visibility: visible;
+    }
+    
+    .success-modal {
+      background: white;
+      border-radius: 12px;
+      width: 90%;
+      max-width: 500px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      transform: translateY(-50px);
+      opacity: 0;
+      transition: all 0.3s ease;
+    }
+    
+    .modal-overlay.active .success-modal {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    
+    .modal-header {
+      background: linear-gradient(90deg, #a00000 0%, #a00000 50%, #222e60 100%);
+      color: white;
+      padding: 20px;
+      border-radius: 12px 12px 0 0;
+      text-align: center;
+      position: relative;
+    }
+    
+    .modal-header i {
+      font-size: 60px;
+      margin-bottom: 15px;
+      display: block;
+    }
+    
+    .modal-header h3 {
+      margin: 0;
+      font-size: 24px;
+    }
+    
+    .modal-body {
+      padding: 25px;
+      text-align: center;
+    }
+    
+    .modal-body p {
+      margin-bottom: 20px;
+      line-height: 1.6;
+      color: #555;
+    }
+    
+    .modal-actions {
+      display: flex;
+      justify-content: center;
+      gap: 15px;
+      margin-top: 20px;
+    }
+    
+    .modal-btn {
+      padding: 12px 25px;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-decoration: none;
+      display: inline-block;
+    }
+    
+    .btn-primary {
+      background: #a00000;
+      color: white;
+      border: none;
+    }
+    
+    .btn-primary:hover {
+      background: #8a0000;
+      transform: translateY(-2px);
+    }
+    
+    .btn-secondary {
+      background: #f1f1f1;
+      color: #333;
+      border: 1px solid #ddd;
+    }
+    
+    .btn-secondary:hover {
+      background: #e5e5e5;
+      transform: translateY(-2px);
+    }
+    
+    .success-details {
+      background: #f9f9f9;
+      padding: 15px;
+      border-radius: 8px;
+      margin: 20px 0;
+      text-align: left;
+    }
+    
+    .success-details h4 {
+      margin-top: 0;
+      color: #a00000;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 8px;
+    }
 
 /* Responsive adjustments */
 @media (max-width: 768px) {

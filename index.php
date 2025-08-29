@@ -172,19 +172,19 @@
     <footer class="system-footer">
         <div class="footer-content">
             <div class="footer-logo">
-                <img src="./assets/images   /logo.png" alt="PRC Logo" class="prc-logo">
+                <img src="./assets/images/logo.png" alt="PRC Logo" class="prc-logo">
                 <p>Philippine Red Cross<br>Management System</p>
             </div>
             <div class="footer-links">
-                <a href="#">About Us</a>
-                <a href="#">Contact</a>
-                <a href="#">Privacy Policy</a>
-                <a href="#">Terms of Service</a>
+                <a href="https://redcross.org.ph/about-us/history">About Us</a>
+                <a href="#">(033) 503-3393/09171170066.
+iloilo@redcross.org.ph
+Brgy. Danao, Bonifacio drive, 5000</a>
+          
             </div>
             <div class="footer-social">
-                <a href="#"><i class="fab fa-facebook"></i></a>
-                <a href="#"><i class="fab fa-twitter"></i></a>
-                <a href="#"><i class="fab fa-instagram"></i></a>
+                <a href="https://www.facebook.com/profile.php?id=61560549271970&_rdc=1&_rdr"><i class="fab fa-facebook"></i></a>
+                <a href="https://www.instagram.com/rcy.iloilo/?hl=en"><i class="fab fa-instagram"></i></a>
             </div>
         </div>
         <div class="footer-copyright">

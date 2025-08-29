@@ -11,6 +11,7 @@ if (file_exists(__DIR__ . '/email_api.php')) {
 
 $error = '';
 $success = '';
+$showModal = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $firstName = trim($_POST['first_name'] ?? '');
@@ -21,8 +22,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $phone = trim($_POST['phone'] ?? '');
     $password = $_POST['password'] ?? '';
     $confirm = $_POST['confirm_password'] ?? '';
-    $userType = trim($_POST['user_type'] ?? 'non_rcy_member'); // non_rcy_member or rcy_member
-    $selectedServices = $_POST['services'] ?? []; // Array of selected services for RCY members
+    $userType = trim($_POST['user_type'] ?? 'non_rcy_member');
+    $selectedServices = $_POST['services'] ?? [];
     $recaptchaResponse = $_POST['g-recaptcha-response'] ?? '';
 
     $role = 'user';
@@ -245,7 +246,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     
                     $success = "Registration successful! You can now log in. $emailMessage";
-                    echo "<script>window.formSuccess = true;</script>";
+                    $showModal = true; // Set flag to show modal
+                    
+                    // Clear form data from localStorage on successful registration
+                    echo "<script>
+                        // Clear saved form data
+                        const formFields = ['first_name', 'last_name', 'username', 'email', 'phone'];
+                        formFields.forEach(field => {
+                            localStorage.removeItem('register_' + field);
+                        });
+                    </script>";
                     
                 } catch (Exception $e) {
                     $pdo->rollBack();
@@ -265,7 +275,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Basic email function (fallback when Email API is not available)
+// Enhanced email function for better deliverability
 function sendBasicRegistrationEmail($email, $firstName, $userType) {
     $accountTypeName = $userType === 'rcy_member' ? 'RCY Member' : 'Non-RCY Member';
     
@@ -274,14 +284,97 @@ function sendBasicRegistrationEmail($email, $firstName, $userType) {
     <html>
     <head>
         <title>Welcome to PRC Management System</title>
+        <meta charset='UTF-8'>
         <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(90deg, #a00000 0%, #a00000 50%, #222e60 100%); color: white; padding: 20px; text-align: center; }
-            .content { padding: 20px; background: #f9f9f9; }
-            .button { background: #a00000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block; margin: 20px 0; }
-            .info-box { background: white; padding: 15px; border-left: 4px solid #a00000; margin: 20px 0; }
-            .footer { font-size: 12px; color: #666; text-align: center; padding: 20px; }
+            body { 
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                line-height: 1.6; 
+                color: #333; 
+                margin: 0; 
+                padding: 0;
+                background-color: #f8f9fa;
+            }
+            .container { 
+                max-width: 600px; 
+                margin: 20px auto; 
+                background: white;
+                border-radius: 10px;
+                overflow: hidden;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            }
+            .header { 
+                background: linear-gradient(135deg, #a00000 0%, #c41e3a 100%); 
+                color: white; 
+                padding: 30px 20px; 
+                text-align: center; 
+            }
+            .header h1 {
+                margin: 0;
+                font-size: 28px;
+                font-weight: bold;
+            }
+            .header p {
+                margin: 5px 0 0 0;
+                opacity: 0.9;
+                font-size: 16px;
+            }
+            .content { 
+                padding: 30px; 
+            }
+            .welcome-message {
+                font-size: 24px;
+                color: #a00000;
+                margin-bottom: 20px;
+                font-weight: bold;
+            }
+            .button { 
+                background: linear-gradient(135deg, #a00000 0%, #c41e3a 100%); 
+                color: white !important; 
+                padding: 15px 30px; 
+                text-decoration: none; 
+                border-radius: 8px; 
+                display: inline-block; 
+                margin: 20px 0; 
+                font-weight: bold;
+                font-size: 16px;
+                transition: all 0.3s ease;
+            }
+            .info-box { 
+                background: #f8f9fa; 
+                padding: 20px; 
+                border-left: 4px solid #a00000; 
+                margin: 25px 0; 
+                border-radius: 0 8px 8px 0;
+            }
+            .info-row {
+                margin: 8px 0;
+                display: flex;
+                justify-content: space-between;
+            }
+            .info-label {
+                font-weight: bold;
+                color: #495057;
+            }
+            .info-value {
+                color: #a00000;
+                font-weight: 600;
+            }
+            .footer { 
+                font-size: 13px; 
+                color: #6c757d; 
+                text-align: center; 
+                padding: 25px; 
+                background: #f8f9fa;
+                border-top: 1px solid #e9ecef;
+            }
+            .footer strong {
+                color: #495057;
+            }
+            .divider {
+                height: 1px;
+                background: linear-gradient(to right, transparent, #ddd, transparent);
+                margin: 25px 0;
+            }
         </style>
     </head>
     <body>
@@ -292,29 +385,54 @@ function sendBasicRegistrationEmail($email, $firstName, $userType) {
             </div>
             
             <div class='content'>
-                <h2 style='color: #a00000;'>Welcome, " . htmlspecialchars($firstName) . "!</h2>
+                <div class='welcome-message'>Welcome, " . htmlspecialchars($firstName) . "!</div>
                 
-                <p>Thank you for registering with the Philippine Red Cross Management System.</p>
+                <p>Thank you for registering with the Philippine Red Cross Management System. We're excited to have you join our community dedicated to humanitarian service and making a positive impact in the world.</p>
                 
                 <div class='info-box'>
-                    <strong>Account Details:</strong><br>
-                    Email: " . htmlspecialchars($email) . "<br>
-                    Account Type: " . htmlspecialchars($accountTypeName) . "<br>
-                    Registration Date: " . date('Y-m-d H:i:s') . "
+                    <h3 style='margin-top: 0; color: #a00000; margin-bottom: 15px;'>Account Details</h3>
+                    <div class='info-row'>
+                        <span class='info-label'>Email:</span>
+                        <span class='info-value'>" . htmlspecialchars($email) . "</span>
+                    </div>
+                    <div class='info-row'>
+                        <span class='info-label'>Account Type:</span>
+                        <span class='info-value'>" . htmlspecialchars($accountTypeName) . "</span>
+                    </div>
+                    <div class='info-row'>
+                        <span class='info-label'>Registration Date:</span>
+                        <span class='info-value'>" . date('F j, Y g:i A') . "</span>
+                    </div>
+                    <div class='info-row'>
+                        <span class='info-label'>Account Status:</span>
+                        <span style='color: #28a745; font-weight: bold;'>✓ Active</span>
+                    </div>
                 </div>
                 
-                <p>Your account has been successfully created. You can now log in to access the system.</p>
+                <p>Your account has been successfully created and is ready to use. You can now log in to access the system and explore all available features.</p>
                 
-                <div style='text-align: center;'>
+                <div style='text-align: center; margin: 30px 0;'>
                     <a href='https://philippineredcross-iloilochapter.org/login.php' class='button'>Login to Your Account</a>
                 </div>
                 
-                <p>If you have any questions or need assistance, please don't hesitate to contact our support team.</p>
+                <div class='divider'></div>
+                
+                <p style='margin-bottom: 15px;'><strong>Need assistance?</strong> Our support team is here to help:</p>
+                <ul style='color: #495057; line-height: 1.8;'>
+                    <li><strong>Email:</strong> support@prc-system.com</li>
+                    <li><strong>Phone:</strong> (02) 8527-0864</li>
+                    <li><strong>Website:</strong> <a href='https://redcross.org.ph' style='color: #a00000;'>redcross.org.ph</a></li>
+                </ul>
+                
+                <div style='text-align: center; margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef;'>
+                    <em style='color: #666; font-style: italic;'>\"Together, we can make a difference in the lives of those who need it most.\"</em>
+                </div>
             </div>
             
             <div class='footer'>
-                <p>This is an automated message. Please do not reply to this email.<br>
-                Philippine Red Cross Management System</p>
+                <p><strong>This is an automated message. Please do not reply to this email.</strong></p>
+                <p>Philippine Red Cross Management System<br>
+                © " . date('Y') . " Philippine Red Cross. All rights reserved.</p>
             </div>
         </div>
     </body>
@@ -323,15 +441,24 @@ function sendBasicRegistrationEmail($email, $firstName, $userType) {
     $headers = array(
         'MIME-Version: 1.0',
         'Content-type: text/html; charset=UTF-8',
-        'From: PRC System <noreply@prc-system.com>',
+        'From: Philippine Red Cross <noreply@prc-system.com>',
         'Reply-To: support@prc-system.com',
-        'X-Mailer: PHP/' . phpversion()
+        'X-Mailer: PHP/' . phpversion(),
+        'X-Priority: 3 (Normal)',
+        'Return-Path: noreply@prc-system.com'
     );
 
-    return mail($email, $subject, $message, implode("\r\n", $headers));
+    // Attempt to send email
+    $mailSent = mail($email, $subject, $message, implode("\r\n", $headers));
+    
+    // Log email attempt
+    $logMessage = date('Y-m-d H:i:s') . " - Email attempt to $email: " . ($mailSent ? 'SUCCESS' : 'FAILED') . "\n";
+    file_put_contents('logs/email.log', $logMessage, FILE_APPEND | LOCK_EX);
+    
+    return $mailSent;
 }
 
-// Enhanced welcome email for RCY members with services
+// Enhanced RCY member welcome email
 function sendRCYMemberWelcomeEmail($email, $firstName, $selectedServices, $documentCount) {
     $serviceNames = [
         'health' => 'Health Services',
@@ -344,7 +471,9 @@ function sendRCYMemberWelcomeEmail($email, $firstName, $selectedServices, $docum
     $servicesHtml = '';
     foreach ($selectedServices as $service) {
         $serviceName = $serviceNames[$service] ?? $service;
-        $servicesHtml .= "<li style='padding: 5px 0; color: #155724;'>✓ " . htmlspecialchars($serviceName) . "</li>";
+        $servicesHtml .= "<div style='padding: 8px 0; color: #155724; border-bottom: 1px solid #c3e6cb;'>
+            <span style='color: #28a745; font-weight: bold; margin-right: 8px;'>✓</span>" . htmlspecialchars($serviceName) . "
+        </div>";
     }
     
     $subject = "Welcome to Philippine Red Cross - RCY Member Registration Complete";
@@ -352,18 +481,121 @@ function sendRCYMemberWelcomeEmail($email, $firstName, $selectedServices, $docum
     <html>
     <head>
         <title>Welcome to PRC Management System - RCY Member</title>
+        <meta charset='UTF-8'>
         <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(90deg, #a00000 0%, #a00000 50%, #222e60 100%); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-            .content { padding: 30px; background: #f9f9f9; }
-            .button { background: #a00000; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; margin: 20px 0; font-weight: bold; }
-            .info-box { background: white; padding: 20px; border-left: 4px solid #a00000; margin: 20px 0; border-radius: 0 5px 5px 0; }
-            .services-box { background: #e8f5e8; padding: 20px; border-radius: 5px; margin: 15px 0; border: 1px solid #c3e6cb; }
-            .document-info { background: #e8f5e8; padding: 15px; border-radius: 5px; margin: 15px 0; border: 1px solid #c3e6cb; }
-            .footer { font-size: 12px; color: #666; text-align: center; padding: 20px; background: #f8f9fa; border-radius: 0 0 8px 8px; }
-            .highlight { color: #a00000; font-weight: bold; }
-            .services-list { list-style: none; padding: 0; margin: 10px 0; }
+            body { 
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                line-height: 1.6; 
+                color: #333; 
+                margin: 0; 
+                padding: 0;
+                background-color: #f8f9fa;
+            }
+            .container { 
+                max-width: 650px; 
+                margin: 20px auto; 
+                background: white;
+                border-radius: 10px;
+                overflow: hidden;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            }
+            .header { 
+                background: linear-gradient(135deg, #a00000 0%, #222e60 100%); 
+                color: white; 
+                padding: 30px 20px; 
+                text-align: center; 
+            }
+            .header h1 {
+                margin: 0;
+                font-size: 28px;
+                font-weight: bold;
+            }
+            .header p {
+                margin: 5px 0 0 0;
+                opacity: 0.9;
+                font-size: 16px;
+            }
+            .content { 
+                padding: 35px 30px; 
+            }
+            .welcome-message {
+                font-size: 26px;
+                color: #a00000;
+                margin-bottom: 20px;
+                font-weight: bold;
+            }
+            .button { 
+                background: linear-gradient(135deg, #a00000 0%, #c41e3a 100%); 
+                color: white !important; 
+                padding: 15px 30px; 
+                text-decoration: none; 
+                border-radius: 8px; 
+                display: inline-block; 
+                margin: 25px 0; 
+                font-weight: bold;
+                font-size: 16px;
+            }
+            .info-box { 
+                background: #f8f9fa; 
+                padding: 25px; 
+                border-left: 4px solid #a00000; 
+                margin: 25px 0; 
+                border-radius: 0 8px 8px 0;
+            }
+            .services-box { 
+                background: linear-gradient(135deg, #e8f5e8 0%, #f0f8f0 100%); 
+                padding: 25px; 
+                border-radius: 8px; 
+                margin: 25px 0; 
+                border: 2px solid #c3e6cb; 
+            }
+            .document-info { 
+                background: linear-gradient(135deg, #e8f5e8 0%, #f0f8f0 100%); 
+                padding: 20px; 
+                border-radius: 8px; 
+                margin: 20px 0; 
+                border: 2px solid #c3e6cb; 
+            }
+            .footer { 
+                font-size: 13px; 
+                color: #6c757d; 
+                text-align: center; 
+                padding: 25px; 
+                background: #f8f9fa;
+                border-top: 1px solid #e9ecef;
+            }
+            .highlight { 
+                color: #a00000; 
+                font-weight: bold; 
+            }
+            .services-list {
+                margin: 15px 0;
+                background: white;
+                border-radius: 6px;
+                border: 1px solid #c3e6cb;
+            }
+            .next-steps {
+                background: white;
+                padding: 25px;
+                border-radius: 8px;
+                margin: 25px 0;
+                border: 1px solid #e9ecef;
+            }
+            .help-section {
+                background: white;
+                padding: 25px;
+                border-radius: 8px;
+                margin: 25px 0;
+                border: 1px solid #e9ecef;
+            }
+            .quote-section {
+                text-align: center;
+                background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+                padding: 25px;
+                border-radius: 8px;
+                margin: 30px 0;
+                border: 1px solid #dee2e6;
+            }
         </style>
     </head>
     <body>
@@ -374,72 +606,78 @@ function sendRCYMemberWelcomeEmail($email, $firstName, $selectedServices, $docum
             </div>
             
             <div class='content'>
-                <h2 style='color: #a00000;'>Welcome to RCY, " . htmlspecialchars($firstName) . "! 🎉</h2>
+                <div class='welcome-message'>Welcome to RCY, " . htmlspecialchars($firstName) . "! 🎉</div>
                 
-                <p>Congratulations on joining the Red Cross Youth! We're excited to welcome you to our community of dedicated volunteers committed to humanitarian service.</p>
+                <p style='font-size: 16px; margin-bottom: 25px;'>Congratulations on joining the Red Cross Youth! We're excited to welcome you to our community of dedicated volunteers committed to humanitarian service and making a positive impact in communities across the Philippines.</p>
                 
                 <div class='info-box'>
-                    <h3 style='margin-top: 0; color: #a00000;'>📋 Account Details</h3>
-                    <strong>Email:</strong> " . htmlspecialchars($email) . "<br>
-                    <strong>Account Type:</strong> <span class='highlight'>RCY Member</span><br>
-                    <strong>Registration Date:</strong> " . date('F j, Y g:i A') . "<br>
-                    <strong>Account Status:</strong> <span style='color: #28a745;'>✓ Active</span>
+                    <h3 style='margin-top: 0; color: #a00000; margin-bottom: 20px; font-size: 20px;'>📋 Account Details</h3>
+                    <div style='margin: 10px 0;'><strong>Email:</strong> " . htmlspecialchars($email) . "</div>
+                    <div style='margin: 10px 0;'><strong>Account Type:</strong> <span class='highlight'>RCY Member</span></div>
+                    <div style='margin: 10px 0;'><strong>Registration Date:</strong> " . date('F j, Y g:i A') . "</div>
+                    <div style='margin: 10px 0;'><strong>Account Status:</strong> <span style='color: #28a745; font-weight: bold;'>✓ Active</span></div>
                 </div>
                 
                 <div class='services-box'>
-                    <h3 style='margin-top: 0; color: #155724;'>🤝 Your Selected Services</h3>
-                    <p><strong>You have registered for the following RCY services:</strong></p>
-                    <ul class='services-list'>
+                    <h3 style='margin-top: 0; color: #155724; font-size: 20px; margin-bottom: 15px;'>🤝 Your Selected Services</h3>
+                    <p style='margin-bottom: 20px;'><strong>You have registered for the following RCY services:</strong></p>
+                    <div class='services-list'>
                         $servicesHtml
-                    </ul>
-                    <p style='font-size: 0.9em; color: #666; margin-top: 15px;'>
-                        <em>You will receive additional information about each service via email within the next few days. Service coordinators may contact you to schedule orientation sessions.</em>
+                    </div>
+                    <p style='font-size: 14px; color: #666; margin-top: 20px; font-style: italic;'>
+                        <strong>Important:</strong> You will receive additional information about each service via email within the next few days. Service coordinators may contact you to schedule orientation sessions.
                     </p>
                 </div>";
     
     if ($documentCount > 0) {
         $message .= "
                 <div class='document-info'>
-                    <h3 style='margin-top: 0; color: #155724;'>📄 Documents Received</h3>
-                    <p><strong>✓ Success!</strong> We have received <strong>$documentCount</strong> document(s) with your registration.</p>
-                    <p>Our RCY coordinators will review your documents within 2-3 business days. You will receive an email notification once the review is complete and your membership is fully activated.</p>
+                    <h3 style='margin-top: 0; color: #155724; font-size: 18px; margin-bottom: 15px;'>📄 Documents Received</h3>
+                    <div style='background: white; padding: 15px; border-radius: 6px; border: 1px solid #c3e6cb;'>
+                        <p style='margin: 0; font-size: 16px;'><strong style='color: #28a745;'>✓ Success!</strong> We have received <strong style='color: #155724;'>$documentCount</strong> document(s) with your registration.</p>
+                    </div>
+                    <p style='margin-top: 15px;'>Our RCY coordinators will review your documents within <strong>2-3 business days</strong>. You will receive an email notification once the review is complete and your membership is fully activated.</p>
                 </div>";
     }
     
     $message .= "
-                <div style='text-align: center; margin: 30px 0;'>
-                    <a href='login.php' class='button'>🔐 Access Your RCY Portal</a>
+                <div style='text-align: center; margin: 35px 0;'>
+                    <a href='https://philippineredcross-iloilochapter.org/login.php' class='button'>🔐 Access Your RCY Portal</a>
                 </div>
                 
-                <div style='background: white; padding: 20px; border-radius: 5px; margin: 20px 0;'>
-                    <h3 style='margin-top: 0; color: #a00000;'>🚀 What's Next?</h3>
-                    <ol style='color: #495057; line-height: 1.6;'>
-                        <li><strong>Orientation:</strong> You'll receive details about RCY orientation sessions</li>
-                        <li><strong>Training:</strong> Service-specific training schedules will be provided</li>
-                        <li><strong>Activities:</strong> Join upcoming volunteer activities and events</li>
-                        <li><strong>Community:</strong> Connect with other RCY members in your area</li>
+                <div class='next-steps'>
+                    <h3 style='margin-top: 0; color: #a00000; font-size: 20px;'>What's Next?</h3>
+                    <ol style='color: #495057; line-height: 1.8; font-size: 15px;'>
+                        <li><strong>Orientation:</strong> You'll receive details about RCY orientation sessions within 1-2 weeks</li>
+                        <li><strong>Training:</strong> Service-specific training schedules will be provided by coordinators</li>
+                        <li><strong>Activities:</strong> Join upcoming volunteer activities and community events</li>
+                        <li><strong>Community:</strong> Connect with other RCY members in your area and chapter</li>
                     </ol>
                 </div>
                 
-                <div style='background: white; padding: 20px; border-radius: 5px; margin: 20px 0;'>
-                    <h3 style='margin-top: 0; color: #a00000;'>📞 Need Help?</h3>
-                    <p>If you have any questions about your RCY membership:</p>
-                    <ul>
-                        <li><strong>RCY Email:</strong> rcy@redcross.org.ph</li>
+                <div class='help-section'>
+                    <h3 style='margin-top: 0; color: #a00000; font-size: 20px;'>Need Help?</h3>
+                    <p style='margin-bottom: 20px;'>If you have any questions about your RCY membership or need assistance:</p>
+                    <ul style='color: #495057; line-height: 1.8;'>
+                        <li><strong>RCY Email:</strong> <a href='mailto:rcy@redcross.org.ph' style='color: #a00000;'>rcy@redcross.org.ph</a></li>
+                        <li><strong>General Support:</strong> <a href='mailto:support@prc-system.com' style='color: #a00000;'>support@prc-system.com</a></li>
                         <li><strong>Phone:</strong> (02) 8527-0864</li>
-                        <li><strong>Website:</strong> <a href='https://redcross.org.ph/rcy'>redcross.org.ph/rcy</a></li>
+                        <li><strong>Website:</strong> <a href='https://redcross.org.ph/rcy' style='color: #a00000;'>redcross.org.ph/rcy</a></li>
                     </ul>
                 </div>
                 
-                <p style='text-align: center; color: #666; font-style: italic; margin-top: 30px;'>
-                    \"Empowering youth to serve humanity with compassion and dedication.\"<br>
-                    <strong>- Red Cross Youth Philippines</strong>
-                </p>
-            </div>
+              <div class='quote-section'>
+                    <p style='margin: 0; color: #666; font-style: italic; font-size: 16px; line-height: 1.6;'>
+                        &quot;Empowering youth to serve humanity with compassion and dedication.&quot;
+                    </p>
+                    <p style='margin: 10px 0 0 0; color: #a00000; font-weight: bold;'>
+                        - Red Cross Youth Philippines
+                    </p>
+                </div>
             
             <div class='footer'>
-                <p><strong>This is an automated message. Please do not reply to this email.</strong><br>
-                Philippine Red Cross - Red Cross Youth Program<br>
+                <p><strong>This is an automated message. Please do not reply to this email.</strong></p>
+                <p>Philippine Red Cross - Red Cross Youth Program<br>
                 © " . date('Y') . " Philippine Red Cross. All rights reserved.</p>
             </div>
         </div>
@@ -452,14 +690,21 @@ function sendRCYMemberWelcomeEmail($email, $firstName, $selectedServices, $docum
         'From: Philippine Red Cross RCY <rcy@prc-system.com>',
         'Reply-To: rcy@redcross.org.ph',
         'X-Mailer: PHP/' . phpversion(),
-        'X-Priority: 3',
+        'X-Priority: 3 (Normal)',
         'Return-Path: rcy@prc-system.com'
     );
 
-    return mail($email, $subject, $message, implode("\r\n", $headers));
+    // Attempt to send email
+    $mailSent = mail($email, $subject, $message, implode("\r\n", $headers));
+    
+    // Log email attempt
+    $logMessage = date('Y-m-d H:i:s') . " - RCY Email attempt to $email: " . ($mailSent ? 'SUCCESS' : 'FAILED') . "\n";
+    file_put_contents('logs/email.log', $logMessage, FILE_APPEND | LOCK_EX);
+    
+    return $mailSent;
 }
 
-// Enhanced welcome email function with document notification (existing function, kept for compatibility)
+// Enhanced welcome email function with document notification
 function sendWelcomeEmailWithDocuments($email, $firstName, $userType, $documentCount) {
     $accountTypeName = $userType === 'rcy_member' ? 'RCY Member' : 'Non-RCY Member';
     
@@ -468,70 +713,123 @@ function sendWelcomeEmailWithDocuments($email, $firstName, $userType, $documentC
     <html>
     <head>
         <title>Welcome to PRC Management System</title>
+        <meta charset='UTF-8'>
         <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(90deg, #a00000 0%, #a00000 50%, #222e60 100%); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-            .content { padding: 30px; background: #f9f9f9; }
-            .button { background: #a00000; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; margin: 20px 0; font-weight: bold; }
-            .info-box { background: white; padding: 20px; border-left: 4px solid #a00000; margin: 20px 0; border-radius: 0 5px 5px 0; }
-            .document-info { background: #e8f5e8; padding: 15px; border-radius: 5px; margin: 15px 0; border: 1px solid #c3e6cb; }
-            .footer { font-size: 12px; color: #666; text-align: center; padding: 20px; background: #f8f9fa; border-radius: 0 0 8px 8px; }
-            .highlight { color: #a00000; font-weight: bold; }
+            body { 
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                line-height: 1.6; 
+                color: #333; 
+                margin: 0; 
+                padding: 0;
+                background-color: #f8f9fa;
+            }
+            .container { 
+                max-width: 600px; 
+                margin: 20px auto; 
+                background: white;
+                border-radius: 10px;
+                overflow: hidden;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            }
+            .header { 
+                background: linear-gradient(135deg, #a00000 0%, #222e60 100%); 
+                color: white; 
+                padding: 30px 20px; 
+                text-align: center; 
+            }
+            .content { 
+                padding: 30px; 
+            }
+            .button { 
+                background: linear-gradient(135deg, #a00000 0%, #c41e3a 100%); 
+                color: white !important; 
+                padding: 15px 30px; 
+                text-decoration: none; 
+                border-radius: 8px; 
+                display: inline-block; 
+                margin: 20px 0; 
+                font-weight: bold;
+            }
+            .info-box { 
+                background: #f8f9fa; 
+                padding: 20px; 
+                border-left: 4px solid #a00000; 
+                margin: 20px 0; 
+                border-radius: 0 8px 8px 0;
+            }
+            .document-info { 
+                background: linear-gradient(135deg, #e8f5e8 0%, #f0f8f0 100%); 
+                padding: 20px; 
+                border-radius: 8px; 
+                margin: 20px 0; 
+                border: 2px solid #c3e6cb; 
+            }
+            .footer { 
+                font-size: 13px; 
+                color: #6c757d; 
+                text-align: center; 
+                padding: 25px; 
+                background: #f8f9fa;
+                border-top: 1px solid #e9ecef;
+            }
+            .highlight { 
+                color: #a00000; 
+                font-weight: bold; 
+            }
         </style>
     </head>
     <body>
         <div class='container'>
             <div class='header'>
-                <h1>🏥 Philippine Red Cross</h1>
+                <h1>Philippine Red Cross</h1>
                 <p>Management System Portal</p>
             </div>
             
             <div class='content'>
-                <h2 style='color: #a00000;'>Welcome, " . htmlspecialchars($firstName) . "! 🎉</h2>
+                <h2 style='color: #a00000; margin-bottom: 20px;'>Welcome, " . htmlspecialchars($firstName) . "!</h2>
                 
-                <p>Thank you for registering with the Philippine Red Cross Management System. We're excited to have you join our community dedicated to humanitarian service.</p>
+                <p>Thank you for registering with the Philippine Red Cross Management System. We're excited to have you join our community dedicated to humanitarian service and making a positive impact in the world.</p>
                 
                 <div class='info-box'>
-                    <h3 style='margin-top: 0; color: #a00000;'>📋 Account Details</h3>
-                    <strong>Email:</strong> " . htmlspecialchars($email) . "<br>
-                    <strong>Account Type:</strong> <span class='highlight'>" . htmlspecialchars($accountTypeName) . "</span><br>
-                    <strong>Registration Date:</strong> " . date('F j, Y g:i A') . "<br>
-                    <strong>Account Status:</strong> <span style='color: #28a745;'>✓ Active</span>
+                    <h3 style='margin-top: 0; color: #a00000;'>Account Details</h3>
+                    <div style='margin: 8px 0;'><strong>Email:</strong> " . htmlspecialchars($email) . "</div>
+                    <div style='margin: 8px 0;'><strong>Account Type:</strong> <span class='highlight'>" . htmlspecialchars($accountTypeName) . "</span></div>
+                    <div style='margin: 8px 0;'><strong>Registration Date:</strong> " . date('F j, Y g:i A') . "</div>
+                    <div style='margin: 8px 0;'><strong>Account Status:</strong> <span style='color: #28a745; font-weight: bold;'>✓ Active</span></div>
                 </div>";
     
     if ($documentCount > 0) {
         $message .= "
                 <div class='document-info'>
-                    <h3 style='margin-top: 0; color: #155724;'>📄 Documents Received</h3>
-                    <p><strong>✓ Success!</strong> We have received <strong>$documentCount</strong> document(s) with your registration.</p>
-                    <p>Our team will review your documents within 2-3 business days. You will receive an email notification once the review is complete.</p>
+                    <h3 style='margin-top: 0; color: #155724;'>Documents Received</h3>
+                    <p><strong style='color: #28a745;'>✓ Success!</strong> We have received <strong>$documentCount</strong> document(s) with your registration.</p>
+                    <p>Our team will review your documents within <strong>2-3 business days</strong>. You will receive an email notification once the review is complete.</p>
                 </div>";
     }
     
     $message .= "
                 <div style='text-align: center; margin: 30px 0;'>
-                    <a href='login.php' class='button'>🔐 Login to Your Account</a>
+                    <a href='https://philippineredcross-iloilochapter.org/login.php' class='button'>Login to Your Account</a>
                 </div>
                 
-                <div style='background: white; padding: 20px; border-radius: 5px; margin: 20px 0;'>
-                    <h3 style='margin-top: 0; color: #a00000;'>📞 Need Help?</h3>
+                <div style='background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #e9ecef;'>
+                    <h3 style='margin-top: 0; color: #a00000;'>Need Help?</h3>
                     <p>If you have any questions or need assistance:</p>
                     <ul>
-                        <li><strong>Email:</strong> support@prc-system.com</li>
+                        <li><strong>Email:</strong> <a href='mailto:support@prc-system.com' style='color: #a00000;'>support@prc-system.com</a></li>
                         <li><strong>Phone:</strong> (02) 8527-0864</li>
-                        <li><strong>Website:</strong> <a href='https://redcross.org.ph'>redcross.org.ph</a></li>
+                        <li><strong>Website:</strong> <a href='https://redcross.org.ph' style='color: #a00000;'>redcross.org.ph</a></li>
                     </ul>
                 </div>
                 
-                <p style='text-align: center; color: #666; font-style: italic;'>
+                <p style='text-align: center; color: #666; font-style: italic; margin-top: 30px;'>
                     \"Together, we can make a difference in the lives of those who need it most.\"
                 </p>
             </div>
             
             <div class='footer'>
-                <p><strong>This is an automated message. Please do not reply to this email.</strong><br>
-                Philippine Red Cross Management System<br>
+                <p><strong>This is an automated message. Please do not reply to this email.</strong></p>
+                <p>Philippine Red Cross Management System<br>
                 © " . date('Y') . " Philippine Red Cross. All rights reserved.</p>
             </div>
         </div>
@@ -544,14 +842,21 @@ function sendWelcomeEmailWithDocuments($email, $firstName, $userType, $documentC
         'From: Philippine Red Cross System <noreply@prc-system.com>',
         'Reply-To: support@prc-system.com',
         'X-Mailer: PHP/' . phpversion(),
-        'X-Priority: 3',
+        'X-Priority: 3 (Normal)',
         'Return-Path: noreply@prc-system.com'
     );
 
-    return mail($email, $subject, $message, implode("\r\n", $headers));
+    // Attempt to send email
+    $mailSent = mail($email, $subject, $message, implode("\r\n", $headers));
+    
+    // Log email attempt
+    $logMessage = date('Y-m-d H:i:s') . " - Document Email attempt to $email: " . ($mailSent ? 'SUCCESS' : 'FAILED') . "\n";
+    file_put_contents('logs/email.log', $logMessage, FILE_APPEND | LOCK_EX);
+    
+    return $mailSent;
 }
 
-// Legacy function for backward compatibility (renamed to avoid conflicts)
+// Legacy function for backward compatibility
 function sendLegacyRegistrationEmail($email, $firstName, $userType) {
     return sendBasicRegistrationEmail($email, $firstName, $userType);
 }
@@ -589,15 +894,19 @@ function sendLegacyRegistrationEmail($email, $firstName, $userType) {
       <h2><i class="fas fa-user-plus"></i> Create Your Account</h2>
       <p>Join the Philippine Red Cross community. All fields marked with <span style="color: #a00000;">*</span> are required.</p>
 
-      <div class="alert error" id="errorAlert" style="display: none;">
+      <?php if (!empty($error)): ?>
+      <div class="alert error" id="errorAlert">
         <i class="fas fa-exclamation-circle"></i>
-        <span id="errorMessage"></span>
+        <span><?php echo htmlspecialchars($error); ?></span>
       </div>
+      <?php endif; ?>
 
-      <div class="alert success" id="successAlert" style="display: none;">
+      <?php if (!empty($success) && !$showModal): ?>
+      <div class="alert success" id="successAlert">
         <i class="fas fa-check-circle"></i>
-        <span id="successMessage"></span>
+        <span><?php echo htmlspecialchars($success); ?></span>
       </div>
+      <?php endif; ?>
 
       <form method="POST" action="register.php" class="register-form" id="registerForm" enctype="multipart/form-data">
         <!-- Account Type Section -->
@@ -862,6 +1171,46 @@ function sendLegacyRegistrationEmail($email, $firstName, $userType) {
     </div>
   </div>
 
+  <!-- Success Modal -->
+  <div class="modal-overlay" id="successModal" <?php echo $showModal ? 'style="display: flex;"' : ''; ?>>
+    <div class="success-modal">
+      <div class="modal-header">
+        <i class="fas fa-check-circle"></i>
+        <h3>Registration Successful!</h3>
+      </div>
+      <div class="modal-body">
+        <p>Your account has been created successfully. You can now log in to access the Philippine Red Cross Management System.</p>
+        
+        <div class="success-details">
+          <h4>What's Next?</h4>
+          <div class="success-steps">
+            <div class="success-step">
+              <i class="fas fa-envelope" style="color: #28a745;"></i>
+              <span>Check your email for a confirmation message</span>
+            </div>
+            <div class="success-step">
+              <i class="fas fa-sign-in-alt" style="color: #28a745;"></i>
+              <span>Log in with your username and password</span>
+            </div>
+            <div class="success-step">
+              <i class="fas fa-explore" style="color: #28a745;"></i>
+              <span>Explore available services and features</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="modal-actions">
+          <a href="login.php" class="modal-btn btn-primary">
+            <i class="fas fa-sign-in-alt"></i> Log In Now
+          </a>
+          <button class="modal-btn btn-secondary" onclick="closeModal()">
+            <i class="fas fa-home"></i> Return Home
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     document.addEventListener('DOMContentLoaded', function() {
         const form = document.getElementById('registerForm');
@@ -962,9 +1311,9 @@ function sendLegacyRegistrationEmail($email, $firstName, $userType) {
             if (username.length >= 4) {
                 usernameTimeout = setTimeout(() => {
                     if (/^[A-Za-z0-9_]+$/.test(username)) {
-                        statusDiv.innerHTML = '<span class="valid">✓ Username format is valid</span>';
+                        statusDiv.innerHTML = '<span class="valid">Valid username format</span>';
                     } else {
-                        statusDiv.innerHTML = '<span class="invalid">✗ Only letters, numbers, and underscores allowed</span>';
+                        statusDiv.innerHTML = '<span class="invalid">Only letters, numbers, and underscores allowed</span>';
                     }
                 }, 500);
             } else {
@@ -979,9 +1328,9 @@ function sendLegacyRegistrationEmail($email, $firstName, $userType) {
             
             if (email) {
                 if (validateEmail(email)) {
-                    statusDiv.innerHTML = '<span class="valid">✓ Valid email format</span>';
+                    statusDiv.innerHTML = '<span class="valid">Valid email format</span>';
                 } else {
-                    statusDiv.innerHTML = '<span class="invalid">✗ Invalid email format</span>';
+                    statusDiv.innerHTML = '<span class="invalid">Invalid email format</span>';
                 }
             }
         });
@@ -1052,9 +1401,9 @@ function sendLegacyRegistrationEmail($email, $firstName, $userType) {
             
             if (confirm) {
                 if (password === confirm) {
-                    statusDiv.innerHTML = '<span class="valid">✓ Passwords match</span>';
+                    statusDiv.innerHTML = '<span class="valid">Passwords match</span>';
                 } else {
-                    statusDiv.innerHTML = '<span class="invalid">✗ Passwords do not match</span>';
+                    statusDiv.innerHTML = '<span class="invalid">Passwords do not match</span>';
                 }
             } else {
                 statusDiv.innerHTML = '';
@@ -1087,16 +1436,16 @@ function sendLegacyRegistrationEmail($email, $firstName, $userType) {
                 
                 let status = 'valid';
                 let statusText = 'Valid';
-                let statusIcon = '✓';
+                let statusIcon = 'checkmark';
                 
                 if (fileSize > maxSize) {
                     status = 'invalid';
                     statusText = 'Too large (max 5MB)';
-                    statusIcon = '✗';
+                    statusIcon = 'error';
                 } else if (!allowedTypes.includes(fileType)) {
                     status = 'invalid';
                     statusText = 'Invalid type';
-                    statusIcon = '✗';
+                    statusIcon = 'error';
                 } else {
                     validFiles++;
                     selectedFiles.set(fileId, file);
@@ -1114,7 +1463,7 @@ function sendLegacyRegistrationEmail($email, $firstName, $userType) {
                         <i class="fas ${fileIcon}"></i>
                         <span class="file-name">${file.name}</span>
                         <span class="file-size">(${(fileSize / 1024 / 1024).toFixed(2)} MB)</span>
-                        <span class="file-status ${status}">${statusIcon} ${statusText}</span>
+                        <span class="file-status ${status}">${statusIcon === 'checkmark' ? '✓' : '✗'} ${statusText}</span>
                         <button type="button" class="file-remove-btn" onclick="removeFile('${fileId}')" title="Remove file">
                             <i class="fas fa-times"></i>
                         </button>
@@ -1203,7 +1552,17 @@ function sendLegacyRegistrationEmail($email, $firstName, $userType) {
         }
 
         function showError(message) {
-            const errorAlert = document.getElementById('errorAlert');
+            // Create or update error alert
+            let errorAlert = document.getElementById('errorAlert');
+            if (!errorAlert) {
+                errorAlert = document.createElement('div');
+                errorAlert.id = 'errorAlert';
+                errorAlert.className = 'alert error';
+                errorAlert.innerHTML = '<i class="fas fa-exclamation-circle"></i><span id="errorMessage"></span>';
+                const form = document.getElementById('registerForm');
+                form.parentNode.insertBefore(errorAlert, form);
+            }
+            
             const errorMessage = document.getElementById('errorMessage');
             errorMessage.textContent = message;
             errorAlert.style.display = 'block';
@@ -1297,6 +1656,233 @@ function sendLegacyRegistrationEmail($email, $firstName, $userType) {
             });
         });
     });
+
+    // Modal Functions
+    function showSuccessModal() {
+        const modal = document.getElementById('successModal');
+        modal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    }
+    
+    function closeModal() {
+        const modal = document.getElementById('successModal');
+        modal.style.display = 'none';
+        document.body.style.overflow = 'auto';
+        window.location.href = 'index.php';
+    }
+    
+    // Close modal when clicking outside
+    document.getElementById('successModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeModal();
+        }
+    });
+
+    // Show modal if registration was successful
+    <?php if ($showModal): ?>
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(showSuccessModal, 500);
+        });
+    <?php endif; ?>
   </script>
+
+  <style>
+    /* Modal Styles */
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        display: none;
+        justify-content: center;
+        align-items: center;
+        z-index: 10000;
+        animation: fadeIn 0.3s ease-out;
+    }
+
+    .success-modal {
+        background: white;
+        border-radius: 15px;
+        max-width: 500px;
+        width: 90%;
+        max-height: 90vh;
+        overflow-y: auto;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        animation: slideUp 0.4s ease-out;
+    }
+
+    .modal-header {
+        background: linear-gradient(135deg, #28a745, #20c997);
+        color: white;
+        padding: 30px;
+        text-align: center;
+        border-radius: 15px 15px 0 0;
+    }
+
+    .modal-header i {
+        font-size: 48px;
+        margin-bottom: 15px;
+        animation: bounce 0.6s ease-out;
+    }
+
+    .modal-header h3 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: bold;
+    }
+
+    .modal-body {
+        padding: 30px;
+    }
+
+    .modal-body p {
+        font-size: 16px;
+        color: #495057;
+        line-height: 1.6;
+        margin-bottom: 25px;
+        text-align: center;
+    }
+
+    .success-details {
+        margin: 25px 0;
+    }
+
+    .success-details h4 {
+        color: #28a745;
+        margin-bottom: 15px;
+        font-size: 18px;
+        text-align: center;
+    }
+
+    .success-steps {
+        space-y: 10px;
+    }
+
+    .success-step {
+        display: flex;
+        align-items: center;
+        padding: 10px 0;
+        font-size: 15px;
+        color: #495057;
+    }
+
+    .success-step i {
+        margin-right: 12px;
+        width: 20px;
+        text-align: center;
+    }
+
+    .modal-actions {
+        display: flex;
+        gap: 15px;
+        justify-content: center;
+        margin-top: 30px;
+    }
+
+    .modal-btn {
+        padding: 12px 25px;
+        border-radius: 8px;
+        text-decoration: none;
+        font-weight: bold;
+        font-size: 14px;
+        transition: all 0.3s ease;
+        border: none;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .modal-btn.btn-primary {
+        background: linear-gradient(135deg, #a00000, #c41e3a);
+        color: white;
+    }
+
+    .modal-btn.btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(160, 0, 0, 0.3);
+    }
+
+    .modal-btn.btn-secondary {
+        background: #6c757d;
+        color: white;
+    }
+
+    .modal-btn.btn-secondary:hover {
+        background: #5a6268;
+        transform: translateY(-1px);
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    @keyframes slideUp {
+        from {
+            opacity: 0;
+            transform: translateY(50px) scale(0.9);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+    }
+
+    @keyframes bounce {
+        0%, 20%, 50%, 80%, 100% {
+            transform: translateY(0);
+        }
+        40% {
+            transform: translateY(-10px);
+        }
+        60% {
+            transform: translateY(-5px);
+        }
+    }
+
+    /* Validation Status Styles */
+    .validation-status {
+        font-size: 13px;
+        margin-top: 5px;
+    }
+
+    .validation-status .valid {
+        color: #28a745;
+    }
+
+    .validation-status .invalid {
+        color: #dc3545;
+    }
+
+    /* Alert Styles */
+    .alert {
+        padding: 15px 20px;
+        margin: 20px 0;
+        border-radius: 8px;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .alert.error {
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+    }
+
+    .alert.success {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+    }
+
+    .alert i {
+        font-size: 16px;
+    }
+  </style>
 </body>
 </html>
