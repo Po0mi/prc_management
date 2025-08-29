@@ -1657,33 +1657,50 @@ function sendLegacyRegistrationEmail($email, $firstName, $userType) {
         });
     });
 
-    // Modal Functions
-    function showSuccessModal() {
-        const modal = document.getElementById('successModal');
+// Modal Functions
+function showSuccessModal() {
+    const modal = document.getElementById('successModal');
+    if (modal) {
         modal.style.display = 'flex';
+        // Force reflow before adding class for smooth animation
+        modal.offsetHeight;
+        modal.classList.add('active');
         document.body.style.overflow = 'hidden';
     }
-    
-    function closeModal() {
-        const modal = document.getElementById('successModal');
-        modal.style.display = 'none';
-        document.body.style.overflow = 'auto';
-        window.location.href = 'index.php';
+}
+
+function closeModal() {
+    const modal = document.getElementById('successModal');
+    if (modal) {
+        modal.classList.remove('active');
+        // Wait for animation to complete before hiding
+        setTimeout(() => {
+            modal.style.display = 'none';
+            document.body.style.overflow = 'auto';
+        }, 300);
     }
-    
-    // Close modal when clicking outside
-    document.getElementById('successModal').addEventListener('click', function(e) {
-        if (e.target === this) {
+    // Redirect after closing
+    setTimeout(() => {
+        window.location.href = 'index.php';
+    }, 400);
+}
+
+// Close modal when clicking outside
+document.getElementById('successModal')?.addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeModal();
+    }
+});
+
+// Escape key handler
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        const modal = document.getElementById('successModal');
+        if (modal && modal.style.display === 'flex') {
             closeModal();
         }
-    });
-
-    // Show modal if registration was successful
-    <?php if ($showModal): ?>
-        document.addEventListener('DOMContentLoaded', function() {
-            setTimeout(showSuccessModal, 500);
-        });
-    <?php endif; ?>
+    }
+});
   </script>
 
   <style>
