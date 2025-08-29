@@ -306,7 +306,7 @@ function sendBasicRegistrationEmail($email, $firstName, $userType) {
                 <p>Your account has been successfully created. You can now log in to access the system.</p>
                 
                 <div style='text-align: center;'>
-                    <a href='login.php' class='button'>Login to Your Account</a>
+                    <a href='https://philippineredcross-iloilochapter.org/login.php' class='button'>Login to Your Account</a>
                 </div>
                 
                 <p>If you have any questions or need assistance, please don't hesitate to contact our support team.</p>
