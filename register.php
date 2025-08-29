@@ -68,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = "Password must be at least 8 characters.";
     } elseif ($userType === 'rcy_member' && empty($selectedServices)) {
         $error = "RCY Members must select at least one service.";
-    } elseif ($userType === 'rcy_member' && (!isset($_FILES['documents']) || empty($_FILES['documents']['name'][0]))) {
+    } elseif ($userType === 'rcy_member' && (!isset($_FILES['documents']) || !$_FILES['documents']['name'][0])) {
         $error = "RCY Member accounts require at least one verification document to be uploaded.";
     } else {
         // Validate selected services if RCY member
@@ -1212,121 +1212,138 @@ function sendLegacyRegistrationEmail($email, $firstName, $userType) {
   </div>
 
   <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const form = document.getElementById('registerForm');
-        const submitBtn = document.getElementById('submitBtn');
-        const filePreview = document.getElementById('filePreview');
-        const servicesSection = document.getElementById('servicesSection');
-        const servicesValidation = document.getElementById('servicesValidation');
-        const selectionSummary = document.getElementById('selectionSummary');
-        const selectedServicesList = document.getElementById('selectedServicesList');
-        let selectedFiles = new Map();
+// REPLACE THE ENTIRE SCRIPT SECTION (around line 600-900) with this:
 
-        // Handle account type change
-        const accountTypeRadios = document.querySelectorAll('input[name="user_type"]');
-        accountTypeRadios.forEach(radio => {
-            radio.addEventListener('change', handleAccountTypeChange);
-        });
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('registerForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const filePreview = document.getElementById('filePreview');
+    const servicesSection = document.getElementById('servicesSection');
+    const servicesValidation = document.getElementById('servicesValidation');
+    const selectionSummary = document.getElementById('selectionSummary');
+    const selectedServicesList = document.getElementById('selectedServicesList');
+    let selectedFiles = new Map();
 
-        // Handle service selection
-        const serviceCheckboxes = document.querySelectorAll('input[name="services[]"]');
-        serviceCheckboxes.forEach(checkbox => {
-            checkbox.addEventListener('change', updateServiceSelection);
-        });
+    // Handle account type change
+    const accountTypeRadios = document.querySelectorAll('input[name="user_type"]');
+    accountTypeRadios.forEach(radio => {
+        radio.addEventListener('change', handleAccountTypeChange);
+    });
 
-        // Initialize form
-        handleAccountTypeChange();
-        updateServiceSelection();
+    // Handle service selection
+    const serviceCheckboxes = document.querySelectorAll('input[name="services[]"]');
+    serviceCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', updateServiceSelection);
+    });
 
-        function handleAccountTypeChange() {
-            const selectedType = document.querySelector('input[name="user_type"]:checked').value;
-            const documentLabel = document.getElementById('documentLabel');
-            const documentRequired = document.getElementById('documentRequired');
-            const documentPurpose = document.getElementById('documentPurpose');
-            const documentUpload = document.getElementById('documentUpload');
+    // Initialize form
+    handleAccountTypeChange();
+    updateServiceSelection();
 
-            if (selectedType === 'rcy_member') {
-                servicesSection.classList.add('show');
-                documentLabel.textContent = 'Upload Verification Documents';
-                documentRequired.style.display = 'inline';
-                documentPurpose.textContent = 'Required: Valid ID, certificates, proof of address, or other verification documents';
-                documentUpload.required = true;
-                
-                // Scroll to services section smoothly
-                setTimeout(() => {
-                    servicesSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                }, 300);
-            } else {
-                servicesSection.classList.remove('show');
-                documentLabel.textContent = 'Upload Documents (Optional)';
-                documentRequired.style.display = 'none';
-                documentPurpose.textContent = 'Optional: ID, certificates, or other relevant documents';
-                documentUpload.required = false;
-                
-                // Clear service selections
-                serviceCheckboxes.forEach(checkbox => {
-                    checkbox.checked = false;
-                });
-                updateServiceSelection();
-            }
+    function handleAccountTypeChange() {
+        const selectedType = document.querySelector('input[name="user_type"]:checked')?.value;
+        const documentLabel = document.getElementById('documentLabel');
+        const documentRequired = document.getElementById('documentRequired');
+        const documentPurpose = document.getElementById('documentPurpose');
+        const documentUpload = document.getElementById('documentUpload');
+
+        if (selectedType === 'rcy_member') {
+            if (servicesSection) servicesSection.classList.add('show');
+            if (documentLabel) documentLabel.textContent = 'Upload Verification Documents';
+            if (documentRequired) documentRequired.style.display = 'inline';
+            if (documentPurpose) documentPurpose.textContent = 'Required: Valid ID, certificates, proof of address, or other verification documents';
+            if (documentUpload) documentUpload.required = true;
+            
+            // Scroll to services section smoothly
+            setTimeout(() => {
+                if (servicesSection) servicesSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 300);
+        } else {
+            if (servicesSection) servicesSection.classList.remove('show');
+            if (documentLabel) documentLabel.textContent = 'Upload Documents (Optional)';
+            if (documentRequired) documentRequired.style.display = 'none';
+            if (documentPurpose) documentPurpose.textContent = 'Optional: ID, certificates, or other relevant documents';
+            if (documentUpload) documentUpload.required = false;
+            
+            // Clear service selections
+            serviceCheckboxes.forEach(checkbox => {
+                checkbox.checked = false;
+            });
+            updateServiceSelection();
         }
+    }
 
-        function updateServiceSelection() {
-            const selectedServices = Array.from(serviceCheckboxes)
-                .filter(checkbox => checkbox.checked)
-                .map(checkbox => {
-                    const serviceNames = {
-                        'health': 'Health Services',
-                        'safety': 'Safety Services', 
-                        'welfare': 'Welfare Services',
-                        'disaster_management': 'Disaster Management',
-                        'red_cross_youth': 'Red Cross Youth'
-                    };
-                    return serviceNames[checkbox.value] || checkbox.value;
-                });
+    function updateServiceSelection() {
+        const selectedServices = Array.from(serviceCheckboxes)
+            .filter(checkbox => checkbox.checked)
+            .map(checkbox => {
+                const serviceNames = {
+                    'health': 'Health Services',
+                    'safety': 'Safety Services', 
+                    'welfare': 'Welfare Services',
+                    'disaster_management': 'Disaster Management',
+                    'red_cross_youth': 'Red Cross Youth'
+                };
+                return serviceNames[checkbox.value] || checkbox.value;
+            });
 
-            if (selectedServices.length > 0) {
-                selectionSummary.style.display = 'block';
+        if (selectedServices.length > 0) {
+            if (selectionSummary) selectionSummary.style.display = 'block';
+            if (selectedServicesList) {
                 selectedServicesList.innerHTML = selectedServices
                     .map(service => `<span class="service-tag">${service}</span>`)
                     .join('');
+            }
+            if (servicesValidation) {
                 servicesValidation.classList.remove('error');
-            } else {
-                selectionSummary.style.display = 'none';
-                if (document.querySelector('input[name="user_type"]:checked').value === 'rcy_member') {
-                    servicesValidation.classList.add('error');
-                } else {
-                    servicesValidation.classList.remove('error');
-                }
+                servicesValidation.style.display = 'none';
+            }
+        } else {
+            if (selectionSummary) selectionSummary.style.display = 'none';
+            const selectedType = document.querySelector('input[name="user_type"]:checked')?.value;
+            if (selectedType === 'rcy_member' && servicesValidation) {
+                servicesValidation.classList.add('error');
+                servicesValidation.style.display = 'block';
+            } else if (servicesValidation) {
+                servicesValidation.classList.remove('error');
+                servicesValidation.style.display = 'none';
             }
         }
+    }
 
-        // Username validation
-        let usernameTimeout;
-        document.getElementById('username').addEventListener('input', function(e) {
+    // Username validation
+    let usernameTimeout;
+    const usernameField = document.getElementById('username');
+    if (usernameField) {
+        usernameField.addEventListener('input', function(e) {
             clearTimeout(usernameTimeout);
             const username = e.target.value;
             const statusDiv = document.getElementById('username-status');
             
             if (username.length >= 4) {
                 usernameTimeout = setTimeout(() => {
-                    if (/^[A-Za-z0-9_]+$/.test(username)) {
-                        statusDiv.innerHTML = '<span class="valid">Valid username format</span>';
-                    } else {
-                        statusDiv.innerHTML = '<span class="invalid">Only letters, numbers, and underscores allowed</span>';
+                    if (statusDiv) {
+                        if (/^[A-Za-z0-9_]+$/.test(username)) {
+                            statusDiv.innerHTML = '<span class="valid">Valid username format</span>';
+                        } else {
+                            statusDiv.innerHTML = '<span class="invalid">Only letters, numbers, and underscores allowed</span>';
+                        }
                     }
                 }, 500);
-            } else {
+            } else if (statusDiv) {
                 statusDiv.innerHTML = '';
             }
         });
+    }
 
-        // Email validation
-        document.getElementById('email').addEventListener('blur', function(e) {
+    // Email validation
+    const emailField = document.getElementById('email');
+    if (emailField) {
+        emailField.addEventListener('blur', function(e) {
             const email = e.target.value;
             const statusDiv = document.getElementById('email-status');
             
-            if (email) {
+            if (email && statusDiv) {
                 if (validateEmail(email)) {
                     statusDiv.innerHTML = '<span class="valid">Valid email format</span>';
                 } else {
@@ -1334,305 +1351,335 @@ function sendLegacyRegistrationEmail($email, $firstName, $userType) {
                 }
             }
         });
+    }
 
-        // Password validation
-        document.getElementById('password').addEventListener('input', updatePasswordStrength);
-        document.getElementById('confirmPassword').addEventListener('input', checkPasswordMatch);
+    // Password validation
+    const passwordField = document.getElementById('password');
+    const confirmPasswordField = document.getElementById('confirmPassword');
+    
+    if (passwordField) passwordField.addEventListener('input', updatePasswordStrength);
+    if (confirmPasswordField) confirmPasswordField.addEventListener('input', checkPasswordMatch);
 
-        // File upload
-        document.getElementById('documentUpload').addEventListener('change', handleFileUpload);
+    // File upload
+    const documentUploadField = document.getElementById('documentUpload');
+    if (documentUploadField) {
+        documentUploadField.addEventListener('change', handleFileUpload);
+    }
 
-        // Form submission
+    // Form submission - FIXED
+    if (form) {
         form.addEventListener('submit', function(e) {
             if (!validateForm()) {
                 e.preventDefault();
                 return false;
             }
             
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating Account...';
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating Account...';
+            }
+            
+            // Don't prevent default - let form submit normally
+            return true;
         });
+    }
 
-        function validateEmail(email) {
-            const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            return re.test(email);
+    function validateEmail(email) {
+        const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return re.test(email);
+    }
+
+    function updatePasswordStrength() {
+        const password = document.getElementById('password')?.value || '';
+        const meter = document.getElementById('strengthMeter');
+        const text = document.getElementById('strengthText');
+        
+        if (!meter || !text) return;
+        
+        let strength = 0;
+        let feedback = [];
+        
+        if (password.length >= 8) strength += 25;
+        else feedback.push('At least 8 characters');
+        
+        if (/[a-z]/.test(password)) strength += 25;
+        else feedback.push('Lowercase letter');
+        
+        if (/[A-Z]/.test(password)) strength += 25;
+        else feedback.push('Uppercase letter');
+        
+        if (/[0-9]/.test(password)) strength += 25;
+        else feedback.push('Number');
+        
+        meter.style.width = strength + '%';
+        
+        if (strength < 50) {
+            meter.style.backgroundColor = '#ff4444';
+            text.textContent = 'Weak - Missing: ' + feedback.join(', ');
+            text.style.color = '#ff4444';
+        } else if (strength < 75) {
+            meter.style.backgroundColor = '#ffbb33';
+            text.textContent = 'Good - Missing: ' + feedback.join(', ');
+            text.style.color = '#ffbb33';
+        } else {
+            meter.style.backgroundColor = '#00C851';
+            text.textContent = 'Strong password';
+            text.style.color = '#00C851';
         }
+    }
 
-        function updatePasswordStrength() {
-            const password = document.getElementById('password').value;
-            const meter = document.getElementById('strengthMeter');
-            const text = document.getElementById('strengthText');
-            let strength = 0;
-            let feedback = [];
-            
-            if (password.length >= 8) strength += 25;
-            else feedback.push('At least 8 characters');
-            
-            if (/[a-z]/.test(password)) strength += 25;
-            else feedback.push('Lowercase letter');
-            
-            if (/[A-Z]/.test(password)) strength += 25;
-            else feedback.push('Uppercase letter');
-            
-            if (/[0-9]/.test(password)) strength += 25;
-            else feedback.push('Number');
-            
-            meter.style.width = strength + '%';
-            
-            if (strength < 50) {
-                meter.style.backgroundColor = '#ff4444';
-                text.textContent = 'Weak - Missing: ' + feedback.join(', ');
-                text.style.color = '#ff4444';
-            } else if (strength < 75) {
-                meter.style.backgroundColor = '#ffbb33';
-                text.textContent = 'Good - Missing: ' + feedback.join(', ');
-                text.style.color = '#ffbb33';
+    function checkPasswordMatch() {
+        const password = document.getElementById('password')?.value || '';
+        const confirm = document.getElementById('confirmPassword')?.value || '';
+        const statusDiv = document.getElementById('password-match');
+        
+        if (confirm && statusDiv) {
+            if (password === confirm) {
+                statusDiv.innerHTML = '<span class="valid">Passwords match</span>';
             } else {
-                meter.style.backgroundColor = '#00C851';
-                text.textContent = 'Strong password';
-                text.style.color = '#00C851';
+                statusDiv.innerHTML = '<span class="invalid">Passwords do not match</span>';
             }
+        } else if (statusDiv) {
+            statusDiv.innerHTML = '';
         }
+    }
 
-        function checkPasswordMatch() {
-            const password = document.getElementById('password').value;
-            const confirm = document.getElementById('confirmPassword').value;
-            const statusDiv = document.getElementById('password-match');
+    function handleFileUpload(e) {
+        const files = e.target.files;
+        const preview = document.getElementById('filePreview');
+        const maxSize = 5 * 1024 * 1024; // 5MB
+        const allowedTypes = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'txt'];
+        
+        if (!preview) return;
+        
+        preview.innerHTML = '';
+        selectedFiles.clear();
+        
+        if (files.length === 0) return;
+        
+        let totalSize = 0;
+        let validFiles = 0;
+        
+        Array.from(files).forEach((file, index) => {
+            const fileId = 'file_' + Date.now() + '_' + index;
+            const fileSize = file.size;
+            const fileType = file.name.split('.').pop().toLowerCase();
+            totalSize += fileSize;
             
-            if (confirm) {
-                if (password === confirm) {
-                    statusDiv.innerHTML = '<span class="valid">Passwords match</span>';
-                } else {
-                    statusDiv.innerHTML = '<span class="invalid">Passwords do not match</span>';
-                }
+            const fileDiv = document.createElement('div');
+            fileDiv.className = 'file-item';
+            fileDiv.dataset.fileId = fileId;
+            
+            let status = 'valid';
+            let statusText = 'Valid';
+            let statusIcon = 'checkmark';
+            
+            if (fileSize > maxSize) {
+                status = 'invalid';
+                statusText = 'Too large (max 5MB)';
+                statusIcon = 'error';
+            } else if (!allowedTypes.includes(fileType)) {
+                status = 'invalid';
+                statusText = 'Invalid type';
+                statusIcon = 'error';
             } else {
-                statusDiv.innerHTML = '';
+                validFiles++;
+                selectedFiles.set(fileId, file);
             }
-        }
-
-        function handleFileUpload(e) {
-            const files = e.target.files;
-            const preview = document.getElementById('filePreview');
-            const maxSize = 5 * 1024 * 1024; // 5MB
-            const allowedTypes = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'txt'];
             
-            preview.innerHTML = '';
-            selectedFiles.clear();
+            // Get file icon based on type
+            let fileIcon = 'fa-file';
+            if (['pdf'].includes(fileType)) fileIcon = 'fa-file-pdf';
+            else if (['doc', 'docx'].includes(fileType)) fileIcon = 'fa-file-word';
+            else if (['jpg', 'jpeg', 'png'].includes(fileType)) fileIcon = 'fa-file-image';
+            else if (['txt'].includes(fileType)) fileIcon = 'fa-file-text';
             
-            if (files.length === 0) return;
-            
-            let totalSize = 0;
-            let validFiles = 0;
-            
-            Array.from(files).forEach((file, index) => {
-                const fileId = 'file_' + Date.now() + '_' + index;
-                const fileSize = file.size;
-                const fileType = file.name.split('.').pop().toLowerCase();
-                totalSize += fileSize;
-                
-                const fileDiv = document.createElement('div');
-                fileDiv.className = 'file-item';
-                fileDiv.dataset.fileId = fileId;
-                
-                let status = 'valid';
-                let statusText = 'Valid';
-                let statusIcon = 'checkmark';
-                
-                if (fileSize > maxSize) {
-                    status = 'invalid';
-                    statusText = 'Too large (max 5MB)';
-                    statusIcon = 'error';
-                } else if (!allowedTypes.includes(fileType)) {
-                    status = 'invalid';
-                    statusText = 'Invalid type';
-                    statusIcon = 'error';
-                } else {
-                    validFiles++;
-                    selectedFiles.set(fileId, file);
-                }
-                
-                // Get file icon based on type
-                let fileIcon = 'fa-file';
-                if (['pdf'].includes(fileType)) fileIcon = 'fa-file-pdf';
-                else if (['doc', 'docx'].includes(fileType)) fileIcon = 'fa-file-word';
-                else if (['jpg', 'jpeg', 'png'].includes(fileType)) fileIcon = 'fa-file-image';
-                else if (['txt'].includes(fileType)) fileIcon = 'fa-file-text';
-                
-                fileDiv.innerHTML = `
-                    <div class="file-info">
-                        <i class="fas ${fileIcon}"></i>
-                        <span class="file-name">${file.name}</span>
-                        <span class="file-size">(${(fileSize / 1024 / 1024).toFixed(2)} MB)</span>
-                        <span class="file-status ${status}">${statusIcon === 'checkmark' ? '✓' : '✗'} ${statusText}</span>
-                        <button type="button" class="file-remove-btn" onclick="removeFile('${fileId}')" title="Remove file">
-                            <i class="fas fa-times"></i>
-                        </button>
-                    </div>
-                `;
-                
-                preview.appendChild(fileDiv);
-            });
-            
-            // Add summary
-            const summaryDiv = document.createElement('div');
-            summaryDiv.className = 'upload-summary';
-            summaryDiv.innerHTML = `
-                <div class="summary-info">
-                    <strong>Summary:</strong> ${validFiles}/${files.length} valid files, 
-                    Total size: ${(totalSize / 1024 / 1024).toFixed(2)} MB
+            fileDiv.innerHTML = `
+                <div class="file-info">
+                    <i class="fas ${fileIcon}"></i>
+                    <span class="file-name">${file.name}</span>
+                    <span class="file-size">(${(fileSize / 1024 / 1024).toFixed(2)} MB)</span>
+                    <span class="file-status ${status}">${statusIcon === 'checkmark' ? '✓' : '✗'} ${statusText}</span>
+                    <button type="button" class="file-remove-btn" onclick="removeFile('${fileId}')" title="Remove file">
+                        <i class="fas fa-times"></i>
+                    </button>
                 </div>
             `;
-            preview.appendChild(summaryDiv);
             
-            updateFileInput();
-        }
+            preview.appendChild(fileDiv);
+        });
+        
+        // Add summary
+        const summaryDiv = document.createElement('div');
+        summaryDiv.className = 'upload-summary';
+        summaryDiv.innerHTML = `
+            <div class="summary-info">
+                <strong>Summary:</strong> ${validFiles}/${files.length} valid files, 
+                Total size: ${(totalSize / 1024 / 1024).toFixed(2)} MB
+            </div>
+        `;
+        preview.appendChild(summaryDiv);
+        
+        updateFileInput();
+    }
 
-        function validateForm() {
-            const requiredFields = ['first_name', 'last_name', 'gender', 'username', 'email', 'phone', 'password', 'confirm_password'];
-            let isValid = true;
-            
-            // Validate basic required fields
-            requiredFields.forEach(fieldName => {
-                const field = document.querySelector(`[name="${fieldName}"]`);
-                if (!field.value.trim()) {
-                    field.style.borderColor = '#ff4444';
-                    isValid = false;
-                } else {
-                    field.style.borderColor = '#ddd';
-                }
-            });
-            
-            // Check account type selection
-            const userType = document.querySelector('input[name="user_type"]:checked');
-            if (!userType) {
-                showError('Please select an account type.');
-                isValid = false;
-            }
-            
-            // Check password match
-            const password = document.getElementById('password').value;
-            const confirm = document.getElementById('confirmPassword').value;
-            if (password !== confirm) {
-                document.getElementById('confirmPassword').style.borderColor = '#ff4444';
-                showError('Passwords do not match.');
-                isValid = false;
-            }
-            
-            // Check RCY member service selection
-            if (userType && userType.value === 'rcy_member') {
-                const selectedServices = document.querySelectorAll('input[name="services[]"]:checked');
-                if (selectedServices.length === 0) {
-                    showError('RCY Members must select at least one service.');
-                    servicesValidation.classList.add('error');
-                    servicesSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    isValid = false;
-                } else {
-                    servicesValidation.classList.remove('error');
-                }
-                
-                // Check document requirement for RCY members
-                if (selectedFiles.size === 0) {
-                    const documentUpload = document.getElementById('documentUpload');
-                    documentUpload.style.borderColor = '#ff4444';
-                    showError('RCY Member accounts require at least one verification document to be uploaded.');
-                    isValid = false;
-                }
-            }
-            
-            // Check reCAPTCHA
-            if (typeof grecaptcha !== 'undefined') {
-                const recaptcha = grecaptcha.getResponse();
-                if (!recaptcha) {
-                    showError('Please complete the reCAPTCHA verification.');
-                    isValid = false;
-                }
-            }
-            
-            return isValid;
-        }
-
-        function showError(message) {
-            // Create or update error alert
-            let errorAlert = document.getElementById('errorAlert');
-            if (!errorAlert) {
-                errorAlert = document.createElement('div');
-                errorAlert.id = 'errorAlert';
-                errorAlert.className = 'alert error';
-                errorAlert.innerHTML = '<i class="fas fa-exclamation-circle"></i><span id="errorMessage"></span>';
-                const form = document.getElementById('registerForm');
-                form.parentNode.insertBefore(errorAlert, form);
-            }
-            
-            const errorMessage = document.getElementById('errorMessage');
-            errorMessage.textContent = message;
-            errorAlert.style.display = 'block';
-            errorAlert.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-
-        function updateFileInput() {
-            const fileInput = document.getElementById('documentUpload');
-            const dt = new DataTransfer();
-            
-            selectedFiles.forEach(file => {
-                dt.items.add(file);
-            });
-            
-            fileInput.files = dt.files;
-        }
-
-        // Global function for removing files
-        window.removeFile = function(fileId) {
-            selectedFiles.delete(fileId);
-            const fileElement = document.querySelector(`[data-file-id="${fileId}"]`);
-            if (fileElement) {
-                fileElement.remove();
-            }
-            
-            // Update summary
-            const validFilesCount = selectedFiles.size;
-            let totalSize = 0;
-            selectedFiles.forEach(file => {
-                totalSize += file.size;
-            });
-            
-            const summaryDiv = document.querySelector('.upload-summary .summary-info');
-            if (summaryDiv) {
-                summaryDiv.innerHTML = `
-                    <strong>Summary:</strong> ${validFilesCount} valid files, 
-                    Total size: ${(totalSize / 1024 / 1024).toFixed(2)} MB
-                `;
-            }
-            
-            // If no files left, clear the preview
-            if (validFilesCount === 0) {
-                document.getElementById('filePreview').innerHTML = '';
-            }
-            
-            updateFileInput();
-        };
-
-        // Auto-save form data to prevent loss (excluding sensitive data)
-        const formFields = ['first_name', 'last_name', 'username', 'email', 'phone'];
-        formFields.forEach(fieldName => {
+    function validateForm() {
+        const requiredFields = ['first_name', 'last_name', 'gender', 'username', 'email', 'phone', 'password', 'confirm_password'];
+        let isValid = true;
+        
+        // Clear previous error styling
+        document.querySelectorAll('.form-group input, .form-group select').forEach(field => {
+            field.style.borderColor = '#ddd';
+        });
+        
+        // Validate basic required fields
+        requiredFields.forEach(fieldName => {
             const field = document.querySelector(`[name="${fieldName}"]`);
-            if (field) {
-                // Load saved data
-                const savedValue = localStorage.getItem(`register_${fieldName}`);
-                if (savedValue && !field.value) {
-                    field.value = savedValue;
-                }
-                
-                // Save data on input
-                field.addEventListener('input', () => {
-                    localStorage.setItem(`register_${fieldName}`, field.value);
-                });
+            if (!field || !field.value.trim()) {
+                if (field) field.style.borderColor = '#ff4444';
+                isValid = false;
             }
         });
+        
+        // Check account type selection
+        const userType = document.querySelector('input[name="user_type"]:checked');
+        if (!userType) {
+            showError('Please select an account type.');
+            return false;
+        }
+        
+        // Check password match
+        const password = document.getElementById('password')?.value || '';
+        const confirm = document.getElementById('confirmPassword')?.value || '';
+        if (password !== confirm) {
+            const confirmField = document.getElementById('confirmPassword');
+            if (confirmField) confirmField.style.borderColor = '#ff4444';
+            showError('Passwords do not match.');
+            isValid = false;
+        }
+        
+        // RCY specific validations
+        if (userType.value === 'rcy_member') {
+            const selectedServices = document.querySelectorAll('input[name="services[]"]:checked');
+            
+            // Check service selection
+            if (selectedServices.length === 0) {
+                showError('RCY Members must select at least one service.');
+                if (servicesValidation) {
+                    servicesValidation.classList.add('error');
+                    servicesValidation.style.display = 'block';
+                }
+                if (servicesSection) {
+                    servicesSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+                return false;
+            }
+            
+            // Check document requirement
+            const fileInput = document.getElementById('documentUpload');
+            if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+                showError('RCY Member accounts require at least one verification document.');
+                if (fileInput) fileInput.style.borderColor = '#ff4444';
+                return false;
+            }
+        }
+        
+        // Check reCAPTCHA
+        if (typeof grecaptcha !== 'undefined') {
+            const recaptcha = grecaptcha.getResponse();
+            if (!recaptcha) {
+                showError('Please complete the reCAPTCHA verification.');
+                return false;
+            }
+        }
+        
+        return isValid;
+    }
 
-        // Enhanced visual feedback for service selection
-        serviceCheckboxes.forEach(checkbox => {
-            checkbox.addEventListener('change', function() {
-                const serviceOption = this.closest('.service-option');
+    function showError(message) {
+        // Create or update error alert
+        let errorAlert = document.getElementById('errorAlert');
+        if (!errorAlert) {
+            errorAlert = document.createElement('div');
+            errorAlert.id = 'errorAlert';
+            errorAlert.className = 'alert error';
+            errorAlert.innerHTML = '<i class="fas fa-exclamation-circle"></i><span id="errorMessage"></span>';
+            if (form) form.parentNode.insertBefore(errorAlert, form);
+        }
+        
+        const errorMessage = document.getElementById('errorMessage') || errorAlert.querySelector('span');
+        if (errorMessage) errorMessage.textContent = message;
+        errorAlert.style.display = 'block';
+        errorAlert.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function updateFileInput() {
+        const fileInput = document.getElementById('documentUpload');
+        if (!fileInput) return;
+        
+        const dt = new DataTransfer();
+        
+        selectedFiles.forEach(file => {
+            dt.items.add(file);
+        });
+        
+        fileInput.files = dt.files;
+    }
+
+    // Global function for removing files
+    window.removeFile = function(fileId) {
+        selectedFiles.delete(fileId);
+        const fileElement = document.querySelector(`[data-file-id="${fileId}"]`);
+        if (fileElement) {
+            fileElement.remove();
+        }
+        
+        // Update summary
+        const validFilesCount = selectedFiles.size;
+        let totalSize = 0;
+        selectedFiles.forEach(file => {
+            totalSize += file.size;
+        });
+        
+        const summaryDiv = document.querySelector('.upload-summary .summary-info');
+        if (summaryDiv) {
+            summaryDiv.innerHTML = `
+                <strong>Summary:</strong> ${validFilesCount} valid files, 
+                Total size: ${(totalSize / 1024 / 1024).toFixed(2)} MB
+            `;
+        }
+        
+        // If no files left, clear the preview
+        if (validFilesCount === 0 && filePreview) {
+            filePreview.innerHTML = '';
+        }
+        
+        updateFileInput();
+    };
+
+    // Auto-save form data to prevent loss (excluding sensitive data)
+    const formFields = ['first_name', 'last_name', 'username', 'email', 'phone'];
+    formFields.forEach(fieldName => {
+        const field = document.querySelector(`[name="${fieldName}"]`);
+        if (field) {
+            // Load saved data
+            const savedValue = localStorage.getItem(`register_${fieldName}`);
+            if (savedValue && !field.value) {
+                field.value = savedValue;
+            }
+            
+            // Save data on input
+            field.addEventListener('input', () => {
+                localStorage.setItem(`register_${fieldName}`, field.value);
+            });
+        }
+    });
+
+    // Enhanced visual feedback for service selection
+    serviceCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            const serviceOption = this.closest('.service-option');
+            if (serviceOption) {
                 if (this.checked) {
                     serviceOption.style.transform = 'scale(1.02)';
                     serviceOption.style.borderColor = 'var(--prc-red)';
@@ -1642,30 +1689,35 @@ function sendLegacyRegistrationEmail($email, $firstName, $userType) {
                 } else {
                     serviceOption.style.borderColor = '#e9ecef';
                 }
-            });
+            }
         });
+    });
 
-        // Add smooth transitions for account type changes
-        accountTypeRadios.forEach(radio => {
-            radio.addEventListener('change', function() {
-                const accountOption = this.closest('.account-option');
+    // Add smooth transitions for account type changes
+    accountTypeRadios.forEach(radio => {
+        radio.addEventListener('change', function() {
+            const accountOption = this.closest('.account-option');
+            if (accountOption) {
                 accountOption.style.transform = 'scale(1.02)';
                 setTimeout(() => {
                     accountOption.style.transform = 'scale(1)';
                 }, 200);
-            });
+            }
         });
     });
+});
 
-// Modal Functions
+// Modal Functions - FIXED
 function showSuccessModal() {
     const modal = document.getElementById('successModal');
     if (modal) {
         modal.style.display = 'flex';
-        // Force reflow before adding class for smooth animation
-        modal.offsetHeight;
-        modal.classList.add('active');
         document.body.style.overflow = 'hidden';
+        
+        // Add active class after display to trigger animation
+        setTimeout(() => {
+            modal.classList.add('active');
+        }, 10);
     }
 }
 
@@ -1673,16 +1725,22 @@ function closeModal() {
     const modal = document.getElementById('successModal');
     if (modal) {
         modal.classList.remove('active');
+        
         // Wait for animation to complete before hiding
         setTimeout(() => {
             modal.style.display = 'none';
             document.body.style.overflow = 'auto';
+            
+            // Clear saved form data only after successful registration
+            const formFields = ['first_name', 'last_name', 'username', 'email', 'phone'];
+            formFields.forEach(field => {
+                localStorage.removeItem('register_' + field);
+            });
+            
+            // Redirect to home page
+            window.location.href = 'index.php';
         }, 300);
     }
-    // Redirect after closing
-    setTimeout(() => {
-        window.location.href = 'index.php';
-    }, 400);
 }
 
 // Close modal when clicking outside
@@ -1701,164 +1759,189 @@ document.addEventListener('keydown', function(e) {
         }
     }
 });
+
+// Show modal if success flag is set
+<?php if ($showModal): ?>
+document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(showSuccessModal, 100);
+});
+<?php endif; ?>
   </script>
 
   <style>
-    /* Modal Styles */
-    .modal-overlay {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.8);
-        display: none;
-        justify-content: center;
-        align-items: center;
-        z-index: 10000;
-        animation: fadeIn 0.3s ease-out;
-    }
+/* ADD THIS CSS TO FIX THE MODAL - Add to the bottom of your CSS file */
 
+/* Success Modal Styles - FIXED VERSION */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+    opacity: 0;
+    transition: opacity 0.3s ease-out;
+}
+
+.modal-overlay.active {
+    opacity: 1;
+}
+
+.success-modal {
+    background: white;
+    border-radius: 15px;
+    max-width: 500px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    transform: translateY(-50px) scale(0.9);
+    opacity: 0;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.modal-overlay.active .success-modal {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+}
+
+.modal-header {
+    background: linear-gradient(135deg, #28a745, #20c997);
+    color: white;
+    padding: 30px;
+    text-align: center;
+    border-radius: 15px 15px 0 0;
+}
+
+.modal-header i {
+    font-size: 48px;
+    margin-bottom: 15px;
+    animation: bounce 0.6s ease-out;
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-size: 24px;
+    font-weight: bold;
+}
+
+.modal-body {
+    padding: 30px;
+}
+
+.modal-body p {
+    font-size: 16px;
+    color: #495057;
+    line-height: 1.6;
+    margin-bottom: 25px;
+    text-align: center;
+}
+
+.success-details {
+    margin: 25px 0;
+}
+
+.success-details h4 {
+    color: #28a745;
+    margin-bottom: 15px;
+    font-size: 18px;
+    text-align: center;
+}
+
+.success-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.success-step {
+    display: flex;
+    align-items: center;
+    padding: 10px 0;
+    font-size: 15px;
+    color: #495057;
+}
+
+.success-step i {
+    margin-right: 12px;
+    width: 20px;
+    text-align: center;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    margin-top: 30px;
+}
+
+.modal-btn {
+    padding: 12px 25px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: bold;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.modal-btn.btn-primary {
+    background: linear-gradient(135deg, #a00000, #c41e3a);
+    color: white;
+}
+
+.modal-btn.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(160, 0, 0, 0.3);
+}
+
+.modal-btn.btn-secondary {
+    background: #6c757d;
+    color: white;
+}
+
+.modal-btn.btn-secondary:hover {
+    background: #5a6268;
+    transform: translateY(-1px);
+}
+
+@keyframes bounce {
+    0%, 20%, 50%, 80%, 100% {
+        transform: translateY(0);
+    }
+    40% {
+        transform: translateY(-10px);
+    }
+    60% {
+        transform: translateY(-5px);
+    }
+}
+
+/* Responsive Modal */
+@media (max-width: 768px) {
     .success-modal {
-        background: white;
-        border-radius: 15px;
-        max-width: 500px;
-        width: 90%;
-        max-height: 90vh;
-        overflow-y: auto;
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-        animation: slideUp 0.4s ease-out;
+        width: 95%;
+        margin: 10px;
     }
-
-    .modal-header {
-        background: linear-gradient(135deg, #28a745, #20c997);
-        color: white;
-        padding: 30px;
-        text-align: center;
-        border-radius: 15px 15px 0 0;
-    }
-
-    .modal-header i {
-        font-size: 48px;
-        margin-bottom: 15px;
-        animation: bounce 0.6s ease-out;
-    }
-
-    .modal-header h3 {
-        margin: 0;
-        font-size: 24px;
-        font-weight: bold;
-    }
-
-    .modal-body {
-        padding: 30px;
-    }
-
-    .modal-body p {
-        font-size: 16px;
-        color: #495057;
-        line-height: 1.6;
-        margin-bottom: 25px;
-        text-align: center;
-    }
-
-    .success-details {
-        margin: 25px 0;
-    }
-
-    .success-details h4 {
-        color: #28a745;
-        margin-bottom: 15px;
-        font-size: 18px;
-        text-align: center;
-    }
-
-    .success-steps {
-        space-y: 10px;
-    }
-
-    .success-step {
-        display: flex;
-        align-items: center;
-        padding: 10px 0;
-        font-size: 15px;
-        color: #495057;
-    }
-
-    .success-step i {
-        margin-right: 12px;
-        width: 20px;
-        text-align: center;
-    }
-
+    
     .modal-actions {
-        display: flex;
-        gap: 15px;
-        justify-content: center;
-        margin-top: 30px;
-    }
-
-    .modal-btn {
-        padding: 12px 25px;
-        border-radius: 8px;
-        text-decoration: none;
-        font-weight: bold;
-        font-size: 14px;
-        transition: all 0.3s ease;
-        border: none;
-        cursor: pointer;
-        display: inline-flex;
+        flex-direction: column;
         align-items: center;
-        gap: 8px;
     }
-
-    .modal-btn.btn-primary {
-        background: linear-gradient(135deg, #a00000, #c41e3a);
-        color: white;
+    
+    .modal-btn {
+        width: 100%;
+        justify-content: center;
     }
-
-    .modal-btn.btn-primary:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 25px rgba(160, 0, 0, 0.3);
-    }
-
-    .modal-btn.btn-secondary {
-        background: #6c757d;
-        color: white;
-    }
-
-    .modal-btn.btn-secondary:hover {
-        background: #5a6268;
-        transform: translateY(-1px);
-    }
-
-    @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-    }
-
-    @keyframes slideUp {
-        from {
-            opacity: 0;
-            transform: translateY(50px) scale(0.9);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-        }
-    }
-
-    @keyframes bounce {
-        0%, 20%, 50%, 80%, 100% {
-            transform: translateY(0);
-        }
-        40% {
-            transform: translateY(-10px);
-        }
-        60% {
-            transform: translateY(-5px);
-        }
-    }
+}
 
     /* Validation Status Styles */
     .validation-status {

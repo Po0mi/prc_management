@@ -1,9 +1,12 @@
-<?php  ?> 
 <aside class="sidebar">   
+  <button class="mobile-collapse-btn">
+    <i class="fas fa-bars"></i>
+  </button>
+  
   <div class="sidebar-header">     
     <div class="logo-title">       
       <a href="../index.php">       
-      <img src="../assets/images/logo.png" alt="PRC Logo" class="prc-logo">       
+        <img src="../assets/images/logo.png" alt="PRC Logo" class="prc-logo">       
       </a>       
       <div>         
         <h1>PRC Admin</h1>         
@@ -14,7 +17,7 @@
       <i class="fas fa-user-shield"></i>        
       <span><?= htmlspecialchars(current_username()) ?></span>     
     </div>   
-  </div>      
+  </div>     
   <nav class="sidebar-nav">     
     <a href="dashboard.php" class="nav-link">       
       <i class="fas fa-tachometer-alt"></i>       

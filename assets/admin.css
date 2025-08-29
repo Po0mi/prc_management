@@ -1045,3 +1045,225 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+/* ===== RESPONSIVE DESIGN FOR SMALLER DEVICES ===== */
+@media (max-width: 992px) {
+  /* Adjust layout for tablets */
+  .dashboard-main {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  
+  .quick-actions-section {
+    order: -1; /* Move quick actions to top on mobile */
+    position: static;
+    margin-bottom: 1rem;
+  }
+  
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+  }
+  
+  .welcome-section {
+    flex-direction: column;
+    text-align: center;
+    gap: 1rem;
+  }
+  
+  .date-display {
+    align-self: center;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Adjust for smaller tablets and large phones */
+  .header-content {
+    margin-left: var(--sidebar-collapsed-width);
+  }
+  
+  .top-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem;
+    margin: 0 1rem;
+    width: calc(100% - 2rem);
+  }
+  
+  .user-actions {
+    align-self: flex-end;
+  }
+  
+  .dashboard-container {
+    padding: 1rem;
+  }
+  
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .stat-card {
+    padding: 1rem;
+  }
+  
+  .notification-banner {
+    flex-direction: column;
+    text-align: center;
+    gap: 0.75rem;
+  }
+  
+  .notification-close {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+  }
+  
+  .activity-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  
+  .activity-icon {
+    margin-right: 0;
+  }
+  
+  .activity-action {
+    margin-left: 0;
+    align-self: flex-end;
+  }
+}
+
+@media (max-width: 576px) {
+  /* Mobile-specific adjustments */
+  .header-content {
+    margin-left: 0;
+  }
+  
+  .top-header {
+    border-radius: 0;
+    margin: 0;
+    width: 100%;
+  }
+  
+  .welcome-section {
+    border-radius: 0;
+    margin: 0 -1rem 1.5rem;
+    width: calc(100% + 2rem);
+  }
+  
+  .stat-card {
+    flex-direction: column;
+    text-align: center;
+    gap: 0.75rem;
+    padding: 1.25rem 1rem;
+  }
+  
+  .stat-info {
+    width: 100%;
+  }
+  
+  .stat-link {
+    align-self: center;
+  }
+  
+  .activity-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  
+  .view-all {
+    align-self: flex-end;
+  }
+  
+  .action-buttons {
+    grid-template-columns: 1fr;
+  }
+  
+  .action-btn {
+    padding: 0.75rem;
+  }
+  
+  .current-date {
+    padding: 0.5rem 1rem;
+    font-size: 0.8rem;
+  }
+}
+
+@media (max-width: 400px) {
+  /* Extra small devices */
+  .page-title h2 {
+    font-size: 1.25rem;
+  }
+  
+  .welcome-content h1 {
+    font-size: 1.5rem;
+  }
+  
+  .stat-value {
+    font-size: 1.5rem;
+  }
+  
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  
+  .section-badge {
+    align-self: flex-start;
+  }
+}
+
+/* Touch device improvements */
+@media (hover: none) and (pointer: coarse) {
+  .stat-card:hover,
+  .activity-card:hover,
+  .action-btn:hover {
+    transform: none;
+  }
+  
+  .activity-action {
+    opacity: 1; /* Always show on touch devices */
+  }
+  
+  /* Increase tap target sizes */
+  .action-btn,
+  .stat-link,
+  .activity-item {
+    min-height: 44px;
+  }
+  
+  .user-actions button {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* Orientation-based adjustments */
+@media (max-width: 768px) and (orientation: landscape) {
+  .dashboard-container {
+    padding: 0.75rem;
+  }
+  
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .stat-card {
+    padding: 0.75rem;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .stat-card {
+    border: 1px solid var(--text-dark);
+  }
+  
+  .activity-item {
+    border-bottom: 2px solid var(--border-light);
+  }
+}
+

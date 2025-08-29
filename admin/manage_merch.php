@@ -784,17 +784,20 @@ $stock_filters = [
       .stock-badge.out-of-stock { background: #dc3545; }
       
       .status-badge {
-        padding: 0.3rem 0.6rem;
-        border-radius: 15px;
-        font-size: 0.75rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        display: inline-block;
+          padding: 0.4rem 0.8rem;
+          border-radius: 20px;
+          font-size: 0.8rem;
+          font-weight: 600;
+          text-transform: uppercase;
+          display: inline-block;
+          border: 1px solid transparent;
+          width: 100px
       }
       
       .status-badge.available {
-        background: #d4edda;
+        background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
         color: #155724;
+        border-color: #b1dfbb;
       }
       
       .status-badge.unavailable {

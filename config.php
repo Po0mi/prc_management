@@ -84,20 +84,28 @@ function get_user_role($user_id = null) {
     if (!$user_id) return null;
     
     try {
-        $stmt = $pdo->prepare("SELECT admin_role, role FROM users WHERE user_id = ?");
+        $stmt = $pdo->prepare("SELECT admin_role, role, is_admin FROM users WHERE user_id = ?");
         $stmt->execute([$user_id]);
         $user = $stmt->fetch();
         
         if (!$user) return null;
         
-        // Return admin_role if set, otherwise 'super' for admin users, or null for regular users
-        if ($user['admin_role']) {
-            return $user['admin_role'];
-        } elseif ($user['role'] === 'admin') {
+        // FIRST: Check if admin_role is explicitly set - this takes priority
+        if (!empty($user['admin_role'])) {
+            return $user['admin_role'];  // This will return safety, welfare, health, disaster, youth, or super
+        }
+        
+        // SECOND: If no admin_role but is_admin=1 or role=admin, default to super
+        if ($user['is_admin'] == 1 || $user['role'] === 'admin') {
             return 'super';
         }
         
-        return null;
+        // THIRD: Check if role itself is an admin type (legacy support)
+        if (in_array($user['role'], ['safety', 'welfare', 'health', 'disaster', 'youth'])) {
+            return $user['role'];
+        }
+        
+        return null; // Not an admin
     } catch (PDOException $e) {
         error_log("Get user role error: " . $e->getMessage());
         return null;
@@ -108,10 +116,28 @@ function get_user_role($user_id = null) {
  * Check if user has permission - ALL ADMINS NOW HAVE ALL PERMISSIONS
  */
 function user_has_permission($role, $module, $permission) {
-    // All admin roles now have unrestricted access
-    return !empty($role);
+    global $pdo;
+    
+    if (!$role) return false;
+    
+    // Super admin has all permissions
+    if ($role === 'super') return true;
+    
+    try {
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) FROM role_permissions 
+            WHERE role_name = ? AND module = ? AND (permission = ? OR permission = 'manage')
+        ");
+        $stmt->execute([$role, $module, $permission]);
+        $count = $stmt->fetchColumn();
+        
+        return $count > 0;
+    } catch (PDOException $e) {
+        error_log("Permission check error: " . $e->getMessage());
+        // For safety reasons, deny access on error unless super admin
+        return false;
+    }
 }
-
 /**
  * Ensure user has required role or permission - UNRESTRICTED
  */
@@ -123,7 +149,12 @@ function ensure_role_permission($required_role = null, $module = null, $permissi
         die('Access denied. Admin privileges required.');
     }
     
-    // All admin roles now have unrestricted access - no role or permission checks
+    // Actually check if user has permission for this module
+    if (!user_has_permission($user_role, $module, $permission)) {
+        header('HTTP/1.1 403 Forbidden');
+        die('Access denied. Insufficient permissions.');
+    }
+    
     return true;
 }
 
@@ -305,23 +336,30 @@ function validate_service_parameter($role) {
  * Generate role-specific navigation menu - FULL ACCESS FOR ALL ROLES
  */
 function get_role_navigation($role) {
-    // All admin roles now get the full navigation menu
-    $full_navigation = [
-        ['url' => 'dashboard.php', 'icon' => 'fas fa-tachometer-alt', 'label' => 'Dashboard'],
-        ['url' => 'manage_users.php', 'icon' => 'fas fa-users-cog', 'label' => 'User Management'],
-        ['url' => 'manage_events.php', 'icon' => 'fas fa-calendar-alt', 'label' => 'Events'],
-        ['url' => 'manage_sessions.php', 'icon' => 'fas fa-chalkboard-teacher', 'label' => 'Training Sessions'],
-        ['url' => 'manage_donations.php', 'icon' => 'fas fa-donate', 'label' => 'Donations'],
-        ['url' => 'manage_inventory.php', 'icon' => 'fas fa-warehouse', 'label' => 'Inventory'],
-        ['url' => 'manage_blood_banks.php', 'icon' => 'fas fa-hospital', 'label' => 'Blood Banks'],
-        ['url' => 'manage_announcements.php', 'icon' => 'fas fa-bullhorn', 'label' => 'Announcements'],
-        ['url' => 'view_registrations.php', 'icon' => 'fas fa-clipboard-list', 'label' => 'Registrations'],
-        ['url' => 'system_settings.php', 'icon' => 'fas fa-cogs', 'label' => 'System Settings'],
-        ['url' => 'admin_management.php', 'icon' => 'fas fa-user-shield', 'label' => 'Admin Management'],
-        ['url' => 'reports.php', 'icon' => 'fas fa-chart-bar', 'label' => 'Reports'],
+    $all_navigation = [
+        ['url' => 'dashboard.php', 'icon' => 'fas fa-tachometer-alt', 'label' => 'Dashboard', 'module' => 'dashboard'],
+        ['url' => 'manage_users.php', 'icon' => 'fas fa-users-cog', 'label' => 'User Management', 'module' => 'users'],
+        ['url' => 'manage_events.php', 'icon' => 'fas fa-calendar-alt', 'label' => 'Events', 'module' => 'events'],
+        ['url' => 'manage_sessions.php', 'icon' => 'fas fa-chalkboard-teacher', 'label' => 'Training Sessions', 'module' => 'training_sessions'],
+        ['url' => 'manage_donations.php', 'icon' => 'fas fa-donate', 'label' => 'Donations', 'module' => 'donations'],
+        ['url' => 'manage_inventory.php', 'icon' => 'fas fa-warehouse', 'label' => 'Inventory', 'module' => 'inventory_items'],
+        ['url' => 'manage_blood_banks.php', 'icon' => 'fas fa-hospital', 'label' => 'Blood Banks', 'module' => 'blood_banks'],
+        ['url' => 'manage_announcements.php', 'icon' => 'fas fa-bullhorn', 'label' => 'Announcements', 'module' => 'announcements'],
+        ['url' => 'view_registrations.php', 'icon' => 'fas fa-clipboard-list', 'label' => 'Registrations', 'module' => 'registrations'],
+        ['url' => 'system_settings.php', 'icon' => 'fas fa-cogs', 'label' => 'System Settings', 'module' => 'system_settings'],
+        ['url' => 'admin_management.php', 'icon' => 'fas fa-user-shield', 'label' => 'Admin Management', 'module' => 'admin_management'],
+        ['url' => 'reports.php', 'icon' => 'fas fa-chart-bar', 'label' => 'Reports', 'module' => 'reports'],
     ];
     
-    return $full_navigation;
+    // Filter navigation based on permissions
+    $allowed_navigation = [];
+    foreach ($all_navigation as $nav_item) {
+        if (user_has_permission($role, $nav_item['module'], 'view')) {
+            $allowed_navigation[] = $nav_item;
+        }
+    }
+    
+    return $allowed_navigation;
 }
 
 /**

@@ -188,3 +188,264 @@
     display: inline-block;
   }
 }
+/* ===== RESPONSIVE SIDEBAR ENHANCEMENTS ===== */
+
+/* Mobile-first approach for sidebar */
+@media (max-width: 992px) {
+  .sidebar {
+    width: var(--sidebar-collapsed-width);
+    transform: translateX(0);
+    transition: transform var(--transition-speed) ease;
+  }
+  
+  .sidebar.expanded {
+    width: var(--sidebar-width);
+    transform: translateX(0);
+    box-shadow: 5px 0 15px rgba(0, 0, 0, 0.2);
+  }
+  
+  /* Hide text in collapsed state by default */
+  .logo-title h1,
+  .logo-title p,
+  .user-info span,
+  .nav-link span {
+    display: none;
+  }
+  
+  .sidebar.expanded .logo-title h1,
+  .sidebar.expanded .logo-title p,
+  .sidebar.expanded .user-info span,
+  .sidebar.expanded .nav-link span {
+    display: flex;
+  }
+  
+  /* Adjust logo in collapsed state */
+  .logo-title {
+    justify-content: center;
+    padding: 1rem 0;
+  }
+  
+  .logo-title img {
+    width: 40px;
+    min-width: 40px;
+  }
+  
+  /* Center align everything in collapsed state */
+  .nav-link {
+    justify-content: center;
+    padding: 1rem 0;
+  }
+  
+  .user-info {
+    justify-content: center;
+    padding: 10px 0;
+  }
+  
+  /* Show hamburger icon in mobile view */
+  .collapse-btn i.fa-bars {
+    display: inline-block;
+  }
+  
+  .collapse-btn i.fa-chevron-left {
+    display: none;
+  }
+  
+  /* Adjust collapse button position */
+  .collapse-btn {
+    position: fixed;
+    top: 1rem;
+    left: 1rem;
+    transform: none;
+    z-index: 101;
+    background: var(--prc-red);
+    width: 40px;
+    height: 40px;
+  }
+  
+  .collapse-btn i {
+    color: white;
+  }
+  
+  /* Move sidebar to left with transform */
+  .sidebar:not(.expanded) {
+    transform: translateX(calc(-1 * var(--sidebar-collapsed-width)));
+  }
+  
+  /* Adjust header content margin for mobile */
+  .header-content {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+
+/* Expanded sidebar on larger mobile devices in landscape */
+@media (max-width: 992px) and (min-width: 576px) and (orientation: landscape) {
+  .sidebar.expanded {
+    width: var(--sidebar-width);
+  }
+  
+  .sidebar:not(.expanded) {
+    width: var(--sidebar-collapsed-width);
+    transform: translateX(0);
+  }
+}
+
+/* Very small devices */
+@media (max-width: 350px) {
+  .sidebar.expanded {
+    width: 100%;
+    z-index: 1000;
+  }
+  
+  .sidebar-header {
+    padding: 1rem;
+  }
+  
+  .nav-link {
+    padding: 0.75rem 1rem;
+  }
+}
+
+/* Touch device improvements */
+@media (hover: none) and (pointer: coarse) {
+  .nav-link {
+    min-height: 44px; /* Minimum touch target size */
+    padding: 1rem 1.5rem;
+  }
+  
+  .collapse-btn {
+    width: 44px;
+    height: 44px;
+  }
+  
+  /* Add visual feedback for touch */
+  .nav-link:active {
+    background-color: rgba(255, 255, 255, 0.25);
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .sidebar {
+    border-right: 2px solid white;
+  }
+  
+  .nav-link {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
+  
+  .collapse-btn i {
+    transition: none;
+  }
+}
+
+/* JavaScript helper class for mobile toggle */
+.sidebar-mobile-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 99;
+}
+
+@media (max-width: 992px) {
+  .sidebar.expanded + .sidebar-mobile-overlay {
+    display: block;
+  }
+}
+
+/* Smooth transitions for all states */
+.sidebar,
+.sidebar * {
+  transition: all var(--transition-speed) ease;
+}
+
+/* Ensure sidebar doesn't cause horizontal scroll */
+.sidebar {
+  max-width: 100vw;
+}
+
+/* Adjust main content when sidebar is expanded on mobile */
+@media (max-width: 992px) {
+  body.sidebar-expanded {
+    overflow: hidden;
+  }
+  
+  .sidebar.expanded {
+    transform: translateX(0);
+  }
+}
+
+/* Improved focus states for accessibility */
+.nav-link:focus,
+.collapse-btn:focus {
+  outline: 2px solid white;
+  outline-offset: -2px;
+}
+
+/* Add these styles to your existing CSS */
+
+/* Mobile-specific collapse button */
+.mobile-collapse-btn {
+  display: none;
+  position: absolute;
+  top: 1.5rem;
+  left: 1.5rem;
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.5rem;
+  cursor: pointer;
+  z-index: 102;
+}
+
+/* Hide the original collapse button on mobile */
+@media (max-width: 768px) {
+  .collapse-btn {
+    display: none;
+  }
+  
+  .mobile-collapse-btn {
+    display: block;
+  }
+  
+  /* Ensure logo is clickable area for mobile */
+  .logo-title {
+    position: relative;
+    padding-left: 2.5rem; /* Make space for the mobile button */
+  }
+  
+  /* Adjust logo position when sidebar is collapsed on mobile */
+  .sidebar.collapsed .logo-title {
+    padding-left: 0;
+    justify-content: center;
+  }
+  
+  /* Hide the arrow icon in mobile view */
+  .sidebar:not(.collapsed) .collapse-btn i.fa-chevron-left {
+    display: none;
+  }
+}
+
+/* Very small devices */
+@media (max-width: 350px) {
+  .mobile-collapse-btn {
+    top: 1rem;
+    left: 1rem;
+    font-size: 1.2rem;
+  }
+  
+  .logo-title {
+    padding-left: 2rem;
+  }
+}

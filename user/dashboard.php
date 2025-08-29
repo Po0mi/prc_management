@@ -44,7 +44,7 @@ $serviceNames = [
     'red_cross_youth' => 'Red Cross Youth'
 ];
 
-// Get user statistics
+// Get user statistics (for sidebar summary only)
 $userStats = [];
 
 // Events registered
@@ -63,7 +63,6 @@ try {
     $stmt->execute([$userId]);
     $userStats['training_sessions'] = $stmt->fetchColumn();
 } catch (PDOException $e) {
-    // If table doesn't exist or column is different, set to 0
     $userStats['training_sessions'] = 0;
 }
 
@@ -73,7 +72,6 @@ try {
     $stmt->execute([$userId]);
     $userStats['donations_made'] = $stmt->fetchColumn();
 } catch (PDOException $e) {
-    // If table structure is different, try alternative approach
     try {
         $stmt = $pdo->prepare("SELECT COUNT(*) FROM donations WHERE user_id = ?");
         $stmt->execute([$userId]);
@@ -107,7 +105,6 @@ try {
     $trainStmt->execute([$userId]);
     $upcomingTraining = $trainStmt->fetchAll();
 } catch (PDOException $e) {
-    // If session_registrations table doesn't exist or has different structure
     $trainStmt = $pdo->prepare("
         SELECT * FROM training_sessions 
         WHERE session_date >= CURDATE() 
@@ -116,7 +113,6 @@ try {
     ");
     $trainStmt->execute();
     $upcomingTraining = $trainStmt->fetchAll();
-    // Add user_registered as null for each session
     foreach ($upcomingTraining as &$session) {
         $session['user_registered'] = null;
     }
@@ -144,7 +140,6 @@ try {
         LIMIT 3
     ")->fetchAll();
 } catch (PDOException $e) {
-    // Try alternative column names for announcements
     try {
         $announcements = $pdo->query("
             SELECT title, content, announcement_date as created_at 
@@ -154,31 +149,46 @@ try {
             LIMIT 3
         ")->fetchAll();
     } catch (PDOException $e2) {
-        // Try without status filter
-        try {
-            $announcements = $pdo->query("
-                SELECT title, content, announcement_date as created_at 
-                FROM announcements 
-                ORDER BY announcement_date DESC 
-                LIMIT 3
-            ")->fetchAll();
-        } catch (PDOException $e3) {
-            // Try basic query without date ordering
-            try {
-                $announcements = $pdo->query("
-                    SELECT title, content, announcement_id as created_at 
-                    FROM announcements 
-                    LIMIT 3
-                ")->fetchAll();
-            } catch (PDOException $e4) {
-                // If announcements table doesn't exist, set empty array
-                $announcements = [];
-            }
+        $announcements = [];
+    }
+}
+
+// Get additional notifications (like upcoming deadlines, reminders, etc.)
+$additionalNotifications = [];
+
+// Check for upcoming event deadlines
+if (!empty($upcomingEvents)) {
+    foreach ($upcomingEvents as $event) {
+        $daysUntil = ceil((strtotime($event['event_date']) - time()) / (60 * 60 * 24));
+        if ($daysUntil <= 7 && $daysUntil > 0 && !$event['registration_status']) {
+            $additionalNotifications[] = [
+                'type' => 'deadline',
+                'title' => 'Event Registration Deadline Approaching',
+                'content' => "Don't miss out on '{$event['title']}' - only {$daysUntil} days left to register!",
+                'action_text' => 'Register Now',
+                'action_link' => 'registration.php',
+                'urgency' => 'high'
+            ];
         }
     }
 }
 
-// Mock upcoming service meetings for new RCY members (you can replace this with actual database data)
+// Check for unread announcements (mock - you can implement actual logic)
+if (!empty($announcements)) {
+    $recentAnnouncement = $announcements[0];
+    if (strtotime($recentAnnouncement['created_at']) > strtotime('-3 days')) {
+        $additionalNotifications[] = [
+            'type' => 'announcement',
+            'title' => 'New Announcement Posted',
+            'content' => substr($recentAnnouncement['content'], 0, 100) . '...',
+            'action_text' => 'Read More',
+            'action_link' => 'announcements.php',
+            'urgency' => 'medium'
+        ];
+    }
+}
+
+// Mock upcoming service meetings for new RCY members
 $upcomingMeetings = [];
 if ($userType === 'rcy_member' && $isNewUser && !empty($userServices)) {
     $meetingDates = [
@@ -211,16 +221,308 @@ if ($userType === 'rcy_member' && $isNewUser && !empty($userServices)) {
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="../assets/styles.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/sidebar.css?v=<?php echo time(); ?>">
-   <link rel="stylesheet" href="../assets/header.css?v=<?php echo time(); ?>">
+  <link rel="stylesheet" href="../assets/header.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/dashboard.css?v=<?php echo time(); ?>">
-
+  <style>
+    /* Enhanced Notification Styles - Replaces Stats Grid */
+    
+    .notifications-section {
+      margin-bottom: 2rem;
+    }
+    
+    .notification-banner {
+      display: flex;
+      align-items: flex-start;
+      gap: 1.5rem;
+      padding: 1.5rem 2rem;
+      border-radius: 15px;
+      margin-bottom: 1.2rem;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s ease;
+      animation: slideInFromTop 0.5s ease-out;
+    }
+    
+    .notification-banner::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+      animation: shimmer 2s infinite;
+    }
+    
+    @keyframes shimmer {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+    
+    .notification-banner:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+    }
+    
+    .notification-banner.warning {
+      background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+      border: 1px solid #ffeaa7;
+      border-left: 5px solid #ffc107;
+    }
+    
+    .notification-banner.success {
+      background: linear-gradient(135deg, #d1edff 0%, #a7e7ff 100%);
+      border: 1px solid #a7e7ff;
+      border-left: 5px solid #28a745;
+    }
+    
+    .notification-banner.info {
+      background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+      border: 1px solid #bbdefb;
+      border-left: 5px solid #2196f3;
+    }
+    
+    .notification-banner.deadline {
+      background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+      border: 1px solid #ffcdd2;
+      border-left: 5px solid #f44336;
+      animation: urgentPulse 2s ease-in-out infinite;
+    }
+    
+    .notification-banner.announcement {
+      background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%);
+      border: 1px solid #e1bee7;
+      border-left: 5px solid #9c27b0;
+    }
+    
+    @keyframes urgentPulse {
+      0%, 100% {
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+      }
+      50% {
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08), 0 0 20px rgba(244, 67, 54, 0.3);
+      }
+    }
+    
+    .notification-icon {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 1.8rem;
+      color: white;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    
+    .notification-banner.warning .notification-icon {
+      background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
+    }
+    
+    .notification-banner.success .notification-icon {
+      background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    }
+    
+    .notification-banner.info .notification-icon {
+      background: linear-gradient(135deg, #2196f3 0%, #03a9f4 100%);
+    }
+    
+    .notification-banner.deadline .notification-icon {
+      background: linear-gradient(135deg, #f44336 0%, #e91e63 100%);
+      animation: iconPulse 1s ease-in-out infinite;
+    }
+    
+    .notification-banner.announcement .notification-icon {
+      background: linear-gradient(135deg, #9c27b0 0%, #673ab7 100%);
+    }
+    
+    @keyframes iconPulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+    }
+    
+    .notification-content {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .notification-content h3 {
+      margin: 0 0 0.75rem 0;
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: #333;
+      line-height: 1.3;
+    }
+    
+    .notification-content p {
+      margin: 0;
+      color: #666;
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+    
+    .notification-content strong {
+      color: #333;
+      font-weight: 600;
+    }
+    
+    .notification-close {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      background: rgba(0, 0, 0, 0.1);
+      border: none;
+      color: #666;
+      cursor: pointer;
+      font-size: 1.2rem;
+      padding: 0.5rem;
+      border-radius: 50%;
+      transition: all 0.3s ease;
+      width: 35px;
+      height: 35px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .notification-close:hover {
+      background: rgba(0, 0, 0, 0.2);
+      color: #333;
+      transform: scale(1.1);
+    }
+    
+    .urgency-indicator {
+      position: absolute;
+      top: -2px;
+      right: -2px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #f44336;
+      animation: pulse 1.5s infinite;
+    }
+    
+    .urgency-indicator.high {
+      background: #f44336;
+    }
+    
+    .urgency-indicator.medium {
+      background: #ff9800;
+    }
+    
+    .urgency-indicator.low {
+      background: #4caf50;
+    }
+    
+    /* Dark mode support for notifications */
+    .dark-mode .notification-banner {
+      border-color: #555;
+    }
+    
+    .dark-mode .notification-content h3 {
+      color: #f0f0f0;
+    }
+    
+    .dark-mode .notification-content p {
+      color: #b0b0b0;
+    }
+    
+    .dark-mode .notification-content strong {
+      color: #f0f0f0;
+    }
+    
+    .dark-mode .notification-close {
+      color: #b0b0b0;
+    }
+    
+    .dark-mode .notification-close:hover {
+      color: #f0f0f0;
+    }
+    
+    /* Responsive design for notifications */
+    @media (max-width: 768px) {
+      .notification-banner {
+        padding: 1rem;
+        flex-direction: column;
+        text-align: center;
+      }
+      
+      .notification-icon {
+        width: 50px;
+        height: 50px;
+        font-size: 1.5rem;
+      }
+      
+      .notification-close {
+        position: static;
+        margin-left: auto;
+      }
+    }
+    
+    @media (max-width: 576px) {
+      .notification-banner {
+        padding: 0.75rem;
+        margin-bottom: 0.75rem;
+      }
+      
+      .notification-content h3 {
+        font-size: 1rem;
+      }
+      
+      .notification-content p {
+        font-size: 0.9rem;
+      }
+      
+      .notification-icon {
+        width: 45px;
+        height: 45px;
+        font-size: 1.3rem;
+      }
+    }
+    
+    /* Animation for notification entrance */
+    @keyframes slideInFromTop {
+      from {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    @keyframes pulse {
+      0%, 100% {
+        transform: scale(1);
+        opacity: 1;
+      }
+      50% {
+        transform: scale(1.2);
+        opacity: 0.7;
+      }
+    }
+    
+    /* Accessibility improvements */
+    .notification-banner:focus-within {
+      outline: 2px solid #3b82f6;
+      outline-offset: 2px;
+    }
+    
+    .notification-close:focus {
+      outline: 2px solid #3b82f6;
+      outline-offset: 2px;
+    }
+  </style>
 </head>
 <body>
   <?php include 'sidebar.php'; ?>
   
   <div class="header-content">
     <?php include 'header.php'; ?>
-
     
     <div class="dashboard-container">
       <!-- Welcome Section -->
@@ -272,141 +574,91 @@ if ($userType === 'rcy_member' && $isNewUser && !empty($userServices)) {
         </div>
       </div>
 
-      <!-- New RCY Member Notifications -->
-      <?php if ($userType === 'rcy_member' && $isNewUser && !empty($upcomingMeetings)): ?>
-        <div class="new-member-notification">
-          <div class="notification-banner success" style="background: transparent; border: none; padding: 0; box-shadow: none;">
+      <!-- Enhanced Notifications Section (Replaces Stats Grid) -->
+      <div class="notifications-section">
+        
+        <!-- New RCY Member Notifications -->
+        <?php if ($userType === 'rcy_member' && $isNewUser && !empty($upcomingMeetings)): ?>
+          <div class="notification-banner success">
             <div class="notification-icon">
               <i class="fas fa-hands-helping"></i>
             </div>
             <div class="notification-content">
-              <h3>Welcome to RCY! 🎉</h3>
-              <p><strong>Congratulations on joining the Red Cross Youth!</strong> We have scheduled orientation meetings for your selected services. Please mark your calendar:</p>
+              <h3>Welcome to Red Cross Youth!</h3>
+              <p><strong>Congratulations on joining RCY!</strong> We have scheduled orientation meetings for your selected services. These sessions will cover requirements, training schedules, and volunteer opportunities.</p>
               
-              <div style="margin-top: 1rem;">
-                <?php foreach ($upcomingMeetings as $meeting): ?>
-                  <div class="meeting-card">
-                    <div class="meeting-service"><?= htmlspecialchars($meeting['service_name']) ?></div>
-                    <div><strong><?= htmlspecialchars($meeting['type']) ?></strong></div>
-                    <div class="meeting-details">
-                      <div class="meeting-date">
-                        <i class="fas fa-calendar"></i>
-                        <?= date('F d, Y \a\t g:i A', strtotime($meeting['meeting_date'])) ?>
-                      </div>
-                      <div class="meeting-location">
-                        <i class="fas fa-map-marker-alt"></i>
-                        <?= htmlspecialchars($meeting['location']) ?>
-                      </div>
-                    </div>
+              <?php foreach ($upcomingMeetings as $index => $meeting): ?>
+                <?php if ($index < 2): // Show only first 2 meetings ?>
+                  <div style="background: rgba(255,255,255,0.7); padding: 0.75rem; border-radius: 8px; margin: 0.5rem 0;">
+                    <strong><?= htmlspecialchars($meeting['service_name']) ?> - <?= htmlspecialchars($meeting['type']) ?></strong><br>
+                    <small><i class="fas fa-calendar"></i> <?= date('F d, Y g:i A', strtotime($meeting['meeting_date'])) ?> | <i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($meeting['location']) ?></small>
                   </div>
-                <?php endforeach; ?>
-              </div>
-              
-              <p style="margin-top: 1rem; color: #666; font-size: 0.9rem;">
-                <i class="fas fa-info-circle"></i>
-                <strong>Important:</strong> These meetings will cover service requirements, training schedules, and volunteer opportunities. Attendance is recommended for all new RCY members.
-              </p>
+                <?php endif; ?>
+              <?php endforeach; ?>
             </div>
-            <button class="notification-close" onclick="this.parentElement.parentElement.style.display='none'">
+            <button class="notification-close" onclick="this.parentElement.style.display='none'">
               <i class="fas fa-times"></i>
             </button>
           </div>
-        </div>
-      <?php endif; ?>
+        <?php endif; ?>
 
-      <!-- Important Notifications -->
-      <?php if ($latestReg && $latestReg['status'] === 'pending'): ?>
-        <div class="notification-banner warning">
-          <div class="notification-icon">
-            <i class="fas fa-clock"></i>
+        <!-- Registration Status Notifications -->
+        <?php if ($latestReg && $latestReg['status'] === 'pending'): ?>
+          <div class="notification-banner warning">
+            <div class="notification-icon">
+              <i class="fas fa-clock"></i>
+            </div>
+            <div class="notification-content">
+              <h3>Registration Pending Review</h3>
+              <p>Your registration for "<strong><?= htmlspecialchars($latestReg['title']) ?></strong>" is currently awaiting approval. We'll notify you once it's processed.</p>
+              <small><strong>Event Details:</strong> <?= date('M d, Y', strtotime($latestReg['event_date'])) ?> at <?= htmlspecialchars($latestReg['location']) ?></small>
+            </div>
+            <button class="notification-close" onclick="this.parentElement.style.display='none'">
+              <i class="fas fa-times"></i>
+            </button>
           </div>
-          <div class="notification-content">
-            <h3>Registration Pending Review</h3>
-            <p>Your registration for "<strong><?= htmlspecialchars($latestReg['title']) ?></strong>" is awaiting approval. We'll notify you once it's processed.</p>
-          </div>
-          <button class="notification-close" onclick="this.parentElement.style.display='none'">
-            <i class="fas fa-times"></i>
-          </button>
-        </div>
-      <?php endif; ?>
+        <?php endif; ?>
 
-      <?php if ($latestReg && $latestReg['status'] === 'approved'): ?>
-        <div class="notification-banner success">
-          <div class="notification-icon">
-            <i class="fas fa-check-circle"></i>
+        <?php if ($latestReg && $latestReg['status'] === 'approved'): ?>
+          <div class="notification-banner success">
+            <div class="notification-icon">
+              <i class="fas fa-check-circle"></i>
+            </div>
+            <div class="notification-content">
+              <h3>Registration Approved!</h3>
+              <p>Your registration for "<strong><?= htmlspecialchars($latestReg['title']) ?></strong>" has been approved.</p>
+              <small><strong>Event Date:</strong> <?= date('M d, Y', strtotime($latestReg['event_date'])) ?> | <strong>Location:</strong> <?= htmlspecialchars($latestReg['location']) ?></small>
+            </div>
+            <button class="notification-close" onclick="this.parentElement.style.display='none'">
+              <i class="fas fa-times"></i>
+            </button>
           </div>
-          <div class="notification-content">
-            <h3>Registration Approved!</h3>
-            <p>Great news! Your registration for "<strong><?= htmlspecialchars($latestReg['title']) ?></strong>" has been approved. Event date: <?= date('M d, Y', strtotime($latestReg['event_date'])) ?></p>
-          </div>
-          <button class="notification-close" onclick="this.parentElement.style.display='none'">
-            <i class="fas fa-times"></i>
-          </button>
-        </div>
-      <?php endif; ?>
+        <?php endif; ?>
 
-      <!-- Stats Grid -->
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-icon events">
-            <i class="fas fa-calendar-check"></i>
+        <!-- Additional Dynamic Notifications -->
+        <?php foreach ($additionalNotifications as $notification): ?>
+          <div class="notification-banner <?= $notification['type'] ?>" <?= $notification['urgency'] === 'high' ? 'style="position: relative;"' : '' ?>>
+            <?php if ($notification['urgency'] === 'high'): ?>
+              <div class="urgency-indicator high"></div>
+            <?php endif; ?>
+            <div class="notification-icon">
+              <i class="fas fa-<?= $notification['type'] === 'deadline' ? 'exclamation-triangle' : ($notification['type'] === 'announcement' ? 'bullhorn' : 'info-circle') ?>"></i>
+            </div>
+            <div class="notification-content">
+              <h3><?= htmlspecialchars($notification['title']) ?></h3>
+              <p><?= htmlspecialchars($notification['content']) ?></p>
+            </div>
+            <button class="notification-close" onclick="this.parentElement.style.display='none'">
+              <i class="fas fa-times"></i>
+            </button>
           </div>
-          <div class="stat-info">
-            <div class="stat-value"><?= number_format($userStats['events_registered']) ?></div>
-            <div class="stat-label">Events Registered</div>
-            <div class="stat-desc">Total registrations</div>
-          </div>
-          <a href="registration.php" class="stat-link">
-            <i class="fas fa-arrow-right"></i>
-          </a>
-        </div>
+        <?php endforeach; ?>
 
-        <div class="stat-card">
-          <div class="stat-icon attended">
-            <i class="fas fa-user-check"></i>
-          </div>
-          <div class="stat-info">
-            <div class="stat-value"><?= number_format($userStats['events_attended']) ?></div>
-            <div class="stat-label">Events Attended</div>
-            <div class="stat-desc">Approved attendance</div>
-          </div>
-          <a href="schedule.php" class="stat-link">
-            <i class="fas fa-arrow-right"></i>
-          </a>
-        </div>
-
-        <div class="stat-card">
-          <div class="stat-icon training">
-            <i class="fas fa-graduation-cap"></i>
-          </div>
-          <div class="stat-info">
-            <div class="stat-value"><?= number_format($userStats['training_sessions']) ?></div>
-            <div class="stat-label">Training Sessions</div>
-            <div class="stat-desc">Enrolled sessions</div>
-          </div>
-          <a href="schedule.php" class="stat-link">
-            <i class="fas fa-arrow-right"></i>
-          </a>
-        </div>
-
-        <div class="stat-card">
-          <div class="stat-icon donations">
-            <i class="fas fa-hand-holding-heart"></i>
-          </div>
-          <div class="stat-info">
-            <div class="stat-value"><?= number_format($userStats['donations_made']) ?></div>
-            <div class="stat-label">Donations Made</div>
-            <div class="stat-desc">Your contributions</div>
-          </div>
-          <a href="donate.php" class="stat-link">
-            <i class="fas fa-arrow-right"></i>
-          </a>
-        </div>
       </div>
 
-      <!-- REDESIGNED LAYOUT: Recent Activity First (Left), Quick Actions Second (Right) -->
+      <!-- Main Dashboard Layout -->
       <div class="dashboard-main">
-        <!-- Recent Activity Section - NOW ON THE LEFT (Primary Focus) -->
+        <!-- Recent Activity Section -->
         <div class="recent-activity-section priority-section">
           <div class="section-header">
             <h2><i class="fas fa-history"></i> Recent Activity</h2>
@@ -527,7 +779,7 @@ if ($userType === 'rcy_member' && $isNewUser && !empty($userServices)) {
           </div>
         </div>
 
-        <!-- Quick Actions Section - NOW ON THE RIGHT (Secondary) -->
+        <!-- Quick Actions Section -->
         <div class="quick-actions-section secondary-section">
           <div class="section-header">
             <h2><i class="fas fa-bolt"></i> Quick Actions</h2>
@@ -550,7 +802,7 @@ if ($userType === 'rcy_member' && $isNewUser && !empty($userServices)) {
             </a>
             <a href="merch.php" class="action-btn">
               <i class="fas fa-store"></i>
-              <span>View merch</span>
+              <span>View Merchandise</span>
               <div class="action-desc">Check supplies</div>
             </a>
             <a href="announcements.php" class="action-btn">
@@ -560,27 +812,25 @@ if ($userType === 'rcy_member' && $isNewUser && !empty($userServices)) {
             </a>
           </div>
 
-          <!-- Additional Quick Stats -->
+          <!-- User Statistics Summary (moved from stats grid) -->
           <div class="quick-stats-summary">
-            <h3><i class="fas fa-chart-line"></i> This Month</h3>
+            <h3><i class="fas fa-chart-line"></i> Your Activity Summary</h3>
             <div class="quick-stat-item">
-              <span class="quick-stat-label">Events Joined</span>
-              <span class="quick-stat-value">3</span>
+              <span class="quick-stat-label">Events Registered</span>
+              <span class="quick-stat-value"><?= number_format($userStats['events_registered']) ?></span>
             </div>
             <div class="quick-stat-item">
-              <span class="quick-stat-label">Training Hours</span>
-              <span class="quick-stat-value">8</span>
+              <span class="quick-stat-label">Events Attended</span>
+              <span class="quick-stat-value"><?= number_format($userStats['events_attended']) ?></span>
             </div>
             <div class="quick-stat-item">
-              <span class="quick-stat-label">Volunteer Hours</span>
-              <span class="quick-stat-value">12</span>
+              <span class="quick-stat-label">Training Sessions</span>
+              <span class="quick-stat-value"><?= number_format($userStats['training_sessions']) ?></span>
             </div>
-            <?php if ($userType === 'rcy_member'): ?>
             <div class="quick-stat-item">
-              <span class="quick-stat-label">Service Hours</span>
-              <span class="quick-stat-value">24</span>
+              <span class="quick-stat-label">Donations Made</span>
+              <span class="quick-stat-value"><?= number_format($userStats['donations_made']) ?></span>
             </div>
-            <?php endif; ?>
           </div>
           
           <?php if ($userType === 'rcy_member' && !empty($userServices)): ?>
@@ -629,27 +879,52 @@ if ($userType === 'rcy_member' && $isNewUser && !empty($userServices)) {
   <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
   <script src="js/header.js?v=<?php echo time(); ?>"></script>
   <script>
-    // Auto-dismiss notifications after 10 seconds
+    // Enhanced notification interaction - entrance animation only, no auto-dismiss
     document.addEventListener('DOMContentLoaded', function() {
-      const notifications = document.querySelectorAll('.notification-banner, .new-member-notification');
+      const notifications = document.querySelectorAll('.notification-banner');
       
       notifications.forEach(notification => {
+        // Add entrance animation only
+        notification.style.opacity = '0';
+        notification.style.transform = 'translateY(-20px)';
         setTimeout(() => {
-          if (notification.style.display !== 'none') {
-            notification.style.opacity = '0';
-            notification.style.transform = 'translateY(-20px)';
-            setTimeout(() => {
-              notification.style.display = 'none';
-            }, 300);
+          notification.style.transition = 'all 0.5s ease-out';
+          notification.style.opacity = '1';
+          notification.style.transform = 'translateY(0)';
+        }, 100);
+        
+        // Add hover effects
+        notification.addEventListener('mouseenter', function() {
+          if (this.style.display !== 'none') {
+            this.style.transform = 'translateY(-3px)';
           }
-        }, 15000); // Auto-dismiss after 15 seconds
+        });
+        
+        notification.addEventListener('mouseleave', function() {
+          if (this.style.display !== 'none') {
+            this.style.transform = 'translateY(0)';
+          }
+        });
       });
     });
     
-    // Add click handlers for meeting cards
+    // Notification close with smooth animation
+    document.querySelectorAll('.notification-close').forEach(closeBtn => {
+      closeBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        const notification = this.closest('.notification-banner');
+        notification.style.transition = 'all 0.3s ease-out';
+        notification.style.opacity = '0';
+        notification.style.transform = 'translateY(-20px) scale(0.95)';
+        setTimeout(() => {
+          notification.style.display = 'none';
+        }, 300);
+      });
+    });
+    
+    // Meeting card interactions
     document.querySelectorAll('.meeting-card').forEach(card => {
       card.addEventListener('click', function() {
-        // You can add functionality here to show more details or add to calendar
         console.log('Meeting card clicked');
       });
     });
