@@ -1,0 +1,432 @@
+/* Sidebar Styles with Notification Badges */
+:root {
+  --sidebar-width: 250px;
+  --sidebar-collapsed-width: 70px;
+  --prc-red: #a00000;
+  --transition-speed: 0.3s;
+}
+
+.sidebar {
+  width: var(--sidebar-width);
+  background-color: var(--prc-red);
+  color: white;
+  position: fixed;
+  height: 100vh;
+  overflow: hidden;
+  transition: width var(--transition-speed), transform var(--transition-speed);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar.collapsed {
+  width: var(--sidebar-collapsed-width);
+}
+
+.sidebar-header {
+  padding: 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  position: relative;
+}
+
+.logo-title {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.logo-title img {
+  width: 50px;
+  min-width: 50px;
+}
+
+.logo-title h1 {
+  font-size: 1.2rem;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.logo-title p {
+  font-size: 0.8rem;
+  margin: 0;
+  opacity: 0.9;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  margin-top: 1rem;
+  transition: padding var(--transition-speed);
+}
+
+.user-info i {
+  font-size: 1.5rem;
+}
+
+.user-info span {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.collapse-btn {
+  position: absolute;
+  top: 60%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  border: none;
+  border-radius: 50%;
+  width: 45px;
+  height: 45px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+}
+
+.collapse-btn i {
+  color: var(--prc-red);
+  font-size: 0.9rem;
+  transition: transform var(--transition-speed);
+}
+
+/* Hide hamburger by default */
+.collapse-btn i.fa-bars {
+  display: none;
+}
+
+.sidebar-nav {
+  padding: 1rem 0;
+  flex: 1;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: white;
+  text-decoration: none;
+  padding: 0.8rem 1.5rem;
+  transition: all var(--transition-speed);
+  font-weight: 500;
+  position: relative;
+}
+
+.nav-link i {
+  width: 24px;
+  text-align: center;
+  font-size: 1.1rem;
+}
+
+.nav-link:hover,
+.nav-link.active {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.logout-link {
+  margin-top: auto;
+  background-color: rgba(0, 0, 0, 0.15);
+}
+
+.logout-link:hover {
+  background-color: rgba(0, 0, 0, 0.25);
+}
+
+/* Notification Badge Styles */
+.nav-badge {
+  position: absolute;
+  right: 1rem;
+  background: #ff4444;
+  color: white;
+  border-radius: 50%;
+  min-width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: bold;
+  animation: pulse 2s infinite;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  z-index: 10;
+}
+
+/* Different badge types */
+.nav-badge.new {
+  background: #00c851; /* Green for new items */
+}
+
+.nav-badge.campaign {
+  background: #ff8800; /* Orange for campaigns */
+}
+
+.nav-badge.announcement {
+  background: #007bff; /* Blue for announcements */
+}
+
+/* Badge animation */
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 68, 68, 0.7);
+  }
+  70% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 10px rgba(255, 68, 68, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 68, 68, 0);
+  }
+}
+
+.nav-badge.new {
+  animation: pulseGreen 2s infinite;
+}
+
+.nav-badge.campaign {
+  animation: pulseOrange 2s infinite;
+}
+
+.nav-badge.announcement {
+  animation: pulseBlue 2s infinite;
+}
+
+@keyframes pulseGreen {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(0, 200, 81, 0.7);
+  }
+  70% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 10px rgba(0, 200, 81, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(0, 200, 81, 0);
+  }
+}
+
+@keyframes pulseOrange {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 136, 0, 0.7);
+  }
+  70% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 10px rgba(255, 136, 0, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 136, 0, 0);
+  }
+}
+
+@keyframes pulseBlue {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(0, 123, 255, 0.7);
+  }
+  70% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 10px rgba(0, 123, 255, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(0, 123, 255, 0);
+  }
+}
+
+/* Collapsed state styles */
+.sidebar.collapsed .logo-title h1,
+.sidebar.collapsed .logo-title p,
+.sidebar.collapsed .user-info span,
+.sidebar.collapsed .nav-link span {
+  display: none;
+}
+
+.sidebar.collapsed .nav-badge {
+  right: 50%;
+  top: 10px;
+  transform: translateX(50%);
+  min-width: 16px;
+  height: 16px;
+  font-size: 0.6rem;
+}
+
+/* Align icons in collapsed mode */
+.sidebar.collapsed .nav-link {
+  justify-content: center;
+  position: relative;
+}
+
+.sidebar.collapsed .user-info {
+  justify-content: center;
+  padding: 10px 0;
+}
+
+.sidebar.collapsed .nav-link {
+  padding: 1rem 0;
+}
+
+.sidebar.collapsed .collapse-btn i.fa-chevron-left {
+  transform: rotate(180deg);
+}
+
+.sidebar.collapsed .logo-title {
+  justify-content: center;
+  align-items: center;
+  gap: 0;
+  width: 100%;
+}
+
+.sidebar.collapsed .logo-title img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Mobile rules */
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-100%);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar.collapsed .collapse-btn i.fa-chevron-left {
+    display: none;
+  }
+
+  .sidebar.collapsed .collapse-btn i.fa-bars {
+    display: inline-block;
+  }
+
+  /* Adjust badge position for mobile */
+  .nav-badge {
+    right: 0.75rem;
+    min-width: 18px;
+    height: 18px;
+    font-size: 0.65rem;
+  }
+
+  .sidebar.collapsed .nav-badge {
+    right: 50%;
+    top: 8px;
+    transform: translateX(50%);
+    min-width: 14px;
+    height: 14px;
+    font-size: 0.55rem;
+  }
+}
+
+/* Hover effects for badges */
+.nav-link:hover .nav-badge {
+  transform: scale(1.1);
+  animation: none;
+}
+
+.sidebar.collapsed .nav-link:hover .nav-badge {
+  transform: translateX(50%) scale(1.1);
+}
+
+/* Badge tooltip */
+.nav-badge[title] {
+  cursor: help;
+}
+/* Add this to the <style> section in header.php */
+
+.user-actions button {
+  position: relative !important; /* Force relative positioning */
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.2rem;
+  color: var(--text-color);
+  padding: 0.5rem;
+  border-radius: 50%;
+  transition: all 0.3s ease;
+}
+
+.user-actions button:hover {
+  background-color: rgba(220, 53, 69, 0.1);
+  color: var(--prc-red);
+}
+
+/* Force badge styles in header */
+.notification-btn .notification-badge,
+.notification-btn .badge-count {
+  position: absolute !important;
+  top: -8px !important;
+  right: -8px !important;
+  background: #dc3545 !important;
+  color: white !important;
+  border-radius: 50% !important;
+  min-width: 20px !important;
+  height: 20px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  z-index: 1000 !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3) !important;
+  border: 2px solid var(--header-bg) !important;
+  animation: headerBadgePulse 2s infinite !important;
+}
+
+.notification-badge.hidden,
+.badge-count.hidden {
+  display: none !important;
+}
+
+/* Badge colors for different types */
+.notification-badge.warning {
+  background: #ffc107 !important;
+  color: #000 !important;
+}
+.notification-badge.info {
+  background: #17a2b8 !important;
+}
+.notification-badge.success {
+  background: #28a745 !important;
+}
+
+/* Header badge animation */
+@keyframes headerBadgePulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3), 0 0 0 0 rgba(220, 53, 69, 0.7);
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.9;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3), 0 0 0 5px rgba(220, 53, 69, 0.3);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3), 0 0 0 0 rgba(220, 53, 69, 0);
+  }
+}
+
+/* Responsive adjustments for header badges */
+@media (max-width: 768px) {
+  .notification-btn .notification-badge,
+  .notification-btn .badge-count {
+    min-width: 18px !important;
+    height: 18px !important;
+    font-size: 10px !important;
+    top: -6px !important;
+    right: -6px !important;
+  }
+}

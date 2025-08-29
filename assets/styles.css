@@ -1,0 +1,83 @@
+:root {
+  /* PRC Brand Colors */
+  --prc-red: #a00000;
+  --prc-red-dark: #a00000;
+  --prc-blue: #007bff;
+  --prc-blue-light: #f0f8ff;
+
+  /* Layout */
+  --sidebar-width: 250px;
+  --header-height: 70px;
+  --transition-speed: 0.3s;
+
+  /* Light Mode Colors (default) */
+  --bg-color: #f9f9f9;
+  --text-color: #333;
+  --card-bg: #ffffff;
+  --header-bg: #ffffff;
+  --border-color: #e0e0e0;
+  --shadow-color: rgba(0, 0, 0, 0.1);
+  --toast-bg: #333;
+  --toast-text: white;
+}
+
+/* Dark Mode Colors */
+[data-theme="dark"] {
+  --bg-color: #121212;
+  --text-color: #f0f0f0;
+  --card-bg: #1e1e1e;
+  --header-bg: #1a1a1a;
+  --border-color: #333;
+  --shadow-color: rgba(0, 0, 0, 0.3);
+  --toast-bg: #f0f0f0;
+  --toast-text: #121212;
+  --prc-red: #ff6b6b;
+  --prc-blue: #6b8cff;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  transition: background-color var(--transition-speed),
+    color var(--transition-speed);
+}
+
+body {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  display: flex;
+  min-height: 100vh;
+}
+
+/* Toast Notification - Adapts to theme */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--toast-bg);
+  color: var(--toast-text);
+  padding: 12px 24px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 1000;
+}
+
+.toast.show {
+  opacity: 1;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
