@@ -403,8 +403,8 @@
 
 /* Align table body cells with headers */
 .sessions-table tbody td:nth-child(3), /* Fee */
-.sessions-table tbody td:nth-child(4), /* Capacity */
-.sessions-table tbody td:nth-child(5) {
+  .sessions-table tbody td:nth-child(4), /* Capacity */
+  .sessions-table tbody td:nth-child(5) {
   /* Status */
   text-align: center;
 }
@@ -474,19 +474,9 @@
 }
 
 .fee-amount {
-  background: linear-gradient(135deg, var(--green) 0%, #20c997 100%);
-  color: white;
-  padding: 0.5rem 1rem;
-  border-radius: 20px;
-  font-size: 0.9rem;
+  color: var(--green);
+  font-size: 1.1rem;
   font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 80px;
-  letter-spacing: 0.5px;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
 }
 
 .fee-amount.large {
@@ -720,9 +710,9 @@
 
 /* Align specific columns */
 .data-table thead th:nth-child(4), /* Status */
-.data-table thead th:nth-child(5), /* Type */
-.data-table thead th:nth-child(6), /* Documents */
-.data-table thead th:nth-child(7) {
+  .data-table thead th:nth-child(5), /* Type */
+  .data-table thead th:nth-child(6), /* Documents */
+  .data-table thead th:nth-child(7) {
   /* Actions */
   text-align: center;
 }
@@ -744,9 +734,9 @@
 
 /* Align table body cells */
 .data-table tbody td:nth-child(4), /* Status */
-.data-table tbody td:nth-child(5), /* Type */
-.data-table tbody td:nth-child(6), /* Documents */
-.data-table tbody td:nth-child(7) {
+  .data-table tbody td:nth-child(5), /* Type */
+  .data-table tbody td:nth-child(6), /* Documents */
+  .data-table tbody td:nth-child(7) {
   /* Actions */
   text-align: center;
 }
@@ -3261,4 +3251,265 @@ select:focus-visible {
   .training-count-badge {
     animation: none;
   }
+} /* Training Calendar Color-Coded Indicators */
+.event-indicators {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-top: 2px;
+  min-height: 8px;
+}
+
+.event-indicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  opacity: 0.8;
+  transition: opacity 0.2s ease;
+}
+
+.event-indicator:hover {
+  opacity: 1;
+  transform: scale(1.2);
+}
+
+/* Training Service Color Coding */
+.event-indicator.health,
+.legend-color.health {
+  background: linear-gradient(135deg, #e74c3c, #c0392b);
+}
+
+.event-indicator.safety,
+.legend-color.safety {
+  background: linear-gradient(135deg, #f39c12, #e67e22);
+}
+
+.event-indicator.welfare,
+.legend-color.welfare {
+  background: linear-gradient(135deg, #3498db, #2980b9);
+}
+
+.event-indicator.disaster,
+.legend-color.disaster {
+  background: linear-gradient(135deg, #e67e22, #d35400);
+}
+
+.event-indicator.rcy,
+.legend-color.rcy {
+  background: linear-gradient(135deg, #9b59b6, #8e44ad);
+}
+
+.event-indicator.general,
+.legend-color.general {
+  background: linear-gradient(135deg, #95a5a6, #7f8c8d);
+}
+
+/* More than 3 events indicator */
+.event-indicator.more {
+  background: var(--gray);
+  color: white;
+  font-size: 8px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 8px;
+  border-radius: 4px;
+  text-align: center;
+  line-height: 1;
+}
+
+/* Legend styling */
+.training-type-legend {
+  background: white;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.legend-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.legend-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--gray);
+}
+
+.legend-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
+.legend-text {
+  font-weight: 500;
+}
+
+/* Training Summary Statistics */
+.training-summary {
+  background: white;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.summary-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.summary-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.summary-stat {
+  text-align: center;
+  padding: 0.5rem;
+  border-radius: 6px;
+  background: var(--light-bg, #f8f9fa);
+}
+
+.summary-stat-number {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--primary);
+  line-height: 1;
+}
+
+.summary-stat-label {
+  font-size: 0.75rem;
+  color: var(--gray);
+  margin-top: 0.25rem;
+  font-weight: 500;
+}
+
+/* Training registration indicators */
+.registrations-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  background: var(--success-light, rgba(76, 175, 80, 0.1));
+  color: var(--success, #4caf50);
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid var(--success-light, rgba(76, 175, 80, 0.2));
+}
+
+.registrations-badge.full {
+  background: var(--error-light, rgba(244, 67, 54, 0.1));
+  color: var(--error, #f44336);
+  border-color: var(--error-light, rgba(244, 67, 54, 0.2));
+}
+
+.registrations-badge i {
+  font-size: 0.75rem;
+}
+
+/* Service badges for training sessions */
+.service-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  color: white;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.service-badge.health-service {
+  background: linear-gradient(135deg, #e74c3c, #c0392b);
+}
+
+.service-badge.safety-service {
+  background: linear-gradient(135deg, #f39c12, #e67e22);
+}
+
+.service-badge.welfare-service {
+  background: linear-gradient(135deg, #3498db, #2980b9);
+}
+
+.service-badge.disaster-management-service {
+  background: linear-gradient(135deg, #e67e22, #d35400);
+}
+
+.service-badge.red-cross-youth {
+  background: linear-gradient(135deg, #9b59b6, #8e44ad);
+}
+
+/* Calendar day cell enhancements */
+.day-cell.has-events {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.9),
+    rgba(248, 249, 250, 0.9)
+  );
+  border: 1px solid rgba(var(--primary-rgb), 0.2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.day-cell.has-events:hover {
+  background: linear-gradient(
+    135deg,
+    rgba(var(--primary-rgb), 0.05),
+    rgba(var(--primary-rgb), 0.1)
+  );
+  border-color: rgba(var(--primary-rgb), 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.day-cell.today {
+  background: linear-gradient(
+    135deg,
+    var(--primary),
+    rgba(var(--primary-rgb), 0.9)
+  );
+  color: white;
+  font-weight: 700;
+  border-color: var(--primary);
+}
+
+.day-cell.today .event-indicator {
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.day-cell.today .event-indicator.more {
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text);
 }

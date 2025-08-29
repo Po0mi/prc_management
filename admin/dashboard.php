@@ -521,16 +521,20 @@ $role_display = $role_info['name'];
               <div class="action-desc">Log donation</div>
             </a>
             
-            <a href="manage_inventory.php?action=add" class="action-btn">
+            <a href="manage_volunteers.php?action=add" class="action-btn">
+              <i class="fas fa-hands-helping"></i>
+              <span>Manage volunteers</span>
+              <div class="action-desc">Manage Volunteers</div>
+            </a>
+                <a href="manage_inventory.php?action=add" class="action-btn">
               <i class="fas fa-box-open"></i>
               <span>Add Inventory</span>
               <div class="action-desc">Stock items</div>
             </a>
-            
-            <a href="manage_blood_banks.php" class="action-btn">
-              <i class="fas fa-hospital"></i>
-              <span>Blood Banks</span>
-              <div class="action-desc">Manage locations</div>
+              <a href="manage_merch.php?action=add" class="action-btn">
+              <i class="fas fa-store"></i>
+              <span>Manage Merch</span>
+              <div class="action-desc">Manage Merch</div>
             </a>
             
             <a href="view_registrations.php" class="action-btn">

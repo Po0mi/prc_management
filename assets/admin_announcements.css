@@ -573,13 +573,15 @@
 }
 
 .btn-delete {
-  background: #fff0f0;
+  background: linear-gradient(135deg, #fff0f0 0%, #ffd6d6 100%);
   color: #dc3545;
+  border: 1px solid #f8b4b4;
 }
 
 .btn-delete:hover {
-  background: #ffd6d6;
-  transform: scale(1.05);
+  background: linear-gradient(135deg, #ffd6d6 0%, #ffb3b3 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
 }
 
 /* Announcements List - Updated to match events table */

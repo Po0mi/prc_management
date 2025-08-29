@@ -823,11 +823,27 @@ if (!function_exists('get_role_color')) {
                     </td>
                     <td>
                       <div class="document-links">
+                        <?php if (!empty($reg['valid_id_path'])): ?>
+                          <a href="../<?= htmlspecialchars($reg['valid_id_path']) ?>" target="_blank" class="doc-link" style="font-size: 0.8rem; padding: 0.2rem 0.5rem;">
+                            <i class="fas fa-id-card"></i> ID
+                          </a>
+                        <?php endif; ?>
+                        <?php if (!empty($reg['requirements_path'])): ?>
+                          <a href="../<?= htmlspecialchars($reg['requirements_path']) ?>" target="_blank" class="doc-link" style="font-size: 0.8rem; padding: 0.2rem 0.5rem;">
+                            <i class="fas fa-file-alt"></i> Requirements
+                          </a>
+                        <?php endif; ?>
                         <?php if (!empty($reg['documents_path'])): ?>
                           <a href="../<?= htmlspecialchars($reg['documents_path']) ?>" target="_blank" class="doc-link" style="font-size: 0.8rem; padding: 0.2rem 0.5rem;">
                             <i class="fas fa-file-alt"></i> Documents
                           </a>
-                        <?php else: ?>
+                        <?php endif; ?>
+                        <?php if (!empty($reg['receipt_path'])): ?>
+                          <a href="../<?= htmlspecialchars($reg['receipt_path']) ?>" target="_blank" class="doc-link" style="font-size: 0.8rem; padding: 0.2rem 0.5rem;">
+                            <i class="fas fa-receipt"></i> Receipt
+                          </a>
+                        <?php endif; ?>
+                        <?php if (empty($reg['valid_id_path']) && empty($reg['requirements_path']) && empty($reg['documents_path']) && empty($reg['receipt_path'])): ?>
                           <span style="color: var(--gray); font-size: 0.8rem;">No documents</span>
                         <?php endif; ?>
                       </div>
@@ -1254,10 +1270,6 @@ if (!function_exists('get_role_color')) {
       document.getElementById('location').value = event.location;
       document.getElementById('capacity').value = event.capacity || '';
       document.getElementById('fee').value = event.fee || '';
-      
-      // For edit modal, show appropriate services based on permissions
-      const serviceSelect = document.getElementById('major_service');
-      const serviceHint = document.getElementById('serviceHint');
       
       if (hasRestrictedAccess && allowedServices && allowedServices.length > 0) {
           const isCreator = event.created_by == currentUserId;
