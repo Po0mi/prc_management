@@ -84,30 +84,39 @@ function validateSessionData($data, $allowedServices, $hasRestrictedAccess, $isC
     }
     
     // Check service permission for CREATE operations
-    if ($isCreate && $hasRestrictedAccess && !empty($allowedServices)) {
+      if ($isCreate && $hasRestrictedAccess && !empty($allowedServices)) {
         if (!in_array($data['major_service'] ?? '', $allowedServices)) {
             $errors[] = "You don't have permission to create sessions for this service. You can only create sessions for: " . implode(', ', $allowedServices);
         }
     }
     
-    try {
-        $date = $data['session_date'] ?? '';
+     try {
+        $startDate = $data['session_date'] ?? '';
+        $durationDays = isset($data['duration_days']) ? max(1, (int)$data['duration_days']) : 1;
         $startTime = $data['start_time'] ?? '';
         $endTime = $data['end_time'] ?? '';
         
-        if (!DateTime::createFromFormat('Y-m-d', $date)) {
-            $errors[] = "Invalid date format. Please use YYYY-MM-DD.";
+        if (!DateTime::createFromFormat('Y-m-d', $startDate)) {
+            $errors[] = "Invalid start date format. Please use YYYY-MM-DD.";
         }
         
-        $sessionDate = strtotime($date);
+        $startDateTime = strtotime($startDate);
         $today = strtotime('today');
-        if ($sessionDate < $today && $isCreate) {
-            $errors[] = "Session date cannot be in the past.";
+        if ($startDateTime < $today && $isCreate) {
+            $errors[] = "Session start date cannot be in the past.";
+        }
+         // Calculate end date
+        $endDateTime = $startDateTime + (($durationDays - 1) * 24 * 60 * 60);
+        $endDate = date('Y-m-d', $endDateTime);
+        
+        // Validate duration
+        if ($durationDays < 1 || $durationDays > 365) {
+            $errors[] = "Duration must be between 1 and 365 days.";
         }
         
-        if (!empty($startTime) && !empty($endTime) && empty($errors)) {
-            $startTimestamp = strtotime($date . ' ' . $startTime);
-            $endTimestamp = strtotime($date . ' ' . $endTime);
+       if (!empty($startTime) && !empty($endTime) && empty($errors)) {
+            $startTimestamp = strtotime($startDate . ' ' . $startTime);
+            $endTimestamp = strtotime($startDate . ' ' . $endTime);
             
             if ($startTimestamp === false) {
                 $errors[] = "Invalid start time format.";
@@ -141,13 +150,15 @@ function validateSessionData($data, $allowedServices, $hasRestrictedAccess, $isC
         $errors[] = "Fee cannot be negative.";
     }
     
-    return [
+      return [
         'valid' => empty($errors),
         'errors' => $errors,
         'data' => [
             'title' => trim($data['title'] ?? ''),
             'major_service' => trim($data['major_service'] ?? ''),
-            'session_date' => $data['session_date'] ?? '',
+            'session_date' => $startDate,
+            'session_end_date' => $endDate ?? $startDate,
+            'duration_days' => $durationDays,
             'start_time' => trim($data['start_time'] ?? ''),
             'end_time' => trim($data['end_time'] ?? ''),
             'venue' => trim($data['venue'] ?? ''),
@@ -204,51 +215,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_session'])) {
         
         if ($validation['valid']) {
             try {
+                // DIRECTLY INSERT WITHOUT CONFLICT CHECK:
                 $stmt = $pdo->prepare("
-                    SELECT COUNT(*) FROM training_sessions 
-                    WHERE venue = ? AND session_date = ? 
-                    AND ((start_time <= ? AND end_time > ?) OR (start_time < ? AND end_time >= ?))
+                    INSERT INTO training_sessions 
+                    (title, major_service, session_date, session_end_date, duration_days, start_time, end_time, venue, capacity, fee, created_at, created_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
                 ");
-                $stmt->execute([
-                    $validation['data']['venue'],
+                
+                $result = $stmt->execute([
+                    $validation['data']['title'],
+                    $validation['data']['major_service'],
                     $validation['data']['session_date'],
-                    $validation['data']['start_time'],
+                    $validation['data']['session_end_date'],
+                    $validation['data']['duration_days'],
                     $validation['data']['start_time'],
                     $validation['data']['end_time'],
-                    $validation['data']['end_time']
+                    $validation['data']['venue'],
+                    $validation['data']['capacity'],
+                    $validation['data']['fee'],
+                    $current_user_id
                 ]);
                 
-                if ($stmt->fetchColumn() > 0) {
-                    $errorMessage = "Another session is already scheduled at this venue during the selected time.";
+                if ($result) {
+                    $newSessionId = $pdo->lastInsertId();
+                    logDebug("Successfully created session ID: $newSessionId for service: " . $validation['data']['major_service'] . " by user: $current_user_id");
+                    
+                    $durationText = $validation['data']['duration_days'] > 1 ? 
+                        " ({$validation['data']['duration_days']} days)" : "";
+                    $successMessage = "Training session created successfully! Session ID: " . $newSessionId . $durationText;
+                    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
                 } else {
-                    $stmt = $pdo->prepare("
-                        INSERT INTO training_sessions 
-                        (title, major_service, session_date, start_time, end_time, venue, capacity, fee, created_at, created_by)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
-                    ");
-                    
-                    $result = $stmt->execute([
-                        $validation['data']['title'],
-                        $validation['data']['major_service'],
-                        $validation['data']['session_date'],
-                        $validation['data']['start_time'],
-                        $validation['data']['end_time'],
-                        $validation['data']['venue'],
-                        $validation['data']['capacity'],
-                        $validation['data']['fee'],
-                        $current_user_id
-                    ]);
-                    
-                    if ($result) {
-                        $newSessionId = $pdo->lastInsertId();
-                        logDebug("Successfully created session ID: $newSessionId for service: " . $validation['data']['major_service'] . " by user: $current_user_id");
-                        $successMessage = "Training session created successfully! Session ID: " . $newSessionId;
-                        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-                    } else {
-                        $errorMessage = "Failed to create session. Please try again.";
-                        logDebug("Failed to insert session into database");
-                    }
+                    $errorMessage = "Failed to create session. Please try again.";
+                    logDebug("Failed to insert session into database");
                 }
+                
             } catch (PDOException $e) {
                 logDebug("Database error creating session: " . $e->getMessage());
                 $errorMessage = handleDatabaseError($e);
@@ -266,9 +266,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_session'])) {
         $errorMessage = "Security error: Invalid form submission. Please try again.";
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
     } else {
-        $session_id = (int)($_POST['session_id'] ?? 0);
+       $session_id = (int)($_POST['session_id'] ?? 0);
         
-        // Check access permission (creator or service permission)
         if (!checkSessionAccess($pdo, $session_id, $allowedServices, $hasRestrictedAccess, $current_user_id)) {
             $errorMessage = "You don't have permission to edit this session.";
         } else {
@@ -276,30 +275,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_session'])) {
             
             if ($validation['valid'] && $session_id > 0) {
                 try {
-                    $checkStmt = $pdo->prepare("SELECT created_by, major_service FROM training_sessions WHERE session_id = ?");
+                     $checkStmt = $pdo->prepare("SELECT created_by, major_service FROM training_sessions WHERE session_id = ?");
                     $checkStmt->execute([$session_id]);
                     $sessionData = $checkStmt->fetch();
                     
                     if (!$sessionData) {
                         $errorMessage = "Session not found.";
                     } else {
-                        // Allow update if:
-                        // 1. They created the session (can change to any service they have permission for)
-                        // 2. They have permission for BOTH the current service AND the new service
-                        $canUpdate = false;
+                       $canUpdate = false;
                         $newService = $_POST['major_service'];
                         
                         if ($sessionData['created_by'] == $current_user_id) {
-                            // Creator can change to any service they have permission for
                             $canUpdate = !$hasRestrictedAccess || in_array($newService, $allowedServices);
                             if (!$canUpdate) {
                                 $errorMessage = "You can only change the service to ones you have permission for.";
                             }
                         } else if (!$hasRestrictedAccess) {
-                            // Super admin can edit anything
                             $canUpdate = true;
                         } else {
-                            // Non-creator with restricted access: must have permission for both old and new service
                             $canUpdate = in_array($sessionData['major_service'], $allowedServices) && 
                                         in_array($newService, $allowedServices);
                             if (!$canUpdate) {
@@ -308,52 +301,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_session'])) {
                         }
                         
                         if ($canUpdate) {
-                            // Check for time conflicts
+                            // DIRECTLY UPDATE WITHOUT CONFLICT CHECK:
                             $stmt = $pdo->prepare("
-                                SELECT COUNT(*) FROM training_sessions 
-                                WHERE venue = ? AND session_date = ? AND session_id != ?
-                                AND ((start_time <= ? AND end_time > ?) OR (start_time < ? AND end_time >= ?))
+                                UPDATE training_sessions
+                                SET title = ?, major_service = ?, session_date = ?, session_end_date = ?, duration_days = ?,
+                                    start_time = ?, end_time = ?, venue = ?, capacity = ?, fee = ?
+                                WHERE session_id = ?
                             ");
-                            $stmt->execute([
-                                $validation['data']['venue'],
+                            
+                            $result = $stmt->execute([
+                                $validation['data']['title'],
+                                $validation['data']['major_service'],
                                 $validation['data']['session_date'],
-                                $session_id,
-                                $validation['data']['start_time'],
+                                $validation['data']['session_end_date'],
+                                $validation['data']['duration_days'],
                                 $validation['data']['start_time'],
                                 $validation['data']['end_time'],
-                                $validation['data']['end_time']
+                                $validation['data']['venue'],
+                                $validation['data']['capacity'],
+                                $validation['data']['fee'],
+                                $session_id
                             ]);
                             
-                            if ($stmt->fetchColumn() > 0) {
-                                $errorMessage = "Another session is already scheduled at this venue during the selected time.";
+                            if ($result) {
+                                logDebug("Session $session_id updated successfully by user $current_user_id");
+                                $successMessage = "Session updated successfully!";
+                                $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
                             } else {
-                                $stmt = $pdo->prepare("
-                                    UPDATE training_sessions
-                                    SET title = ?, major_service = ?, session_date = ?, 
-                                        start_time = ?, end_time = ?, venue = ?, 
-                                        capacity = ?, fee = ?
-                                    WHERE session_id = ?
-                                ");
-                                
-                                $result = $stmt->execute([
-                                    $validation['data']['title'],
-                                    $validation['data']['major_service'],
-                                    $validation['data']['session_date'],
-                                    $validation['data']['start_time'],
-                                    $validation['data']['end_time'],
-                                    $validation['data']['venue'],
-                                    $validation['data']['capacity'],
-                                    $validation['data']['fee'],
-                                    $session_id
-                                ]);
-                                
-                                if ($result) {
-                                    logDebug("Session $session_id updated successfully by user $current_user_id");
-                                    $successMessage = "Session updated successfully!";
-                                    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-                                } else {
-                                    $errorMessage = "Failed to update session. Please try again.";
-                                }
+                                $errorMessage = "Failed to update session. Please try again.";
                             }
                         }
                     }
@@ -543,44 +518,53 @@ try {
         }
     }
     
-    if ($statusFilter === 'upcoming') {
-        $whereConditions[] = "ts.session_date >= CURDATE()";
-    } elseif ($statusFilter === 'past') {
-        $whereConditions[] = "ts.session_date < CURDATE()";
-    }
+   if ($statusFilter === 'upcoming') {
+    $whereConditions[] = "ts.session_date >= CURDATE()";
+} elseif ($statusFilter === 'past') {
+    $whereConditions[] = "ts.session_end_date < CURDATE()";
+} elseif ($statusFilter === 'ongoing') {
+    $whereConditions[] = "ts.session_date <= CURDATE() AND ts.session_end_date >= CURDATE()";
+}
     
     $whereClause = $whereConditions ? 'WHERE ' . implode(' AND ', $whereConditions) : '';
     
     // Modified query to include creator information and properly select all fields
     $query = "
-        SELECT SQL_CALC_FOUND_ROWS 
-               ts.session_id,
-               ts.title,
-               ts.major_service,
-               ts.session_date,
-               ts.start_time,
-               ts.end_time,
-               ts.venue,
-               ts.capacity,
-               ts.fee,
-               ts.created_at,
-               ts.created_by,
-               COUNT(sr.registration_id) AS registrations_count,
-               u.email as creator_email,
-               CASE 
-                   WHEN ts.created_by = ? THEN 1 
-                   ELSE 0 
-               END as is_my_session
-        FROM training_sessions ts
-        LEFT JOIN session_registrations sr ON ts.session_id = sr.session_id
-        LEFT JOIN users u ON ts.created_by = u.user_id
-        $whereClause
-        GROUP BY ts.session_id, ts.title, ts.major_service, ts.session_date, 
-                 ts.start_time, ts.end_time, ts.venue, ts.capacity, ts.fee, 
-                 ts.created_at, ts.created_by, u.email
-        ORDER BY ts.session_date ASC, ts.start_time ASC
-        LIMIT ? OFFSET ?
-    ";
+    SELECT SQL_CALC_FOUND_ROWS 
+           ts.session_id,
+           ts.title,
+           ts.major_service,
+           ts.session_date,
+           ts.session_end_date,
+           ts.duration_days,
+           ts.start_time,
+           ts.end_time,
+           ts.venue,
+           ts.capacity,
+           ts.fee,
+           ts.created_at,
+           ts.created_by,
+           COUNT(sr.registration_id) AS registrations_count,
+           u.email as creator_email,
+           CASE 
+               WHEN ts.created_by = ? THEN 1 
+               ELSE 0 
+           END as is_my_session,
+           CASE 
+               WHEN ts.session_date > CURDATE() THEN 'upcoming'
+               WHEN ts.session_end_date < CURDATE() THEN 'past'
+               WHEN ts.session_date <= CURDATE() AND ts.session_end_date >= CURDATE() THEN 'ongoing'
+               ELSE 'upcoming'
+           END as session_status
+    FROM training_sessions ts
+    LEFT JOIN session_registrations sr ON ts.session_id = sr.session_id
+    LEFT JOIN users u ON ts.created_by = u.user_id
+    $whereClause
+    GROUP BY ts.session_id, ts.title, ts.major_service, ts.session_date, ts.session_end_date, ts.duration_days,
+             ts.start_time, ts.end_time, ts.venue, ts.capacity, ts.fee, ts.created_at, ts.created_by, u.email
+    ORDER BY ts.session_date ASC, ts.start_time ASC
+    LIMIT ? OFFSET ?
+";
     
     $stmt = $pdo->prepare($query);
     $paramIndex = 1;
@@ -609,85 +593,95 @@ try {
     logDebug("Found " . count($sessions) . " sessions for user role: $user_role, user_id: $current_user_id");
     
     // Get service stats
-    foreach ($majorServices as $service) {
-        if ($hasRestrictedAccess && !empty($allowedServices)) {
-            if (in_array($service, $allowedServices)) {
-                $stmt = $pdo->prepare("
-                    SELECT 
-                        COUNT(*) as total,
-                        SUM(CASE WHEN session_date >= CURDATE() THEN 1 ELSE 0 END) as upcoming,
-                        SUM(CASE WHEN session_date < CURDATE() THEN 1 ELSE 0 END) as past
-                    FROM training_sessions
-                    WHERE major_service = ? AND (major_service IN (" . str_repeat('?,', count($allowedServices) - 1) . "?) OR created_by = ?)
-                ");
-                $statsParams = array_merge([$service], $allowedServices, [$current_user_id]);
-                $stmt->execute($statsParams);
-                $stats[$service] = $stmt->fetch(PDO::FETCH_ASSOC) ?: ['total' => 0, 'upcoming' => 0, 'past' => 0];
-            } else {
-                $stats[$service] = ['total' => 0, 'upcoming' => 0, 'past' => 0];
-            }
-        } else {
+   foreach ($majorServices as $service) {
+    if ($hasRestrictedAccess && !empty($allowedServices)) {
+        if (in_array($service, $allowedServices)) {
             $stmt = $pdo->prepare("
                 SELECT 
                     COUNT(*) as total,
                     SUM(CASE WHEN session_date >= CURDATE() THEN 1 ELSE 0 END) as upcoming,
-                    SUM(CASE WHEN session_date < CURDATE() THEN 1 ELSE 0 END) as past
+                    SUM(CASE WHEN session_end_date < CURDATE() THEN 1 ELSE 0 END) as past,
+                    SUM(CASE WHEN session_date <= CURDATE() AND session_end_date >= CURDATE() THEN 1 ELSE 0 END) as ongoing
                 FROM training_sessions
-                WHERE major_service = ?
+                WHERE major_service = ? AND (major_service IN (" . str_repeat('?,', count($allowedServices) - 1) . "?) OR created_by = ?)
             ");
-            $stmt->execute([$service]);
-            $stats[$service] = $stmt->fetch(PDO::FETCH_ASSOC) ?: ['total' => 0, 'upcoming' => 0, 'past' => 0];
+            $statsParams = array_merge([$service], $allowedServices, [$current_user_id]);
+            $stmt->execute($statsParams);
+            $stats[$service] = $stmt->fetch(PDO::FETCH_ASSOC) ?: ['total' => 0, 'upcoming' => 0, 'past' => 0, 'ongoing' => 0];
+        } else {
+            $stats[$service] = ['total' => 0, 'upcoming' => 0, 'past' => 0, 'ongoing' => 0];
         }
-    }
-    
-    // Get total stats with service restrictions including created sessions
-    if ($hasRestrictedAccess && !empty($allowedServices)) {
-        $placeholders = str_repeat('?,', count($allowedServices) - 1) . '?';
+    } else {
         $stmt = $pdo->prepare("
             SELECT 
                 COUNT(*) as total,
                 SUM(CASE WHEN session_date >= CURDATE() THEN 1 ELSE 0 END) as upcoming,
-                SUM(CASE WHEN session_date < CURDATE() THEN 1 ELSE 0 END) as past
+                SUM(CASE WHEN session_end_date < CURDATE() THEN 1 ELSE 0 END) as past,
+                SUM(CASE WHEN session_date <= CURDATE() AND session_end_date >= CURDATE() THEN 1 ELSE 0 END) as ongoing
             FROM training_sessions
-            WHERE major_service IN ($placeholders) OR created_by = ?
+            WHERE major_service = ?
         ");
-        $statsParams = array_merge($allowedServices, [$current_user_id]);
-        $stmt->execute($statsParams);
-        $totalStats = $stmt->fetch(PDO::FETCH_ASSOC) ?: ['total' => 0, 'upcoming' => 0, 'past' => 0];
-    } else {
-        $stmt = $pdo->query("
-            SELECT 
-                COUNT(*) as total,
-                SUM(CASE WHEN session_date >= CURDATE() THEN 1 ELSE 0 END) as upcoming,
-                SUM(CASE WHEN session_date < CURDATE() THEN 1 ELSE 0 END) as past
-            FROM training_sessions
-        ");
-        $totalStats = $stmt->fetch(PDO::FETCH_ASSOC) ?: ['total' => 0, 'upcoming' => 0, 'past' => 0];
+        $stmt->execute([$service]);
+        $stats[$service] = $stmt->fetch(PDO::FETCH_ASSOC) ?: ['total' => 0, 'upcoming' => 0, 'past' => 0, 'ongoing' => 0];
     }
+}
+    
+    // Get total stats with service restrictions including created sessions
+    if ($hasRestrictedAccess && !empty($allowedServices)) {
+    $placeholders = str_repeat('?,', count($allowedServices) - 1) . '?';
+    $stmt = $pdo->prepare("
+        SELECT 
+            COUNT(*) as total,
+            SUM(CASE WHEN session_date >= CURDATE() THEN 1 ELSE 0 END) as upcoming,
+            SUM(CASE WHEN session_end_date < CURDATE() THEN 1 ELSE 0 END) as past,
+            SUM(CASE WHEN session_date <= CURDATE() AND session_end_date >= CURDATE() THEN 1 ELSE 0 END) as ongoing
+        FROM training_sessions
+        WHERE major_service IN ($placeholders) OR created_by = ?
+    ");
+    $statsParams = array_merge($allowedServices, [$current_user_id]);
+    $stmt->execute($statsParams);
+    $totalStats = $stmt->fetch(PDO::FETCH_ASSOC) ?: ['total' => 0, 'upcoming' => 0, 'past' => 0, 'ongoing' => 0];
+} else {
+    $stmt = $pdo->query("
+        SELECT 
+            COUNT(*) as total,
+            SUM(CASE WHEN session_date >= CURDATE() THEN 1 ELSE 0 END) as upcoming,
+            SUM(CASE WHEN session_end_date < CURDATE() THEN 1 ELSE 0 END) as past,
+            SUM(CASE WHEN session_date <= CURDATE() AND session_end_date >= CURDATE() THEN 1 ELSE 0 END) as ongoing
+        FROM training_sessions
+    ");
+    $totalStats = $stmt->fetch(PDO::FETCH_ASSOC) ?: ['total' => 0, 'upcoming' => 0, 'past' => 0, 'ongoing' => 0];
+}
     
     // Get session details and registrations if viewing a specific session
-    if ($viewSession > 0) {
-        // Check access to this session
-        if (checkSessionAccess($pdo, $viewSession, $allowedServices, $hasRestrictedAccess, $current_user_id)) {
-            $stmt = $pdo->prepare("SELECT * FROM training_sessions WHERE session_id = ?");
+   if ($viewSession > 0) {
+    if (checkSessionAccess($pdo, $viewSession, $allowedServices, $hasRestrictedAccess, $current_user_id)) {
+        $stmt = $pdo->prepare("SELECT *, 
+            CASE 
+                WHEN session_date > CURDATE() THEN 'upcoming'
+                WHEN session_end_date < CURDATE() THEN 'past'
+                WHEN session_date <= CURDATE() AND session_end_date >= CURDATE() THEN 'ongoing'
+                ELSE 'upcoming'
+            END as session_status
+            FROM training_sessions WHERE session_id = ?");
+        $stmt->execute([$viewSession]);
+        $selectedSession = $stmt->fetch();
+        
+        if ($selectedSession) {
+            $stmt = $pdo->prepare("
+                SELECT sr.*, u.email as user_email
+                FROM session_registrations sr
+                LEFT JOIN users u ON sr.user_id = u.user_id
+                WHERE sr.session_id = ?
+                ORDER BY sr.registration_date DESC
+            ");
             $stmt->execute([$viewSession]);
-            $selectedSession = $stmt->fetch();
-            
-            if ($selectedSession) {
-                $stmt = $pdo->prepare("
-                    SELECT sr.*, u.email as user_email
-                    FROM session_registrations sr
-                    LEFT JOIN users u ON sr.user_id = u.user_id
-                    WHERE sr.session_id = ?
-                    ORDER BY sr.registration_date DESC
-                ");
-                $stmt->execute([$viewSession]);
-                $registrations = $stmt->fetchAll() ?: [];
-            }
-        } else {
-            $errorMessage = "You don't have permission to view this session.";
+            $registrations = $stmt->fetchAll() ?: [];
         }
+    } else {
+        $errorMessage = "You don't have permission to view this session.";
     }
+}
     
 } catch (PDOException $e) {
     logDebug("Error fetching sessions: " . $e->getMessage());
@@ -786,23 +780,28 @@ if (!function_exists('get_role_color')) {
           <i class="fas fa-arrow-left"></i> Back to Sessions
         </a>
         
-        <div class="session-info-header">
-          <div class="session-info-details">
-            <div class="session-info-title"><?= htmlspecialchars($selectedSession['title']) ?></div>
-            <div class="session-info-meta">
-              <span><i class="fas fa-tag"></i> <?= htmlspecialchars($selectedSession['major_service']) ?></span>
-              <span><i class="fas fa-calendar"></i> <?= date('M j, Y', strtotime($selectedSession['session_date'])) ?></span>
-              <span><i class="fas fa-clock"></i> <?= date('g:i A', strtotime($selectedSession['start_time'])) ?> - <?= date('g:i A', strtotime($selectedSession['end_time'])) ?></span>
-              <span><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($selectedSession['venue']) ?></span>
-              <?php if ($selectedSession['fee'] > 0): ?>
+       <div class="session-info-header">
+    <div class="session-info-details">
+        <div class="session-info-title"><?= htmlspecialchars($selectedSession['title']) ?></div>
+        <div class="session-info-meta">
+            <span><i class="fas fa-tag"></i> <?= htmlspecialchars($selectedSession['major_service']) ?></span>
+            <?php if (($selectedSession['duration_days'] ?? 1) == 1): ?>
+                <span><i class="fas fa-calendar"></i> <?= date('M j, Y', strtotime($selectedSession['session_date'])) ?></span>
+            <?php else: ?>
+                <span><i class="fas fa-calendar"></i> <?= date('M j, Y', strtotime($selectedSession['session_date'])) ?> - <?= date('M j, Y', strtotime($selectedSession['session_end_date'])) ?></span>
+                <span><i class="fas fa-calendar-week"></i> <?= $selectedSession['duration_days'] ?> days</span>
+            <?php endif; ?>
+            <span><i class="fas fa-clock"></i> <?= date('g:i A', strtotime($selectedSession['start_time'])) ?> - <?= date('g:i A', strtotime($selectedSession['end_time'])) ?></span>
+            <span><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($selectedSession['venue']) ?></span>
+            <?php if ($selectedSession['fee'] > 0): ?>
                 <span><i class="fas fa-money-bill"></i> ₱<?= number_format($selectedSession['fee'], 2) ?></span>
-              <?php endif; ?>
-              <?php if ($selectedSession['capacity'] > 0): ?>
+            <?php endif; ?>
+            <?php if ($selectedSession['capacity'] > 0): ?>
                 <span><i class="fas fa-users"></i> Capacity: <?= $selectedSession['capacity'] ?></span>
-              <?php endif; ?>
-            </div>
-          </div>
+            <?php endif; ?>
         </div>
+    </div>
+</div>
 
         <div class="registrations-stats">
           <div class="reg-stat-card">
@@ -1082,85 +1081,113 @@ if (!function_exists('get_role_color')) {
           </div>
         <?php else: ?>
           <table class="data-table">
-            <thead>
-              <tr>
-                <th>Session Details</th>
-                <th>Service</th>
-                <th>Date & Time</th>
-                <th>Venue</th>
-                <th>Fee</th>
-                <th>Registrations</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <?php foreach ($sessions as $session): 
-                $sessionDate = strtotime($session['session_date']);
-                $today = strtotime('today');
-                $isUpcoming = $sessionDate >= $today;
-                $isFull = $session['capacity'] > 0 && $session['registrations_count'] >= $session['capacity'];
-              ?>
+    <thead>
+        <tr>
+            <th>Session Details</th>
+            <th>Service</th>
+            <th>Date Range & Time</th>
+            <th>Location</th>
+            <th>Fee</th>
+            <th>Registrations</th>
+            <th>Status</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+               <?php foreach ($sessions as $session): 
+            $sessionStartDate = strtotime($session['session_date']);
+            $sessionEndDate = strtotime($session['session_end_date'] ?? $session['session_date']);
+            $today = strtotime('today');
+            $durationDays = $session['duration_days'] ?? 1;
+            
+            // Determine session status
+            $sessionStatus = 'upcoming';
+            if ($sessionEndDate < $today) {
+                $sessionStatus = 'past';
+            } elseif ($sessionStartDate <= $today && $sessionEndDate >= $today) {
+                $sessionStatus = 'ongoing';
+            }
+            
+            $isFull = $session['capacity'] > 0 && $session['registrations_count'] >= $session['capacity'];
+        ?>
                 <tr>
-                  <td>
+                <td>
                     <div class="session-title"><?= htmlspecialchars($session['title']) ?></div>
                     <div style="font-size: 0.75rem; color: var(--gray); margin-top: 0.2rem;">ID: #<?= $session['session_id'] ?></div>
-                  </td>
-                  <td>
-                    <span class="session-service"><?= htmlspecialchars($session['major_service']) ?></span>
-                  </td>
-                  <td>
+                </td>
+                <td>
+                     <span class="session-service"><?= htmlspecialchars($session['major_service']) ?></span>
+                </td>
+                <td>
                     <div class="session-datetime">
-                      <span class="session-date"><?= date('M d, Y', $sessionDate) ?></span>
-                      <span class="session-time"><?= date('g:i A', strtotime($session['start_time'])) ?> - <?= date('g:i A', strtotime($session['end_time'])) ?></span>
+                        <?php if ($durationDays == 1): ?>
+                            <div class="session-date-single">
+                                <span class="session-date"><?= date('M d, Y', $sessionStartDate) ?></span>
+                                <span class="session-time"><?= date('g:i A', strtotime($session['start_time'])) ?> - <?= date('g:i A', strtotime($session['end_time'])) ?></span>
+                                <div class="session-duration">Single Day</div>
+                            </div>
+                        <?php else: ?>
+                            <div class="session-date-range">
+                                <div class="session-date-start"><?= date('M d, Y', $sessionStartDate) ?></div>
+                                <div class="session-date-end">to <?= date('M d, Y', $sessionEndDate) ?></div>
+                                <span class="session-time"><?= date('g:i A', strtotime($session['start_time'])) ?> - <?= date('g:i A', strtotime($session['end_time'])) ?></span>
+                                <div class="session-duration"><?= $durationDays ?> days</div>
+                            </div>
+                        <?php endif; ?>
                     </div>
-                  </td>
+                </td>
                   <td><?= htmlspecialchars($session['venue']) ?></td>
-                  <td>
+                   <td>
                     <div class="fee-display">
-                      <?php if ($session['fee'] > 0): ?>
-                        <span class="fee-amount">₱<?= number_format($session['fee'], 2) ?></span>
-                      <?php else: ?>
-                        <span class="fee-free">FREE</span>
-                      <?php endif; ?>
+                        <?php if ($session['fee'] > 0): ?>
+                            <span class="fee-amount">₱<?= number_format($session['fee'], 2) ?></span>
+                        <?php else: ?>
+                            <span class="fee-free">FREE</span>
+                        <?php endif; ?>
                     </div>
-                  </td>
-                  <td>
-                    <a href="?view_session=<?= $session['session_id'] ?>&<?= http_build_query(array_filter(['search' => $search, 'service' => $serviceFilter, 'status' => $statusFilter])) ?>" 
+                </td>
+                <td>
+                     <a href="?view_session=<?= $session['session_id'] ?>&<?= http_build_query(array_filter(['search' => $search, 'service' => $serviceFilter, 'status' => $statusFilter])) ?>" 
                        class="registrations-badge <?= $isFull ? 'full' : '' ?>">
-                      <i class="fas fa-users"></i>
-                      <?= $session['registrations_count'] ?> / <?= $session['capacity'] ?: '∞' ?>
-                      <?php if ($isFull): ?>
-                        <span style="font-size: 0.7rem; background: var(--prc-red); color: white; padding: 0.2rem 0.4rem; border-radius: 4px;">FULL</span>
-                      <?php endif; ?>
+                        <i class="fas fa-users"></i>
+                        <?= $session['registrations_count'] ?> / <?= $session['capacity'] ?: '∞' ?>
+                        <?php if ($isFull): ?>
+                            <span style="font-size: 0.7rem; background: var(--prc-red); color: white; padding: 0.2rem 0.4rem; border-radius: 4px;">FULL</span>
+                        <?php endif; ?>
                     </a>
-                  </td>
-                  <td>
-                    <span class="status-badge <?= $isUpcoming ? 'upcoming' : 'past' ?>">
-                      <?= $isUpcoming ? 'Upcoming' : 'Completed' ?>
+                </td>
+                <td>
+                     <span class="status-badge <?= $sessionStatus ?>">
+                        <?php if ($sessionStatus === 'upcoming'): ?>
+                            <i class="fas fa-clock"></i> Upcoming
+                        <?php elseif ($sessionStatus === 'ongoing'): ?>
+                            <i class="fas fa-play-circle"></i> Ongoing
+                        <?php else: ?>
+                            <i class="fas fa-check-circle"></i> Completed
+                        <?php endif; ?>
                     </span>
-                  </td>
-                  <td class="actions">
+                </td>
+                   <td class="actions">
                     <a href="?view_session=<?= $session['session_id'] ?>&<?= http_build_query(array_filter(['search' => $search, 'service' => $serviceFilter, 'status' => $statusFilter])) ?>" 
                        class="btn-action btn-view">
-                      <i class="fas fa-users"></i> View Registrations
+                        <i class="fas fa-users"></i> View Registrations
                     </a>
                     <button class="btn-action btn-edit" onclick='openEditModal(<?= json_encode($session, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
-                      <i class="fas fa-edit"></i> Edit
+                        <i class="fas fa-edit"></i> Edit
                     </button>
                     <form method="POST" style="display: inline;" onsubmit="return confirmDelete('<?= htmlspecialchars($session['title'], ENT_QUOTES) ?>', <?= $session['registrations_count'] ?>);">
-                      <input type="hidden" name="delete_session" value="1">
-                      <input type="hidden" name="session_id" value="<?= $session['session_id'] ?>">
-                      <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-                      <button type="submit" class="btn-action btn-delete">
-                        <i class="fas fa-trash"></i> Delete
-                      </button>
+                        <input type="hidden" name="delete_session" value="1">
+                        <input type="hidden" name="session_id" value="<?= $session['session_id'] ?>">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                        <button type="submit" class="btn-action btn-delete">
+                            <i class="fas fa-trash"></i> Delete
+                        </button>
                     </form>
-                  </td>
-                </tr>
-              <?php endforeach; ?>
-            </tbody>
-          </table>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+    </tbody>
+</table>
           
           <?php if ($totalPages > 1): ?>
             <div class="pagination">
@@ -1187,507 +1214,923 @@ if (!function_exists('get_role_color')) {
   <!-- Create/Edit Modal -->
   <div class="modal" id="sessionModal">
     <div class="modal-content">
-      <div class="modal-header">
-        <h2 class="modal-title" id="modalTitle">Create New Session</h2>
-        <button class="close-modal" onclick="closeModal()">
-          <i class="fas fa-times"></i>
-        </button>
-      </div>
+        <div class="modal-header">
+            <h2 class="modal-title" id="modalTitle">Create New Session</h2>
+            <button class="close-modal" onclick="closeModal()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
       
       <form method="POST" id="sessionForm">
-        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-        <input type="hidden" name="create_session" value="1" id="formAction">
-        <input type="hidden" name="session_id" id="sessionId">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+            <input type="hidden" name="create_session" value="1" id="formAction">
+            <input type="hidden" name="session_id" id="sessionId">
         
-        <div class="form-group">
-          <label for="title">Session Title *</label>
-          <input type="text" id="title" name="title" required placeholder="Enter session title" maxlength="255">
+         <div class="form-group">
+                <label for="title">Session Title *</label>
+                <input type="text" id="title" name="title" required placeholder="Enter session title" maxlength="255">
+            </div>
+        
+         <div class="form-group">
+                <label for="major_service">Major Service *</label>
+                <select id="major_service" name="major_service" required>
+                    <option value="">Select a service</option>
+                    <?php foreach ($majorServices as $service): ?>
+                        <option value="<?= htmlspecialchars($service) ?>" 
+                                class="service-option" 
+                                data-allowed="<?= (!$hasRestrictedAccess || in_array($service, $allowedServices)) ? 'true' : 'false' ?>">
+                            <?= htmlspecialchars($service) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+                <?php if ($hasRestrictedAccess): ?>
+                    <small id="serviceHint" style="color: var(--gray); margin-top: 0.25rem;">
+                        You can only create sessions for: <?= htmlspecialchars(implode(', ', $allowedServices)) ?>
+                    </small>
+                <?php endif; ?>
+            </div>
+        
+          <div class="form-row">
+                <div class="form-group">
+                    <label for="session_date">Start Date *</label>
+                    <input type="date" id="session_date" name="session_date" required min="<?= date('Y-m-d') ?>">
+                </div>
+                
+                <div class="form-group">
+                    <label for="duration_days">Duration (Days) *</label>
+                    <input type="number" id="duration_days" name="duration_days" min="1" max="365" value="1" required>
+                    <small style="color: var(--gray);">How many days will this session run?</small>
+                </div>
+            </div>
+
+            <div class="date-preview-container" id="datePreviewContainer" style="display: none;">
+    <div class="date-preview">
+        <div class="date-preview-header">
+            <i class="fas fa-calendar-check"></i>
+            <span>Session Date Range</span>
         </div>
-        
-        <div class="form-group">
-          <label for="major_service">Major Service *</label>
-          <select id="major_service" name="major_service" required>
-              <option value="">Select a service</option>
-              <?php foreach ($majorServices as $service): ?>
-                  <option value="<?= htmlspecialchars($service) ?>" 
-                          class="service-option" 
-                          data-allowed="<?= (!$hasRestrictedAccess || in_array($service, $allowedServices)) ? 'true' : 'false' ?>">
-                      <?= htmlspecialchars($service) ?>
-                  </option>
-              <?php endforeach; ?>
-          </select>
-          <?php if ($hasRestrictedAccess): ?>
-              <small id="serviceHint" style="color: var(--gray); margin-top: 0.25rem;">
-                  You can only create sessions for: <?= htmlspecialchars(implode(', ', $allowedServices)) ?>
-              </small>
-          <?php endif; ?>
+        <div class="date-preview-content">
+            <div class="date-range">
+                <span class="start-date" id="previewStartDate">-</span>
+                <i class="fas fa-arrow-right"></i>
+                <span class="end-date" id="previewEndDate">-</span>
+            </div>
+            <div class="duration-display" id="previewDuration">1 day</div>
         </div>
-        
-        <div class="form-row">
-          <div class="form-group">
-            <label for="session_date">Date *</label>
-            <input type="date" id="session_date" name="session_date" required min="<?= date('Y-m-d') ?>">
-          </div>
-          
-          <div class="form-group">
-            <label for="venue">Venue *</label>
-            <input type="text" id="venue" name="venue" required placeholder="Location" maxlength="255">
-          </div>
-        </div>
-        
-        <div class="form-row">
-          <div class="form-group">
-            <label for="start_time">Start Time *</label>
-            <input type="time" id="start_time" name="start_time" required value="09:00">
-          </div>
-          
-          <div class="form-group">
-            <label for="end_time">End Time *</label>
-            <input type="time" id="end_time" name="end_time" required value="17:00">
-          </div>
-        </div>
-        
-        <div class="form-row">
-          <div class="form-group">
-            <label for="capacity">Capacity</label>
-            <input type="number" id="capacity" name="capacity" min="0" max="1000" placeholder="0 for unlimited">
-            <small style="color: var(--gray);">Leave empty or set to 0 for unlimited capacity</small>
-          </div>
-          
-          <div class="form-group">
-            <label for="fee">Fee (₱)</label>
-            <input type="number" id="fee" name="fee" min="0" step="0.01" placeholder="0.00">
-            <small style="color: var(--gray);">Leave empty or set to 0 for free session</small>
-          </div>
-        </div>
-        
-        <button type="submit" class="btn-submit">
-          <i class="fas fa-save"></i> Save Session
-        </button>
-      </form>
     </div>
-  </div>
+</div>
+            <div class="form-group">
+                <label for="venue">Venue *</label>
+                <input type="text" id="venue" name="venue" required placeholder="Training venue location" maxlength="255">
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="start_time">Start Time *</label>
+                    <input type="time" id="start_time" name="start_time" required value="09:00">
+                </div>
+                
+                <div class="form-group">
+                    <label for="end_time">End Time *</label>
+                    <input type="time" id="end_time" name="end_time" required value="17:00">
+                </div>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="capacity">Capacity</label>
+                    <input type="number" id="capacity" name="capacity" min="0" max="1000" placeholder="0 for unlimited">
+                    <small style="color: var(--gray);">Leave empty or set to 0 for unlimited capacity</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="fee">Fee (₱)</label>
+                    <input type="number" id="fee" name="fee" min="0" step="0.01" placeholder="0.00">
+                    <small style="color: var(--gray);">Leave empty or set to 0 for free session</small>
+                </div>
+            </div>
+            
+            <button type="submit" class="btn-submit" id="submitButton">
+                <i class="fas fa-save"></i> Save Session
+            </button>
+        </form>
+    </div>
+</div>
 
-  <!-- CRITICAL: JavaScript Variables from PHP -->
-  <script>
-  // Define JavaScript variables from PHP
-  const userRole = '<?= $user_role ?>';
-  const hasRestrictedAccess = <?= $hasRestrictedAccess ? 'true' : 'false' ?>;
-  const allowedServices = <?= json_encode($allowedServices) ?>;
-  const currentUserId = <?= $current_user_id ?>;
+<script>
+// Multi-Day Training Sessions JavaScript - Matching Events System
+let currentSessionId = null;
 
-  console.log('User Role:', userRole);
-  console.log('Has Restricted Access:', hasRestrictedAccess);
-  console.log('Allowed Services:', allowedServices);
-  console.log('Current User ID:', currentUserId);
+// Enhanced date preview WITHOUT conflict checking
+function updateSessionDatePreview() {
+    const startDateInput = document.getElementById('session_date');
+    const durationInput = document.getElementById('duration_days');
+    const previewContainer = document.getElementById('datePreviewContainer');
+    const previewStartDate = document.getElementById('previewStartDate');
+    const previewEndDate = document.getElementById('previewEndDate');
+    const previewDuration = document.getElementById('previewDuration');
+    
+    const startDate = startDateInput.value;
+    const duration = parseInt(durationInput.value) || 1;
+    
+    if (startDate) {
+        const start = new Date(startDate + 'T00:00:00');
+        const end = new Date(start);
+        end.setDate(end.getDate() + duration - 1);
+        
+        // Update preview display
+        previewStartDate.textContent = start.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+        });
+        
+        previewEndDate.textContent = end.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+        });
+        
+        const durationText = duration === 1 ? '1 day' : `${duration} days`;
+        previewDuration.textContent = durationText;
+        
+        previewContainer.style.display = 'block';
+        
+        // Always hide conflict warning since we're not checking
+        hideSessionConflictWarning();
+    } else {
+        previewContainer.style.display = 'none';
+        hideSessionConflictWarning();
+    }
+}
 
-  // Main JavaScript Functions
-  function openCreateModal() {
-      document.getElementById('modalTitle').textContent = 'Create New Session';
-      document.getElementById('formAction').name = 'create_session';
-      document.getElementById('sessionForm').reset();
-      document.getElementById('session_date').min = new Date().toISOString().split('T')[0];
-      
-      // For create modal, filter services if restricted access
-      const serviceSelect = document.getElementById('major_service');
-      const serviceHint = document.getElementById('serviceHint');
-      
-      if (hasRestrictedAccess && allowedServices && allowedServices.length > 0) {
-          // Disable options not in allowedServices for creation
-          Array.from(serviceSelect.options).forEach(option => {
-              if (option.value === '') {
-                  option.disabled = false;
-                  option.style.display = 'block';
-              } else if (!allowedServices.includes(option.value)) {
-                  option.disabled = true;
-                  option.style.display = 'none';
-              } else {
-                  option.disabled = false;
-                  option.style.display = 'block';
-              }
-          });
-      } else {
-          // Show all options for super admin
-          Array.from(serviceSelect.options).forEach(option => {
-              option.disabled = false;
-              option.style.display = 'block';
-          });
-      }
-      
-      document.getElementById('sessionModal').classList.add('active');
-  }
+// Function to check for session conflicts - DISABLED
+function checkSessionConflicts(startDate, endDate) {
+    // This function is now disabled
+    // Simply hide any conflict warnings
+    hideSessionConflictWarning();
+}
 
-  function openEditModal(session) {
-      console.log('Opening edit modal for session:', session);
-      
-      document.getElementById('modalTitle').textContent = 'Edit Session';
-      document.getElementById('formAction').name = 'update_session';
-      document.getElementById('sessionId').value = session.session_id;
-      document.getElementById('title').value = session.title;
-      document.getElementById('major_service').value = session.major_service;
-      document.getElementById('session_date').value = session.session_date;
-      document.getElementById('start_time').value = session.start_time;
-      document.getElementById('end_time').value = session.end_time;
-      document.getElementById('venue').value = session.venue;
-      document.getElementById('capacity').value = session.capacity || '';
-      document.getElementById('fee').value = session.fee || '';
-      
-      // For edit modal, show appropriate services based on permissions
-      const serviceSelect = document.getElementById('major_service');
-      const serviceHint = document.getElementById('serviceHint');
-      
-      if (hasRestrictedAccess && allowedServices && allowedServices.length > 0) {
-          const isCreator = session.created_by == currentUserId;
-          
-          Array.from(serviceSelect.options).forEach(option => {
-              if (option.value === '') {
-                  option.disabled = false;
-                  option.style.display = 'block';
-              } else if (option.value === session.major_service) {
-                  // Always show current service
-                  option.disabled = false;
-                  option.style.display = 'block';
-              } else if (isCreator && allowedServices.includes(option.value)) {
-                  // Creator can change to services they have permission for
-                  option.disabled = false;
-                  option.style.display = 'block';
-              } else if (!isCreator && allowedServices.includes(option.value)) {
-                  // Non-creator can only change between allowed services
-                  option.disabled = false;
-                  option.style.display = 'block';
-              } else {
-                  option.disabled = true;
-                  option.style.display = 'none';
-              }
-          });
-          
-          if (serviceHint) {
-              if (isCreator) {
-                  serviceHint.textContent = 'You can change to services you have permission for';
-              } else {
-                  serviceHint.textContent = 'You can only change between services you have permission for';
-              }
-              serviceHint.style.display = 'block';
-          }
-      } else {
-          // Show all options for super admin
-          Array.from(serviceSelect.options).forEach(option => {
-              option.disabled = false;
-              option.style.display = 'block';
-          });
-          if (serviceHint) {
-              serviceHint.style.display = 'none';
-          }
-      }
-      
-      // Set proper date minimum
-      const sessionDate = new Date(session.session_date);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      if (sessionDate < today) {
-          document.getElementById('session_date').min = session.session_date;
-      } else {
-          document.getElementById('session_date').min = new Date().toISOString().split('T')[0];
-      }
-      
-      document.getElementById('sessionModal').classList.add('active');
-  }
+function hideSessionConflictWarning() {
+    const conflictWarning = document.getElementById('conflictWarning');
+    const submitButton = document.getElementById('submitButton');
+    
+    if (conflictWarning) conflictWarning.style.display = 'none';
+    if (submitButton) {
+        submitButton.classList.remove('has-conflict');
+        submitButton.innerHTML = '<i class="fas fa-save"></i> Save Session';
+    }
+}
 
-  function closeModal() {
-      document.getElementById('sessionModal').classList.remove('active');
-  }
+function formatDateForDisplay(dateString) {
+    const date = new Date(dateString + 'T00:00:00');
+    return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
+}
 
-  function filterStatus(status) {
-      const urlParams = new URLSearchParams(window.location.search);
-      
-      // Preserve service filter when changing status
-      const currentService = urlParams.get('service');
-      
-      if (status === 'all') {
-          urlParams.delete('status');
-      } else {
-          urlParams.set('status', status);
-      }
-      
-      // Keep the service filter if it exists
-      if (currentService) {
-          urlParams.set('service', currentService);
-      }
-      
-      // Reset to page 1 when filtering
-      urlParams.delete('page');
-      
-      window.location.search = urlParams.toString();
-  }
+// Define JavaScript variables from PHP
+const userRole = '<?= $user_role ?>';
+const hasRestrictedAccess = <?= $hasRestrictedAccess ? 'true' : 'false' ?>;
+const allowedServices = <?= json_encode($allowedServices) ?>;
+const currentUserId = <?= $current_user_id ?>;
 
-  function confirmDelete(title, registrationCount) {
-      if (registrationCount > 0) {
-          return confirm(`Are you sure you want to delete "${title}"?\n\nThis session has ${registrationCount} registration(s).\nYou should cancel all registrations first.`);
-      }
-      return confirm(`Are you sure you want to delete "${title}"?\n\nThis action cannot be undone.`);
-  }
+console.log('User Role:', userRole);
+console.log('Has Restricted Access:', hasRestrictedAccess);
+console.log('Allowed Services:', allowedServices);
+console.log('Current User ID:', currentUserId);
 
-  function confirmDeleteRegistration() {
-      return confirm('Are you sure you want to delete this registration?\n\nThis action cannot be undone.');
-  }
-
-  // Close modal when clicking outside
-  document.addEventListener('DOMContentLoaded', function() {
-      const sessionModal = document.getElementById('sessionModal');
-      if (sessionModal) {
-          sessionModal.addEventListener('click', function(e) {
-              if (e.target === this) {
-                  closeModal();
-              }
-          });
-      }
-
-      // Form validation with role-based restrictions
-      const sessionForm = document.getElementById('sessionForm');
-      if (sessionForm) {
-          sessionForm.addEventListener('submit', function(e) {
-              const startTime = document.getElementById('start_time').value;
-              const endTime = document.getElementById('end_time').value;
-              const sessionDate = document.getElementById('session_date').value;
-              const title = document.getElementById('title').value.trim();
-              const venue = document.getElementById('venue').value.trim();
-              const majorService = document.getElementById('major_service').value;
-              const isCreating = document.getElementById('formAction').name === 'create_session';
-              
-              console.log('Form submission - Service:', majorService, 'IsCreating:', isCreating, 'Allowed:', allowedServices);
-              
-              // Basic validation
-              if (!title) {
-                  e.preventDefault();
-                  alert('Please enter a session title.');
-                  return;
-              }
-              
-              if (!venue) {
-                  e.preventDefault();
-                  alert('Please enter a venue.');
-                  return;
-              }
-              
-              if (!majorService) {
-                  e.preventDefault();
-                  alert('Please select a major service.');
-                  return;
-              }
-              
-              // Only check service permission for CREATE operations
-              if (isCreating && hasRestrictedAccess && allowedServices && allowedServices.length > 0) {
-                  if (!allowedServices.includes(majorService)) {
-                      e.preventDefault();
-                      alert("You don't have permission to create sessions for " + majorService + 
-                            "\n\nYou can only create sessions for: " + allowedServices.join(', '));
-                      return;
-                  }
-              }
-              
-              if (endTime <= startTime) {
-                  e.preventDefault();
-                  alert('End time must be after start time');
-                  return;
-              }
-              
-              const start = new Date(`2000-01-01T${startTime}`);
-              const end = new Date(`2000-01-01T${endTime}`);
-              const duration = (end - start) / (1000 * 60 * 60);
-              
-              if (duration < 1) {
-                  e.preventDefault();
-                  alert('Session must be at least 1 hour long');
-                  return;
-              }
-              
-              const selectedDate = new Date(sessionDate);
-              const today = new Date();
-              today.setHours(0, 0, 0, 0);
-              
-              if (selectedDate < today && isCreating) {
-                  e.preventDefault();
-                  alert('Session date cannot be in the past for new sessions');
-                  return;
-              }
-              
-              // Visual feedback
-              const submitBtn = this.querySelector('.btn-submit');
-              if (submitBtn) {
-                  const originalText = submitBtn.innerHTML;
-                  submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-                  submitBtn.disabled = true;
-              }
-          });
-      }
-
-      // Auto-dismiss alerts after 5 seconds
-      const alerts = document.querySelectorAll('.alert');
-      alerts.forEach(alert => {
-          setTimeout(() => {
-              alert.style.opacity = '0';
-              alert.style.transform = 'translateY(-20px)';
-              setTimeout(() => {
-                  alert.remove();
-              }, 300);
-          }, 5000);
-      });
-
-      // Clear form submission state from browser history
-      if (window.history.replaceState) {
-          window.history.replaceState(null, null, window.location.href);
-      }
-
-      // Debug: Log current permissions
-      console.log('=== Session Management Permissions ===');
-      console.log('User Role:', userRole);
-      console.log('Has Restricted Access:', hasRestrictedAccess);
-      console.log('Allowed Services:', allowedServices);
-      console.log('Current User ID:', currentUserId);
-      console.log('======================================');
-  });
-
-  // Keyboard shortcuts
-  document.addEventListener('keydown', function(e) {
-      // Escape key to close modal
-      if (e.key === 'Escape') {
-          const modal = document.getElementById('sessionModal');
-          if (modal && modal.classList.contains('active')) {
-              closeModal();
-          }
-      }
-      
-      // Ctrl/Cmd + N to create new session
-      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
-          e.preventDefault();
-          openCreateModal();
-      }
-  });
-
-  // Search form enhancement
-  document.addEventListener('DOMContentLoaded', function() {
-      const searchForm = document.querySelector('.search-box');
-      if (searchForm) {
-          const searchInput = searchForm.querySelector('input[name="search"]');
-          if (searchInput) {
-              // Clear search functionality
-              searchInput.addEventListener('keyup', function(e) {
-                  if (e.key === 'Escape') {
-                      this.value = '';
-                      searchForm.submit();
-                  }
-              });
-          }
-      }
-  });
-
-  // Enhanced table interactions
-  document.addEventListener('DOMContentLoaded', function() {
-      // Add hover effects for table rows
-      const tableRows = document.querySelectorAll('.data-table tbody tr');
-      tableRows.forEach(row => {
-          row.addEventListener('mouseenter', function() {
-              this.style.backgroundColor = '#f8f9fa';
-          });
-          
-          row.addEventListener('mouseleave', function() {
-              this.style.backgroundColor = '';
-          });
-      });
-
-      // Enhanced registration table interactions
-      const regRows = document.querySelectorAll('.registrations-table tbody tr');
-      regRows.forEach(row => {
-          row.addEventListener('mouseenter', function() {
-              this.style.backgroundColor = '#f8f9fa';
-          });
-          
-          row.addEventListener('mouseleave', function() {
-              this.style.backgroundColor = '';
-          });
-      });
-  });
-
-  // Touch/mobile enhancements
-  if ('ontouchstart' in window) {
-      document.addEventListener('DOMContentLoaded', function() {
-          // Add touch-friendly classes
-          document.body.classList.add('touch-device');
-          
-          // Enhance button interactions for touch
-          const buttons = document.querySelectorAll('button, .btn-action');
-          buttons.forEach(button => {
-              button.addEventListener('touchstart', function() {
-                  this.classList.add('touch-active');
-              });
-              
-              button.addEventListener('touchend', function() {
-                  setTimeout(() => {
-                      this.classList.remove('touch-active');
-                  }, 150);
-              });
-          });
-      });
-  }
-  </script>
-  
-  <!-- Role-based styling -->
-  <style>
-    :root {
-      --current-role-color: <?= get_role_color($user_role) ?>;
+// Enhanced modal functions matching events system
+function openCreateModal() {
+    document.getElementById('modalTitle').textContent = 'Create New Session';
+    document.getElementById('formAction').name = 'create_session';
+    document.getElementById('sessionForm').reset();
+    document.getElementById('session_date').min = new Date().toISOString().split('T')[0];
+    document.getElementById('duration_days').value = 1;
+    
+    currentSessionId = null;
+    
+    // Hide preview and conflicts initially
+    document.getElementById('datePreviewContainer').style.display = 'none';
+    hideSessionConflictWarning();
+    
+    // Service selection logic
+    const serviceSelect = document.getElementById('major_service');
+    if (hasRestrictedAccess && allowedServices && allowedServices.length > 0) {
+        Array.from(serviceSelect.options).forEach(option => {
+            if (option.value === '') {
+                option.disabled = false;
+                option.style.display = 'block';
+            } else if (!allowedServices.includes(option.value)) {
+                option.disabled = true;
+                option.style.display = 'none';
+            } else {
+                option.disabled = false;
+                option.style.display = 'block';
+            }
+        });
+    } else {
+        Array.from(serviceSelect.options).forEach(option => {
+            option.disabled = false;
+            option.style.display = 'block';
+        });
     }
     
-    .role-indicator {
-      background: linear-gradient(135deg, var(--current-role-color) 0%, <?= get_role_color($user_role) ?>dd 100%);
-      color: white;
-      padding: 0.5rem 1rem;
-      border-radius: 8px;
-      margin-top: 0.5rem;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      font-size: 0.85rem;
+    document.getElementById('sessionModal').classList.add('active');
+}
+
+function openEditModal(session) {
+    console.log('Opening edit modal for session:', session);
+    
+    document.getElementById('modalTitle').textContent = 'Edit Session';
+    document.getElementById('formAction').name = 'update_session';
+    document.getElementById('sessionId').value = session.session_id;
+    document.getElementById('title').value = session.title;
+    document.getElementById('major_service').value = session.major_service;
+    document.getElementById('session_date').value = session.session_date;
+    document.getElementById('duration_days').value = session.duration_days || 1;
+    document.getElementById('start_time').value = session.start_time;
+    document.getElementById('end_time').value = session.end_time;
+    document.getElementById('venue').value = session.venue;
+    document.getElementById('capacity').value = session.capacity || '';
+    document.getElementById('fee').value = session.fee || '';
+    
+    currentSessionId = session.session_id;
+    
+    // Update date preview immediately
+    setTimeout(updateSessionDatePreview, 100);
+    
+    // Service selection logic for editing
+    const serviceSelect = document.getElementById('major_service');
+    const serviceHint = document.getElementById('serviceHint');
+    const isCreator = session.created_by == currentUserId;
+    
+    if (hasRestrictedAccess && allowedServices && allowedServices.length > 0) {
+        Array.from(serviceSelect.options).forEach(option => {
+            if (option.value === '') {
+                option.disabled = false;
+                option.style.display = 'block';
+            } else if (option.value === session.major_service) {
+                option.disabled = false;
+                option.style.display = 'block';
+            } else if (isCreator && allowedServices.includes(option.value)) {
+                option.disabled = false;
+                option.style.display = 'block';
+            } else if (!isCreator && allowedServices.includes(option.value)) {
+                option.disabled = false;
+                option.style.display = 'block';
+            } else {
+                option.disabled = true;
+                option.style.display = 'none';
+            }
+        });
+        
+        if (serviceHint) {
+            if (isCreator) {
+                serviceHint.textContent = 'You can change to services you have permission for';
+            } else {
+                serviceHint.textContent = 'You can only change between services you have permission for';
+            }
+            serviceHint.style.display = 'block';
+        }
+    } else {
+        // Show all options for super admin
+        Array.from(serviceSelect.options).forEach(option => {
+            option.disabled = false;
+            option.style.display = 'block';
+        });
+        if (serviceHint) {
+            serviceHint.style.display = 'none';
+        }
     }
     
-    .role-indicator small {
-      opacity: 0.9;
-      font-size: 0.75rem;
+    // Set proper date minimum for editing
+    const sessionDate = new Date(session.session_date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (sessionDate < today) {
+        document.getElementById('session_date').min = session.session_date;
+    } else {
+        document.getElementById('session_date').min = new Date().toISOString().split('T')[0];
     }
     
-    .service-tab.active,
-    .btn-create {
-      color: var(--current-role-color) !important;
+    document.getElementById('sessionModal').classList.add('active');
+}
+
+function closeModal() {
+    document.getElementById('sessionModal').classList.remove('active');
+}
+
+// Enhanced status filtering with ongoing sessions
+function filterStatus(status) {
+    const urlParams = new URLSearchParams(window.location.search);
+    
+    const currentService = urlParams.get('service');
+    
+    if (status === 'all') {
+        urlParams.delete('status');
+    } else {
+        urlParams.set('status', status);
     }
     
-    .btn-create {
-      background: linear-gradient(135deg, var(--current-role-color) 0%, <?= get_role_color($user_role) ?>dd 100%) !important;
-      color: white !important;
+    if (currentService) {
+        urlParams.set('service', currentService);
     }
     
-    .service-tab.active {
-      border-bottom-color: var(--current-role-color) !important;
-      background: linear-gradient(135deg, var(--current-role-color)15 0%, <?= get_role_color($user_role) ?>10 100%) !important;
+    urlParams.delete('page');
+    
+    window.location.search = urlParams.toString();
+}
+
+function confirmDelete(title, registrationCount) {
+    if (registrationCount > 0) {
+        return confirm(`Are you sure you want to delete "${title}"?\n\nThis session has ${registrationCount} registration(s).\nYou should cancel all registrations first.`);
+    }
+    return confirm(`Are you sure you want to delete "${title}"?\n\nThis action cannot be undone.`);
+}
+
+function confirmDeleteRegistration() {
+    return confirm('Are you sure you want to delete this registration?\n\nThis action cannot be undone.');
+}
+
+// Event listeners initialization
+document.addEventListener('DOMContentLoaded', function() {
+    const sessionDateInput = document.getElementById('session_date');
+    const durationInput = document.getElementById('duration_days');
+    const startTimeInput = document.getElementById('start_time');
+    const endTimeInput = document.getElementById('end_time');
+    
+    if (sessionDateInput) {
+        sessionDateInput.addEventListener('change', updateSessionDatePreview);
     }
     
-    .stat-card .stat-icon {
-      background: linear-gradient(135deg, var(--current-role-color) 0%, <?= get_role_color($user_role) ?>dd 100%) !important;
+    if (durationInput) {
+        durationInput.addEventListener('input', updateSessionDatePreview);
+        durationInput.addEventListener('change', updateSessionDatePreview);
     }
     
-    .sessions-container {
-      --role-accent: var(--current-role-color);
+    if (startTimeInput) {
+        startTimeInput.addEventListener('change', updateSessionDatePreview);
     }
     
-    .session-service {
-      background: linear-gradient(135deg, var(--current-role-color)20 0%, <?= get_role_color($user_role) ?>15 100%);
-      color: var(--current-role-color);
-      padding: 0.2rem 0.6rem;
-      border-radius: 12px;
-      font-size: 0.8rem;
-      font-weight: 600;
+    if (endTimeInput) {
+        endTimeInput.addEventListener('change', updateSessionDatePreview);
     }
-  </style>
-  
-  <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
-</body>a
+    
+    // Enhanced form validation for multi-day sessions - CONFLICT CHECKING REMOVED
+    const sessionForm = document.getElementById('sessionForm');
+    if (sessionForm) {
+        sessionForm.addEventListener('submit', function(e) {
+            const startTime = document.getElementById('start_time').value;
+            const endTime = document.getElementById('end_time').value;
+            const sessionDate = document.getElementById('session_date').value;
+            const duration = parseInt(document.getElementById('duration_days').value) || 1;
+            const title = document.getElementById('title').value.trim();
+            const venue = document.getElementById('venue').value.trim();
+            const majorService = document.getElementById('major_service').value;
+            const isCreating = document.getElementById('formAction').name === 'create_session';
+            
+            console.log('Form submission - Service:', majorService, 'IsCreating:', isCreating, 'Duration:', duration);
+            
+            // Basic validation
+            if (!title) {
+                e.preventDefault();
+                alert('Please enter a session title.');
+                return;
+            }
+            
+            if (!venue) {
+                e.preventDefault();
+                alert('Please enter a venue.');
+                return;
+            }
+            
+            if (!majorService) {
+                e.preventDefault();
+                alert('Please select a major service.');
+                return;
+            }
+            
+            // Duration validation
+            if (duration < 1 || duration > 365) {
+                e.preventDefault();
+                alert('Session duration must be between 1 and 365 days.');
+                return;
+            }
+            
+            // Only check service permission for CREATE operations
+            if (isCreating && hasRestrictedAccess && allowedServices && allowedServices.length > 0) {
+                if (!allowedServices.includes(majorService)) {
+                    e.preventDefault();
+                    alert("You don't have permission to create sessions for " + majorService + 
+                          "\n\nYou can only create sessions for: " + allowedServices.join(', '));
+                    return;
+                }
+            }
+            
+            if (endTime <= startTime) {
+                e.preventDefault();
+                alert('End time must be after start time');
+                return;
+            }
+            
+            const start = new Date(`2000-01-01T${startTime}`);
+            const end = new Date(`2000-01-01T${endTime}`);
+            const timeDuration = (end - start) / (1000 * 60 * 60);
+            
+            if (timeDuration < 1) {
+                e.preventDefault();
+                alert('Session must be at least 1 hour long');
+                return;
+            }
+            
+            const selectedDate = new Date(sessionDate);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            if (selectedDate < today && isCreating) {
+                e.preventDefault();
+                alert('Session date cannot be in the past for new sessions');
+                return;
+            }
+            
+            // Visual feedback
+            const submitBtn = this.querySelector('.btn-submit');
+            if (submitBtn) {
+                const originalText = submitBtn.innerHTML;
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+                submitBtn.disabled = true;
+            }
+        });
+    }
+    
+    // Close modal when clicking outside
+    const sessionModal = document.getElementById('sessionModal');
+    if (sessionModal) {
+        sessionModal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
+    }
+    
+    // Auto-dismiss alerts after 5 seconds
+    const alerts = document.querySelectorAll('.alert');
+    alerts.forEach(alert => {
+        setTimeout(() => {
+            alert.style.opacity = '0';
+            alert.style.transform = 'translateY(-20px)';
+            setTimeout(() => {
+                alert.remove();
+            }, 300);
+        }, 5000);
+    });
+    
+    // Clear form submission state from browser history
+    if (window.history.replaceState) {
+        window.history.replaceState(null, null, window.location.href);
+    }
+    
+    // Enhanced table interactions
+    const tableRows = document.querySelectorAll('.data-table tbody tr');
+    tableRows.forEach(row => {
+        row.addEventListener('mouseenter', function() {
+            this.style.backgroundColor = '#f8f9fa';
+        });
+        
+        row.addEventListener('mouseleave', function() {
+            this.style.backgroundColor = '';
+        });
+    });
+    
+    // Enhanced registration table interactions
+    const regRows = document.querySelectorAll('.registrations-table tbody tr');
+    regRows.forEach(row => {
+        row.addEventListener('mouseenter', function() {
+            this.style.backgroundColor = '#f8f9fa';
+        });
+        
+        row.addEventListener('mouseleave', function() {
+            this.style.backgroundColor = '';
+        });
+    });
+    
+    // Search form enhancement
+    const searchForm = document.querySelector('.search-box');
+    if (searchForm) {
+        const searchInput = searchForm.querySelector('input[name="search"]');
+        if (searchInput) {
+            searchInput.addEventListener('keyup', function(e) {
+                if (e.key === 'Escape') {
+                    this.value = '';
+                    searchForm.submit();
+                }
+            });
+        }
+    }
+    
+    // Debug: Log current permissions
+    console.log('=== Session Management Permissions ===');
+    console.log('User Role:', userRole);
+    console.log('Has Restricted Access:', hasRestrictedAccess);
+    console.log('Allowed Services:', allowedServices);
+    console.log('Current User ID:', currentUserId);
+    console.log('======================================');
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', function(e) {
+    // Escape key to close modal
+    if (e.key === 'Escape') {
+        const modal = document.getElementById('sessionModal');
+        if (modal && modal.classList.contains('active')) {
+            closeModal();
+        }
+    }
+    
+    // Ctrl/Cmd + N to create new session
+    if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+        e.preventDefault();
+        openCreateModal();
+    }
+});
+
+// Touch/mobile enhancements
+if ('ontouchstart' in window) {
+    document.addEventListener('DOMContentLoaded', function() {
+        // Add touch-friendly classes
+        document.body.classList.add('touch-device');
+        
+        // Enhance button interactions for touch
+        const buttons = document.querySelectorAll('button, .btn-action');
+        buttons.forEach(button => {
+            button.addEventListener('touchstart', function() {
+                this.classList.add('touch-active');
+            });
+            
+            button.addEventListener('touchend', function() {
+                setTimeout(() => {
+                    this.classList.remove('touch-active');
+                }, 150);
+            });
+        });
+    });
+}
+
+// CSS Styles for Multi-Day Sessions
+const sessionStyles = `
+/* Enhanced styles for multi-day session display */
+.session-date-range {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.session-date-single .session-date {
+    font-weight: 600;
+    color: var(--dark);
+}
+
+.session-date-start {
+    font-weight: 600;
+    color: var(--dark);
+    font-size: 0.9rem;
+}
+
+.session-date-end {
+    font-size: 0.85rem;
+    color: var(--gray);
+    font-style: italic;
+}
+
+.session-duration {
+    font-size: 0.75rem;
+    background: linear-gradient(135deg, var(--light) 0%, #e3f2fd 100%);
+    color: var(--blue);
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    display: inline-block;
+    margin-top: 0.2rem;
+    font-weight: 500;
+    border: 1px solid rgba(33, 150, 243, 0.2);
+}
+
+.status-badge.ongoing {
+    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+    color: #856404;
+    border: 1px solid #f7dc6f;
+}
+
+.status-badge.ongoing i {
+    color: #ff9800;
+}
+
+/* Date Preview Styles (matching events system) */
+.date-preview-container {
+    margin: 1rem 0;
+    animation: slideDown 0.3s ease;
+}
+
+.date-preview {
+    background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+    border: 2px solid #90caf9;
+    border-radius: 12px;
+    padding: 1rem;
+}
+
+.date-preview-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    color: var(--dark);
+    margin-bottom: 0.5rem;
+}
+
+.date-preview-header i {
+    color: var(--blue);
+}
+
+.date-preview-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.date-range {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.start-date, .end-date {
+    background: white;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    color: var(--dark);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.date-range i {
+    color: var(--blue);
+}
+
+.duration-display {
+    text-align: center;
+    font-size: 0.9rem;
+    color: var(--gray);
+    font-weight: 500;
+}
+
+/* Conflict Warning Styles */
+.conflict-warning {
+    margin: 1rem 0;
+    animation: slideDown 0.3s ease, shake 0.5s ease;
+}
+
+.conflict-alert {
+    background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+    border: 2px solid #ef5350;
+    border-radius: 12px;
+    padding: 1rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+
+.conflict-alert i {
+    color: #d32f2f;
+    font-size: 1.2rem;
+    margin-top: 0.1rem;
+    flex-shrink: 0;
+}
+
+.conflict-content {
+    flex: 1;
+}
+
+.conflict-title {
+    font-weight: 600;
+    color: #d32f2f;
+    margin-bottom: 0.3rem;
+}
+
+.conflict-message {
+    color: #c62828;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+/* Button states for conflict */
+.btn-submit.has-conflict {
+    background: linear-gradient(135deg, #ff5722 0%, #d32f2f 100%);
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { box-shadow: 0 3px 10px rgba(211, 47, 47, 0.3); }
+    50% { box-shadow: 0 3px 20px rgba(211, 47, 47, 0.5); }
+    100% { box-shadow: 0 3px 10px rgba(211, 47, 47, 0.3); }
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+        max-height: 0;
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+        max-height: 200px;
+    }
+}
+
+@keyframes shake {
+    0%, 20%, 40%, 60%, 80% { transform: translateX(0); }
+    10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .date-range {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .date-range i {
+        transform: rotate(90deg);
+    }
+    
+    .conflict-alert {
+        flex-direction: column;
+        text-align: center;
+    }
+    
+    .session-date-range {
+        font-size: 0.8rem;
+    }
+    
+    .session-duration {
+        font-size: 0.7rem;
+        padding: 0.1rem 0.3rem;
+    }
+}
+
+@media (max-width: 576px) {
+    .session-date-start,
+    .session-date-end {
+        font-size: 0.75rem;
+    }
+    
+    .session-duration {
+        font-size: 0.65rem;
+    }
+}
+`;
+
+// Inject styles
+const styleSheet = document.createElement('style');
+styleSheet.textContent = sessionStyles;
+document.head.appendChild(styleSheet);
+</script>
+
+<!-- Role-based styling -->
+<style>
+:root {
+    --current-role-color: <?= get_role_color($user_role) ?>;
+}
+
+.role-indicator {
+    background: linear-gradient(135deg, var(--current-role-color) 0%, <?= get_role_color($user_role) ?>dd 100%);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    margin-top: 0.5rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+}
+
+.role-indicator small {
+    opacity: 0.9;
+    font-size: 0.75rem;
+}
+
+.service-tab.active,
+.btn-create {
+    color: var(--current-role-color) !important;
+}
+
+.btn-create {
+    background: linear-gradient(135deg, var(--current-role-color) 0%, <?= get_role_color($user_role) ?>dd 100%) !important;
+    color: white !important;
+}
+
+.service-tab.active {
+    border-bottom-color: var(--current-role-color) !important;
+    background: linear-gradient(135deg, var(--current-role-color)15 0%, <?= get_role_color($user_role) ?>10 100%) !important;
+}
+
+.stat-card .stat-icon {
+    background: linear-gradient(135deg, var(--current-role-color) 0%, <?= get_role_color($user_role) ?>dd 100%) !important;
+}
+
+.sessions-container {
+    --role-accent: var(--current-role-color);
+}
+
+.session-service {
+    background: linear-gradient(135deg, var(--current-role-color)20 0%, <?= get_role_color($user_role) ?>15 100%);
+    color: var(--current-role-color);
+    padding: 0.2rem 0.6rem;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+/* Remove or comment out these conflict-related CSS styles from the sessionStyles constant */
+
+/* Keep the date preview styles */
+.date-preview-container {
+    margin: 1rem 0;
+    animation: slideDown 0.3s ease;
+}
+
+.date-preview {
+    background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+    border: 2px solid #90caf9;
+    border-radius: 12px;
+    padding: 1rem;
+}
+
+.date-preview-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    color: var(--dark);
+    margin-bottom: 0.5rem;
+}
+
+.date-preview-header i {
+    color: var(--blue);
+}
+
+.date-preview-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.date-range {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.start-date, .end-date {
+    background: white;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    color: var(--dark);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.date-range i {
+    color: var(--blue);
+}
+
+.duration-display {
+    text-align: center;
+    font-size: 0.9rem;
+    color: var(--gray);
+    font-weight: 500;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+        max-height: 0;
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+        max-height: 200px;
+    }
+}
+</style>
+
+<script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
+</body>
 </html>

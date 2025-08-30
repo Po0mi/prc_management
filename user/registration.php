@@ -1,8 +1,13 @@
 <?php
-
+// Add these cache-busting headers
+header("Cache-Control: no-cache, no-store, must-revalidate, max-age=0");
+header("Pragma: no-cache");
+header("Expires: Thu, 01 Jan 1970 00:00:00 GMT");
 require_once __DIR__ . '/../config.php';
 ensure_logged_in();
-
+// Add cache busting based on recent event changes
+$recent_event_check = $pdo->query("SELECT MAX(GREATEST(COALESCE(created_at, NOW()), COALESCE(updated_at, NOW()))) as last_change FROM events")->fetchColumn();
+$cache_key = substr(md5($recent_event_check), 0, 8);
 $user_role = get_user_role();
 if ($user_role) {
     // If user has an admin role, redirect to admin dashboard
@@ -21,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_event'])) {
     $age = (int)$_POST['age'];
     
     // Get event details to check if it's a paid event
-    $eventQuery = $pdo->prepare("SELECT fee FROM events WHERE event_id = ?");
+    $eventQuery = $pdo->prepare("SELECT fee, event_date, event_end_date, duration_days FROM events WHERE event_id = ?");
     $eventQuery->execute([$eventId]);
     $eventData = $eventQuery->fetch();
     $eventFee = $eventData ? floatval($eventData['fee']) : 0;
@@ -209,28 +214,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_event'])) {
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 $statusFilter = isset($_GET['status']) ? trim($_GET['status']) : '';
 
-// Build query with filters
+// Build query with filters - FIXED FOR MULTI-DAY EVENTS
 $whereConditions = [];
 $params = [];
 
-$whereConditions[] = "event_date >= CURDATE()";
+// Changed from event_date >= CURDATE() to check event_end_date instead
+$whereConditions[] = "e.event_end_date >= CURDATE()";
 
 if ($search) {
-    $whereConditions[] = "(title LIKE :search OR location LIKE :search OR description LIKE :search)";
+    $whereConditions[] = "(e.title LIKE :search OR e.location LIKE :search OR e.description LIKE :search)";
     $params[':search'] = '%' . $search . '%';
 }
 
 if ($statusFilter === 'this_week') {
-    $whereConditions[] = "event_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)";
+    $whereConditions[] = "e.event_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)";
 } elseif ($statusFilter === 'this_month') {
-    $whereConditions[] = "event_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)";
+    $whereConditions[] = "e.event_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)";
 }
 
 $whereClause = 'WHERE ' . implode(' AND ', $whereConditions);
 
-// Get events with registration counts and user registration status
+$cache_buster = time(); // or use a version number that increments when events change
+
+// Modify your main query to include a comment that changes
 $query = "
-    SELECT e.*, 
+    SELECT /* cache_bust_{$cache_buster} */ e.*, 
            COUNT(r.registration_id) AS registrations_count,
            ur.registration_id AS user_registered,
            ur.status AS user_status
@@ -255,7 +263,8 @@ $userRegistrations = $pdo->prepare("
     SELECT r.registration_id, r.event_id, r.full_name, r.email, r.age, r.payment_mode, 
            r.valid_id_path, r.documents_path, r.status, r.registration_date, r.registration_type,
            r.organization_name, r.contact_person, r.contact_email, r.pax_count, r.location,
-           e.title, e.event_date
+           e.title, e.event_date, e.event_end_date, e.duration_days, e.major_service, e.location as event_location,
+           e.fee, e.capacity
     FROM registrations r
     JOIN events e ON r.event_id = e.event_id
     WHERE r.user_id = ?
@@ -264,28 +273,44 @@ $userRegistrations = $pdo->prepare("
 $userRegistrations->execute([$userId]);
 $myRegistrations = $userRegistrations->fetchAll();
 
-// Get statistics
-$upcoming_events = $pdo->query("SELECT COUNT(*) FROM events WHERE event_date >= CURDATE()")->fetchColumn();
+
+// Get statistics - FIXED to match the main query logic
+$upcoming_events = $pdo->query("SELECT COUNT(*) FROM events WHERE event_end_date >= CURDATE()")->fetchColumn();
 $my_registrations = count($myRegistrations);
 $pending_registrations = count(array_filter($myRegistrations, function($reg) { return $reg['status'] === 'pending'; }));
 $approved_registrations = count(array_filter($myRegistrations, function($reg) { return $reg['status'] === 'approved'; }));
 
-// Get events for small calendar (next 3 months)
+// Get events for small calendar (next 3 months) - FIXED
 $calendarEvents = $pdo->query("
-    SELECT event_id, title, event_date, location
+    SELECT event_id, title, event_date, 
+           COALESCE(event_end_date, event_date) as event_end_date, 
+           location, major_service
     FROM events 
-    WHERE event_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 3 MONTH)
+    WHERE event_end_date >= CURDATE() 
+    AND event_date <= DATE_ADD(CURDATE(), INTERVAL 3 MONTH)
     ORDER BY event_date ASC
 ")->fetchAll();
 
-// Get extended events for large calendar modal (6 months range with more details)
+// Get extended events for large calendar modal - FIXED
 $extendedCalendarEvents = $pdo->query("
-    SELECT event_id, title, event_date, location, description, fee, capacity,
+    SELECT event_id, title, event_date, 
+           COALESCE(event_end_date, event_date) as event_end_date,
+           location, description, fee, capacity, major_service,
            (SELECT COUNT(*) FROM registrations WHERE event_id = events.event_id) as registrations_count
     FROM events 
-    WHERE event_date BETWEEN DATE_SUB(CURDATE(), INTERVAL 1 MONTH) AND DATE_ADD(CURDATE(), INTERVAL 6 MONTH)
+    WHERE event_end_date >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)
+    AND event_date <= DATE_ADD(CURDATE(), INTERVAL 6 MONTH)
     ORDER BY event_date ASC
 ")->fetchAll();
+
+// Get user registrations for JavaScript
+$userRegistrationsStmt = $pdo->prepare("
+    SELECT event_id, registration_date 
+    FROM registrations 
+    WHERE user_id = ?
+");
+$userRegistrationsStmt->execute([$userId]);
+$userRegistrations = $userRegistrationsStmt->fetchAll();
 
 ?>
 <!DOCTYPE html>
@@ -399,7 +424,8 @@ $extendedCalendarEvents = $pdo->query("
                             <thead>
                                 <tr>
                                     <th>Event Details</th>
-                                    <th>Date</th>
+                                    <th>Service</th>
+                                    <th>Date Range</th>
                                     <th>Location</th>
                                     <th>Capacity</th>
                                     <th>Fee</th>
@@ -409,22 +435,43 @@ $extendedCalendarEvents = $pdo->query("
                             </thead>
                             <tbody>
                                 <?php foreach ($events as $e): 
-                                    $eventDate = strtotime($e['event_date']);
-                                    $isFull = $e['capacity'] > 0 && $e['registrations_count'] >= $e['capacity'];
-                                    $isRegistered = $e['user_registered'] !== null;
-                                ?>
-                                    <tr>
-                                        <td>
-                                            <div class="event-title"><?= htmlspecialchars($e['title']) ?></div>
-                                            <div style="font-size: 0.85rem; color: var(--gray); margin-top: 0.2rem;">
-                                                <?= htmlspecialchars($e['description']) ?>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div class="event-date">
-                                                <span><?= date('M d, Y', $eventDate) ?></span>
-                                            </div>
-                                        </td>
+    $eventStartDate = strtotime($e['event_date']);
+    $eventEndDate = strtotime($e['event_end_date'] ?? $e['event_date']);
+    $durationDays = $e['duration_days'] ?? 1;
+    $isFull = $e['capacity'] > 0 && $e['registrations_count'] >= $e['capacity'];
+    $isRegistered = $e['user_registered'] !== null;
+    
+    // Check if event is currently active (for display purposes)
+    $today = strtotime('today');
+    $isOngoing = $eventStartDate <= $today && $eventEndDate >= $today;
+?>
+                                     <tr>
+        <td>
+            <div class="event-title"><?= htmlspecialchars($e['title']) ?></div>
+            <?php if ($isOngoing): ?>
+                <span class="ongoing-badge">Ongoing</span>
+            <?php endif; ?>
+            <div style="font-size: 0.85rem; color: var(--gray); margin-top: 0.2rem;">
+                <?= htmlspecialchars($e['description']) ?>
+            </div>
+        </td>
+        <td>
+            <span class="event-service"><?= htmlspecialchars($e['major_service']) ?></span>
+        </td>
+        <td>
+                                            <div class="event-date-range">
+                <?php if ($durationDays == 1): ?>
+                    <div class="event-date-single">
+                        <span class="event-date-start"><?= date('M d, Y', $eventStartDate) ?></span>
+                        <div class="event-duration">Single Day</div>
+                    </div>
+                <?php else: ?>
+                    <div class="event-date-start"><?= date('M d, Y', $eventStartDate) ?></div>
+                    <div class="event-date-end">to <?= date('M d, Y', $eventEndDate) ?></div>
+                    <div class="event-duration"><?= $durationDays ?> days</div>
+                <?php endif; ?>
+            </div>
+        </td>
                                         <td><?= htmlspecialchars($e['location']) ?></td>
                                         <td>
                                             <div class="registrations-badge <?= $isFull ? 'full' : '' ?>">
@@ -489,7 +536,9 @@ $extendedCalendarEvents = $pdo->query("
                                 <thead>
                                     <tr>
                                         <th>Event</th>
-                                        <th>Date</th>
+                                        <th>Service</th>
+                                        <th>Date Range</th>
+                                        <th>Location</th>
                                         <th>Full Name</th>
                                         <th>Age</th>
                                         <th>Email</th>
@@ -500,42 +549,60 @@ $extendedCalendarEvents = $pdo->query("
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <?php foreach ($myRegistrations as $r): ?>
+                                    <?php foreach ($myRegistrations as $r): 
+                                        $eventStartDate = strtotime($r['event_date']);
+                                        $eventEndDate = strtotime($r['event_end_date'] ?? $r['event_date']);
+                                        $durationDays = $r['duration_days'] ?? 1;
+                                    ?>
                                     <tr>
                                         <td><?= htmlspecialchars($r['title']) ?></td>
-                                        <td><?= date('M d, Y', strtotime($r['event_date'])) ?></td>
+                                        <td>
+                                            <span class="event-service"><?= htmlspecialchars($r['major_service']) ?></span>
+                                        </td>
+                                        <td>
+                                            <div class="event-date-range">
+                                                <?php if ($durationDays == 1): ?>
+                                                    <div class="event-date-single">
+                                                        <span class="event-date-start"><?= date('M d, Y', $eventStartDate) ?></span>
+                                                        <div class="event-duration">Single Day</div>
+                                                    </div>
+                                                <?php else: ?>
+                                                    <div class="event-date-start"><?= date('M d, Y', $eventStartDate) ?></div>
+                                                    <div class="event-date-end">to <?= date('M d, Y', $eventEndDate) ?></div>
+                                                    <div class="event-duration"><?= $durationDays ?> days</div>
+                                                <?php endif; ?>
+                                            </div>
+                                        </td>
+                                        <td><?= htmlspecialchars($r['event_location']) ?></td>
                                         <td><?= htmlspecialchars($r['full_name']) ?></td>
                                         <td><?= htmlspecialchars($r['age']) ?></td>
                                         <td><?= htmlspecialchars($r['email']) ?></td>
                                         <td><?= htmlspecialchars($r['payment_mode']) ?></td>
-                                        <!-- Updated My Registrations Table HTML -->
-<!-- Replace the existing documents column in your registrations table with this enhanced version -->
-
-<td>
-    <div class="document-links">
-        <?php if ($r['valid_id_path']): ?>
-            <a href="../<?= htmlspecialchars($r['valid_id_path']) ?>" target="_blank" class="doc-link">
-                <i class="fas fa-id-card"></i> Valid ID
-            </a>
-        <?php endif; ?>
-        
-        <?php if ($r['documents_path']): ?>
-            <a href="../<?= htmlspecialchars($r['documents_path']) ?>" target="_blank" class="doc-link">
-                <i class="fas fa-file-alt"></i> Documents
-            </a>
-        <?php endif; ?>
-        
-        <?php if ($r['payment_receipt_path']): ?>
-            <a href="../<?= htmlspecialchars($r['payment_receipt_path']) ?>" target="_blank" class="doc-link payment-receipt">
-                <i class="fas fa-receipt"></i> Payment Receipt
-            </a>
-        <?php endif; ?>
-        
-        <?php if (empty($r['valid_id_path']) && empty($r['documents_path']) && empty($r['payment_receipt_path'])): ?>
-            <span class="no-documents">No documents uploaded</span>
-        <?php endif; ?>
-    </div>
-</td>
+                                        <td>
+                                            <div class="document-links">
+                                                <?php if ($r['valid_id_path']): ?>
+                                                    <a href="../<?= htmlspecialchars($r['valid_id_path']) ?>" target="_blank" class="doc-link">
+                                                        <i class="fas fa-id-card"></i> Valid ID
+                                                    </a>
+                                                <?php endif; ?>
+                                                
+                                                <?php if ($r['documents_path']): ?>
+                                                    <a href="../<?= htmlspecialchars($r['documents_path']) ?>" target="_blank" class="doc-link">
+                                                        <i class="fas fa-file-alt"></i> Documents
+                                                    </a>
+                                                <?php endif; ?>
+                                                
+                                                <?php if ($r['payment_receipt_path']): ?>
+                                                    <a href="../<?= htmlspecialchars($r['payment_receipt_path']) ?>" target="_blank" class="doc-link payment-receipt">
+                                                        <i class="fas fa-receipt"></i> Payment Receipt
+                                                    </a>
+                                                <?php endif; ?>
+                                                
+                                                <?php if (empty($r['valid_id_path']) && empty($r['documents_path']) && empty($r['payment_receipt_path'])): ?>
+                                                    <span class="no-documents">No documents uploaded</span>
+                                                <?php endif; ?>
+                                            </div>
+                                        </td>
                                         <td><?= date('M d, Y', strtotime($r['registration_date'])) ?></td>
                                         <td>
                                             <span class="status-badge <?= $r['status'] ?>">
@@ -551,462 +618,468 @@ $extendedCalendarEvents = $pdo->query("
                 </div>
             </div>
 
-      <div class="calendar-sidebar">
-    <div class="calendar-header">
-        <h2><i class="fas fa-calendar-alt"></i> Events Calendar</h2>
-        <button class="btn-view-calendar" onclick="openCalendarModal()">
-            <i class="fas fa-expand"></i> View Full Calendar
-        </button>
-    </div>
-    <div class="calendar-container" id="calendarContainer">
-        <!-- Existing calendar content -->
-    </div>
-</div>
-<!-- Large Calendar Modal -->
-<div class="modal calendar-modal" id="calendarModal">
-    <div class="modal-content calendar-modal-content">
-        <div class="modal-header">
-            <h2 class="modal-title">
-                <i class="fas fa-calendar-alt"></i> Events Calendar
-            </h2>
-            <button class="close-modal" onclick="closeCalendarModal()">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        
-        <div class="calendar-nav">
-            <button class="nav-btn" onclick="changeMonth(-1)">
-                <i class="fas fa-chevron-left"></i>
-            </button>
-            <div class="current-month-year" id="currentMonthYear">
-                <!-- Will be populated by JavaScript -->
-            </div>
-            <button class="nav-btn" onclick="changeMonth(1)">
-                <i class="fas fa-chevron-right"></i>
-            </button>
-        </div>
-        
-        <div class="large-calendar-container" id="largeCalendarContainer">
-            <!-- Calendar will be generated by JavaScript -->
-        </div>
-        
-        <div class="calendar-legend">
-            <div class="legend-item">
-                <div class="legend-dot has-events"></div>
-                <span>Has Events</span>
-            </div>
-            <div class="legend-item">
-                <div class="legend-dot today"></div>
-                <span>Today</span>
-            </div>
-            <div class="legend-item">
-                <div class="legend-dot past"></div>
-                <span>Past Date</span>
+            <!-- Calendar Sidebar -->
+            <div class="calendar-sidebar">
+                <div class="calendar-header">
+                    <h2><i class="fas fa-calendar-alt"></i> Events Calendar</h2>
+                    <button class="btn-view-calendar" onclick="openCalendarModal()">
+                        <i class="fas fa-expand"></i> View Full Calendar
+                    </button>
+                </div>
+                <div class="calendar-container" id="calendarContainer">
+                    <!-- Calendar will be populated by JavaScript -->
+                </div>
             </div>
         </div>
     </div>
-</div>
 
-<!-- Event Details Tooltip -->
-<div class="event-tooltip" id="eventTooltip">
-    <div class="tooltip-content">
-        <!-- Event details will be populated here -->
-    </div>
-</div>
-<!-- Updated Registration Modal HTML Structure -->
-<div class="modal" id="registerModal">
-  <div class="modal-content">
-    <div class="modal-header">
-      <h2 class="modal-title" id="modalTitle">Register for Event</h2>
-      <button class="close-modal" onclick="closeRegisterModal()">
-        <i class="fas fa-times"></i>
-      </button>
-    </div>
-    
-    <form method="POST" id="registerForm" enctype="multipart/form-data">
-      <input type="hidden" name="register_event" value="1">
-      <input type="hidden" name="event_id" id="eventId">
-      <input type="hidden" name="payment_amount" id="hiddenPaymentAmount" value="0">
-      
-      <!-- Event Information Display -->
-      <div class="event-info" id="eventInfo">
-        <!-- Event details will be populated by JavaScript -->
-      </div>
-      
-      <!-- Registration Type Tabs -->
-      <div class="tab-container">
-        <div class="tab-buttons">
-          <button type="button" class="tab-btn active" onclick="switchTab('individual')">
-            <i class="fas fa-user"></i> Individual
-          </button>
-          <button type="button" class="tab-btn" onclick="switchTab('organization')">
-            <i class="fas fa-building"></i> Organization/Company
-          </button>
-        </div>
-        
-        <!-- Individual Tab -->
-        <div class="tab-content active" id="individual-tab">
-          <input type="hidden" name="registration_type" value="individual" id="registration_type_individual">
-          
-          <div class="form-row">
-            <div class="form-group">
-              <label for="full_name">Full Name *</label>
-              <input type="text" id="full_name" name="full_name" required placeholder="Enter your full name">
+    <!-- Large Calendar Modal -->
+    <div class="modal calendar-modal" id="calendarModal">
+        <div class="modal-content calendar-modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">
+                    <i class="fas fa-calendar-alt"></i> Events Calendar
+                </h2>
+                <button class="close-modal" onclick="closeCalendarModal()">
+                    <i class="fas fa-times"></i>
+                </button>
             </div>
             
-            <div class="form-group">
-              <label for="email">Email Address *</label>
-              <input type="email" id="email" name="email" required placeholder="Enter your email address">
-            </div>
-          </div>
-          
-          <div class="form-row">
-            <div class="form-group">
-              <label for="age">Age *</label>
-              <input type="number" id="age" name="age" required min="1" max="120" placeholder="Enter your age">
+            <div class="calendar-nav">
+                <button class="nav-btn" onclick="changeMonth(-1)">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <div class="current-month-year" id="currentMonthYear">
+                    <!-- Will be populated by JavaScript -->
+                </div>
+                <button class="nav-btn" onclick="changeMonth(1)">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
             </div>
             
-            <div class="form-group">
-              <label for="location">Location *</label>
-              <input type="text" id="location" name="location" required placeholder="Enter your location">
-            </div>
-          </div>
-        </div>
-        
-        <!-- Organization Tab -->
-        <div class="tab-content" id="organization-tab">
-          <input type="hidden" name="registration_type" value="organization" id="registration_type_organization" disabled>
-          
-          <div class="form-group">
-            <label for="organization_name">Organization/Company Name *</label>
-            <input type="text" id="organization_name" name="organization_name" placeholder="Enter organization/company name">
-          </div>
-          
-          <div class="form-row">
-            <div class="form-group">
-              <label for="contact_person">Contact Person *</label>
-              <input type="text" id="contact_person" name="contact_person" placeholder="Enter contact person name">
+            <div class="large-calendar-container" id="largeCalendarContainer">
+                <!-- Calendar will be generated by JavaScript -->
             </div>
             
-            <div class="form-group">
-              <label for="contact_email">Contact Email *</label>
-              <input type="email" id="contact_email" name="contact_email" placeholder="Enter contact email">
+            <div class="calendar-legend">
+                <div class="legend-item">
+                    <div class="legend-dot has-events"></div>
+                    <span>Has Events</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-dot today"></div>
+                    <span>Today</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-dot past"></div>
+                    <span>Past Date</span>
+                </div>
             </div>
-          </div>
-          
-          <div class="form-group">
-            <label for="pax_count">Number of Participants *</label>
-            <input type="number" id="pax_count" name="pax_count" min="1" placeholder="Enter number of participants">
-          </div>
         </div>
-      </div>
+    </div>
 
-      <!-- Payment Section -->
-      <div class="payment-section" id="paymentSection" style="display: none;">
-        <div class="payment-header">
-          <i class="fas fa-credit-card"></i>
-          <h3>Payment Information</h3>
+    <!-- Event Details Tooltip -->
+    <div class="event-tooltip" id="eventTooltip">
+        <div class="tooltip-content">
+            <!-- Event details will be populated here -->
         </div>
+    </div>
 
-        <!-- Fee Summary -->
-        <div class="fee-summary">
-          <h4><i class="fas fa-calculator"></i> Fee Summary</h4>
-          <div class="fee-breakdown">
-            <div class="fee-item">
-              <span class="fee-label">Event Registration Fee:</span>
-              <span class="fee-amount" id="eventFeeAmount">₱0.00</span>
+    <!-- Registration Modal -->
+    <div class="modal" id="registerModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modalTitle">Register for Event</h2>
+                <button class="close-modal" onclick="closeRegisterModal()">
+                    <i class="fas fa-times"></i>
+                </button>
             </div>
-            <div class="fee-item">
-              <span class="fee-label">Total Amount:</span>
-              <span class="fee-amount total" id="totalAmountDisplay">₱0.00</span>
-            </div>
-          </div>
+            
+            <form method="POST" id="registerForm" enctype="multipart/form-data">
+                <input type="hidden" name="register_event" value="1">
+                <input type="hidden" name="event_id" id="eventId">
+                <input type="hidden" name="payment_amount" id="hiddenPaymentAmount" value="0">
+                
+                <!-- Event Information Display -->
+                <div class="event-info" id="eventInfo">
+                    <!-- Event details will be populated by JavaScript -->
+                </div>
+                
+                <!-- Registration Type Tabs -->
+                <div class="tab-container">
+                    <div class="tab-buttons">
+                        <button type="button" class="tab-btn active" onclick="switchTab('individual')">
+                            <i class="fas fa-user"></i> Individual
+                        </button>
+                        <button type="button" class="tab-btn" onclick="switchTab('organization')">
+                            <i class="fas fa-building"></i> Organization/Company
+                        </button>
+                    </div>
+                    
+                    <!-- Individual Tab -->
+                    <div class="tab-content active" id="individual-tab">
+                        <input type="hidden" name="registration_type" value="individual" id="registration_type_individual">
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="full_name">Full Name *</label>
+                                <input type="text" id="full_name" name="full_name" required placeholder="Enter your full name">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="email">Email Address *</label>
+                                <input type="email" id="email" name="email" required placeholder="Enter your email address">
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                            <label for="age">Age *</label>
+                                <input type="number" id="age" name="age" required min="1" max="120" placeholder="Enter your age">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="location">Location *</label>
+                                <input type="text" id="location" name="location" required placeholder="Enter your location">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Organization Tab -->
+                    <div class="tab-content" id="organization-tab">
+                        <input type="hidden" name="registration_type" value="organization" id="registration_type_organization" disabled>
+                        
+                        <div class="form-group">
+                            <label for="organization_name">Organization/Company Name *</label>
+                            <input type="text" id="organization_name" name="organization_name" placeholder="Enter organization/company name">
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="contact_person">Contact Person *</label>
+                                <input type="text" id="contact_person" name="contact_person" placeholder="Enter contact person name">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="contact_email">Contact Email *</label>
+                                <input type="email" id="contact_email" name="contact_email" placeholder="Enter contact email">
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="pax_count">Number of Participants *</label>
+                            <input type="number" id="pax_count" name="pax_count" min="1" placeholder="Enter number of participants">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Payment Section -->
+                <div class="payment-section" id="paymentSection" style="display: none;">
+                    <div class="payment-header">
+                        <i class="fas fa-credit-card"></i>
+                        <h3>Payment Information</h3>
+                    </div>
+
+                    <!-- Fee Summary -->
+                    <div class="fee-summary">
+                        <h4><i class="fas fa-calculator"></i> Fee Summary</h4>
+                        <div class="fee-breakdown">
+                            <div class="fee-item">
+                                <span class="fee-label">Event Registration Fee:</span>
+                                <span class="fee-amount" id="eventFeeAmount">₱0.00</span>
+                            </div>
+                            <div class="fee-item">
+                                <span class="fee-label">Total Amount:</span>
+                                <span class="fee-amount total" id="totalAmountDisplay">₱0.00</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Payment Methods -->
+                    <div class="payment-methods">
+                        <h4><i class="fas fa-money-check-alt"></i> Payment Method</h4>
+                        <div class="payment-options">
+                            <div class="payment-option">
+                                <input type="radio" name="payment_mode" value="bank_transfer" id="bank_transfer">
+                                <div class="payment-card">
+                                    <div class="payment-icon bank">
+                                        <i class="fas fa-university"></i>
+                                    </div>
+                                    <div class="payment-details">
+                                        <div class="payment-name">Bank Transfer</div>
+                                        <div class="payment-description">Transfer to PRC official bank account</div>
+                                    </div>
+                                    <div class="payment-status"></div>
+                                </div>
+                            </div>
+
+                            <div class="payment-option">
+                                <input type="radio" name="payment_mode" value="gcash" id="gcash">
+                                <div class="payment-card">
+                                    <div class="payment-icon gcash">
+                                        <i class="fas fa-mobile-alt"></i>
+                                    </div>
+                                    <div class="payment-details">
+                                        <div class="payment-name">GCash</div>
+                                        <div class="payment-description">Send money via GCash</div>
+                                    </div>
+                                    <div class="payment-status"></div>
+                                </div>
+                            </div>
+
+                            <div class="payment-option">
+                                <input type="radio" name="payment_mode" value="paymaya" id="paymaya">
+                                <div class="payment-card">
+                                    <div class="payment-icon paymaya">
+                                        <i class="fas fa-mobile-alt"></i>
+                                    </div>
+                                    <div class="payment-details">
+                                        <div class="payment-name">PayMaya</div>
+                                        <div class="payment-description">Send money via PayMaya</div>
+                                    </div>
+                                    <div class="payment-status"></div>
+                                </div>
+                            </div>
+
+                            <div class="payment-option">
+                                <input type="radio" name="payment_mode" value="credit_card" id="credit_card">
+                                <div class="payment-card">
+                                    <div class="payment-icon card">
+                                        <i class="fas fa-credit-card"></i>
+                                    </div>
+                                    <div class="payment-details">
+                                        <div class="payment-name">Credit Card</div>
+                                        <div class="payment-description">Pay with Visa/Mastercard</div>
+                                    </div>
+                                    <div class="payment-status"></div>
+                                </div>
+                            </div>
+
+                            <div class="payment-option">
+                                <input type="radio" name="payment_mode" value="cash" id="cash">
+                                <div class="payment-card">
+                                    <div class="payment-icon cash">
+                                        <i class="fas fa-money-bill-wave"></i>
+                                    </div>
+                                    <div class="payment-details">
+                                        <div class="payment-name">Cash Payment</div>
+                                        <div class="payment-description">Pay at PRC office</div>
+                                    </div>
+                                    <div class="payment-status"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Payment Details Forms -->
+                    <div class="payment-details-container">
+                        <!-- Bank Transfer Form -->
+                        <div class="payment-form" id="bank_transfer_form">
+                            <h5><i class="fas fa-university"></i> Bank Transfer Details</h5>
+                            <div class="bank-details">
+                                <div class="bank-info">
+                                    <div class="bank-field">
+                                        <label>Bank Name</label>
+                                        <span>BDO Unibank</span>
+                                    </div>
+                                    <div class="bank-field">
+                                        <label>Account Number</label>
+                                        <span>1234-5678-9012</span>
+                                    </div>
+                                    <div class="bank-field">
+                                        <label>Account Name</label>
+                                        <span>Philippine Red Cross - Tacloban Chapter</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="payment-instructions">
+                                <h6><i class="fas fa-info-circle"></i> Instructions</h6>
+                                <ol>
+                                    <li>Transfer the exact amount to the bank account above</li>
+                                    <li>Keep your bank receipt/confirmation</li>
+                                    <li>Upload a clear photo of your receipt below</li>
+                                </ol>
+                            </div>
+                        </div>
+
+                        <!-- GCash Form -->
+                        <div class="payment-form" id="gcash_form">
+                            <h5><i class="fas fa-mobile-alt"></i> GCash Payment Details</h5>
+                            <div class="bank-details">
+                                <div class="bank-info">
+                                    <div class="bank-field">
+                                        <label>GCash Number</label>
+                                        <span>+63 917 123 4567</span>
+                                    </div>
+                                    <div class="bank-field">
+                                        <label>Account Name</label>
+                                        <span>Philippine Red Cross Tacloban</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="payment-instructions">
+                                <h6><i class="fas fa-info-circle"></i> Instructions</h6>
+                                <ol>
+                                    <li>Open your GCash app and select "Send Money"</li>
+                                    <li>Send the exact amount to the number above</li>
+                                    <li>Take a screenshot of the successful transaction</li>
+                                    <li>Upload the screenshot below</li>
+                                </ol>
+                            </div>
+                        </div>
+
+                        <!-- PayMaya Form -->
+                        <div class="payment-form" id="paymaya_form">
+                            <h5><i class="fas fa-mobile-alt"></i> PayMaya Payment Details</h5>
+                            <div class="bank-details">
+                                <div class="bank-info">
+                                    <div class="bank-field">
+                                        <label>PayMaya Number</label>
+                                        <span>+63 918 765 4321</span>
+                                    </div>
+                                    <div class="bank-field">
+                                        <label>Account Name</label>
+                                        <span>Philippine Red Cross Tacloban</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="payment-instructions">
+                                <h6><i class="fas fa-info-circle"></i> Instructions</h6>
+                                <ol>
+                                    <li>Open your PayMaya app and select "Send Money"</li>
+                                    <li>Send the exact amount to the number above</li>
+                                    <li>Take a screenshot of the successful transaction</li>
+                                    <li>Upload the screenshot below</li>
+                                </ol>
+                            </div>
+                        </div>
+
+                        <!-- Credit Card Form -->
+                        <div class="payment-form" id="credit_card_form">
+                            <h5><i class="fas fa-credit-card"></i> Credit Card Payment Details</h5>
+                            <div class="payment-note">
+                                <i class="fas fa-info-circle"></i>
+                                <div class="payment-note-content">
+                                    <strong>Important Note:</strong>
+                                    <p>Credit card payments are processed through our secure payment gateway. You will be redirected to complete your payment after registration.</p>
+                                </div>
+                            </div>
+                            <div class="bank-details">
+                                <div class="bank-info">
+                                    <div class="bank-field">
+                                        <label>Accepted Cards</label>
+                                        <span>Visa, Mastercard, JCB</span>
+                                    </div>
+                                    <div class="bank-field">
+                                        <label>Processing Fee</label>
+                                        <span>3.5% of total amount</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="payment-instructions">
+                                <h6><i class="fas fa-info-circle"></i> Instructions</h6>
+                                <ol>
+                                    <li>Complete the registration form</li>
+                                    <li>You will be redirected to our secure payment gateway</li>
+                                    <li>Enter your credit card details on the secure page</li>
+                                    <li>Complete the payment to finalize your registration</li>
+                                </ol>
+                            </div>
+                        </div>
+
+                        <!-- Cash Payment Form -->
+                        <div class="payment-form" id="cash_form">
+                            <h5><i class="fas fa-money-bill-wave"></i> Cash Payment Details</h5>
+                            <div class="payment-note">
+                                <i class="fas fa-info-circle"></i>
+                                <div class="payment-note-content">
+                                    <strong>Important Note:</strong>
+                                    <p>You have selected cash payment. Please visit our office during business hours to complete your payment.</p>
+                                </div>
+                            </div>
+                            <div class="bank-details">
+                                <div class="bank-info">
+                                    <div class="bank-field">
+                                        <label>Office Address</label>
+                                        <span>Philippine Red Cross Tacloban Chapter<br>123 Remedios Street, Tacloban City</span>
+                                    </div>
+                                    <div class="bank-field">
+                                        <label>Business Hours</label>
+                                        <span>Monday - Friday: 8:00 AM - 5:00 PM<br>Saturday: 8:00 AM - 12:00 PM</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Payment Receipt Upload (for non-cash payments) -->
+                        <div class="receipt-upload" id="receiptUpload" style="display: none;">
+                            <input type="file" name="payment_receipt" id="payment_receipt" accept=".jpg,.jpeg,.png,.pdf">
+                            <div class="receipt-upload-content">
+                                <i class="fas fa-receipt"></i>
+                                <div class="upload-text">Upload Payment Receipt</div>
+                                <div class="upload-note">Upload a clear photo or scan of your payment receipt/screenshot</div>
+                                <div class="upload-note">Accepted formats: JPG, PNG, PDF (Max 5MB)</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Payment Summary -->
+                    <div class="payment-summary" id="paymentSummary" style="display: none;">
+                        <h4><i class="fas fa-file-invoice-dollar"></i> Payment Summary</h4>
+                        <div class="summary-item">
+                            <span class="summary-label">Payment Method:</span>
+                            <span class="summary-value" id="selectedPaymentMethod">-</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">Event Fee:</span>
+                            <span class="summary-value" id="summaryEventFee">₱0.00</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">Total Amount:</span>
+                                   <span class="summary-value total" id="summaryTotalAmount">₱0.00</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Common Fields -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="valid_id">Valid ID *</label>
+                        <div class="file-upload-container">
+                            <input type="file" id="valid_id" name="valid_id" required accept=".jpg,.jpeg,.png,.pdf">
+                            <div class="file-upload-info">
+                                <i class="fas fa-id-card"></i>
+                                <span>Upload a clear photo of your valid ID</span>
+                                <small>Accepted formats: JPG, PNG, PDF (Max 5MB)</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="documents">Additional Documents</label>
+                        <div class="file-upload-container">
+                            <input type="file" id="documents" name="documents" accept=".jpg,.jpeg,.png,.pdf,.doc,.docx">
+                            <div class="file-upload-info">
+                                <i class="fas fa-file-upload"></i>
+                                <span>Upload supporting documents (optional)</span>
+                                <small>Accepted formats: JPG, PNG, PDF, DOC, DOCX (Max 10MB)</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-notice">
+                    <i class="fas fa-info-circle"></i>
+                    <p>By registering, you agree to provide accurate information. Your documents will be securely stored and used only for event registration purposes.</p>
+                </div>
+                
+                <button type="submit" class="btn-submit">
+                    <i class="fas fa-user-plus"></i> Register for Event
+                </button>
+            </form>
         </div>
+    </div>
 
-        <!-- Payment Methods -->
-        <div class="payment-methods">
-          <h4><i class="fas fa-money-check-alt"></i> Payment Method</h4>
-          <div class="payment-options">
-            <div class="payment-option">
-              <input type="radio" name="payment_mode" value="bank_transfer" id="bank_transfer">
-              <div class="payment-card">
-                <div class="payment-icon bank">
-                  <i class="fas fa-university"></i>
-                </div>
-                <div class="payment-details">
-                  <div class="payment-name">Bank Transfer</div>
-                  <div class="payment-description">Transfer to PRC official bank account</div>
-                </div>
-                <div class="payment-status"></div>
-              </div>
-            </div>
-
-            <div class="payment-option">
-              <input type="radio" name="payment_mode" value="gcash" id="gcash">
-              <div class="payment-card">
-                <div class="payment-icon gcash">
-                  <i class="fas fa-mobile-alt"></i>
-                </div>
-                <div class="payment-details">
-                  <div class="payment-name">GCash</div>
-                  <div class="payment-description">Send money via GCash</div>
-                </div>
-                <div class="payment-status"></div>
-              </div>
-            </div>
-
-            <div class="payment-option">
-              <input type="radio" name="payment_mode" value="paymaya" id="paymaya">
-              <div class="payment-card">
-                <div class="payment-icon paymaya">
-                  <i class="fas fa-mobile-alt"></i>
-                </div>
-                <div class="payment-details">
-                  <div class="payment-name">PayMaya</div>
-                  <div class="payment-description">Send money via PayMaya</div>
-                </div>
-                <div class="payment-status"></div>
-              </div>
-            </div>
-
-            <div class="payment-option">
-              <input type="radio" name="payment_mode" value="credit_card" id="credit_card">
-              <div class="payment-card">
-                <div class="payment-icon card">
-                  <i class="fas fa-credit-card"></i>
-                </div>
-                <div class="payment-details">
-                  <div class="payment-name">Credit Card</div>
-                  <div class="payment-description">Pay with Visa/Mastercard</div>
-                </div>
-                <div class="payment-status"></div>
-              </div>
-            </div>
-
-            <div class="payment-option">
-              <input type="radio" name="payment_mode" value="cash" id="cash">
-              <div class="payment-card">
-                <div class="payment-icon cash">
-                  <i class="fas fa-money-bill-wave"></i>
-                </div>
-                <div class="payment-details">
-                  <div class="payment-name">Cash Payment</div>
-                  <div class="payment-description">Pay at PRC office</div>
-                </div>
-                <div class="payment-status"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Payment Details Forms -->
-        <div class="payment-details-container">
-          <!-- Bank Transfer Form -->
-          <div class="payment-form" id="bank_transfer_form">
-            <h5><i class="fas fa-university"></i> Bank Transfer Details</h5>
-            <div class="bank-details">
-              <div class="bank-info">
-                <div class="bank-field">
-                  <label>Bank Name</label>
-                  <span>BDO Unibank</span>
-                </div>
-                <div class="bank-field">
-                  <label>Account Number</label>
-                  <span>1234-5678-9012</span>
-                </div>
-                <div class="bank-field">
-                  <label>Account Name</label>
-                  <span>Philippine Red Cross - Tacloban Chapter</span>
-                </div>
-              </div>
-            </div>
-            <div class="payment-instructions">
-              <h6><i class="fas fa-info-circle"></i> Instructions</h6>
-              <ol>
-                <li>Transfer the exact amount to the bank account above</li>
-                <li>Keep your bank receipt/confirmation</li>
-                <li>Upload a clear photo of your receipt below</li>
-              </ol>
-            </div>
-          </div>
-
-          <!-- GCash Form -->
-          <div class="payment-form" id="gcash_form">
-            <h5><i class="fas fa-mobile-alt"></i> GCash Payment Details</h5>
-            <div class="bank-details">
-              <div class="bank-info">
-                <div class="bank-field">
-                  <label>GCash Number</label>
-                  <span>+63 917 123 4567</span>
-                </div>
-                <div class="bank-field">
-                  <label>Account Name</label>
-                  <span>Philippine Red Cross Tacloban</span>
-                </div>
-              </div>
-            </div>
-            <div class="payment-instructions">
-              <h6><i class="fas fa-info-circle"></i> Instructions</h6>
-              <ol>
-                <li>Open your GCash app and select "Send Money"</li>
-                <li>Send the exact amount to the number above</li>
-                <li>Take a screenshot of the successful transaction</li>
-                <li>Upload the screenshot below</li>
-              </ol>
-            </div>
-          </div>
-
-          <!-- PayMaya Form -->
-          <div class="payment-form" id="paymaya_form">
-            <h5><i class="fas fa-mobile-alt"></i> PayMaya Payment Details</h5>
-            <div class="bank-details">
-              <div class="bank-info">
-                <div class="bank-field">
-                  <label>PayMaya Number</label>
-                  <span>+63 918 765 4321</span>
-                </div>
-                <div class="bank-field">
-                  <label>Account Name</label>
-                  <span>Philippine Red Cross Tacloban</span>
-                </div>
-              </div>
-            </div>
-            <div class="payment-instructions">
-              <h6><i class="fas fa-info-circle"></i> Instructions</h6>
-              <ol>
-                <li>Open your PayMaya app and select "Send Money"</li>
-                <li>Send the exact amount to the number above</li>
-                <li>Take a screenshot of the successful transaction</li>
-                <li>Upload the screenshot below</li>
-              </ol>
-            </div>
-          </div>
-
-          <!-- Credit Card Form -->
-          <div class="payment-form" id="credit_card_form">
-            <h5><i class="fas fa-credit-card"></i> Credit Card Payment Details</h5>
-            <div class="payment-note">
-              <i class="fas fa-info-circle"></i>
-              <div class="payment-note-content">
-                <strong>Important Note:</strong>
-                <p>Credit card payments are processed through our secure payment gateway. You will be redirected to complete your payment after registration.</p>
-              </div>
-            </div>
-            <div class="bank-details">
-              <div class="bank-info">
-                <div class="bank-field">
-                  <label>Accepted Cards</label>
-                  <span>Visa, Mastercard, JCB</span>
-                </div>
-                <div class="bank-field">
-                  <label>Processing Fee</label>
-                  <span>3.5% of total amount</span>
-                </div>
-              </div>
-            </div>
-            <div class="payment-instructions">
-              <h6><i class="fas fa-info-circle"></i> Instructions</h6>
-              <ol>
-                <li>Complete the registration form</li>
-                <li>You will be redirected to our secure payment gateway</li>
-                <li>Enter your credit card details on the secure page</li>
-                <li>Complete the payment to finalize your registration</li>
-              </ol>
-            </div>
-          </div>
-
-          <!-- Cash Payment Form -->
-          <div class="payment-form" id="cash_form">
-            <h5><i class="fas fa-money-bill-wave"></i> Cash Payment Details</h5>
-            <div class="payment-note">
-              <i class="fas fa-info-circle"></i>
-              <div class="payment-note-content">
-                <strong>Important Note:</strong>
-                <p>You have selected cash payment. Please visit our office during business hours to complete your payment.</p>
-              </div>
-            </div>
-            <div class="bank-details">
-              <div class="bank-info">
-                <div class="bank-field">
-                  <label>Office Address</label>
-                  <span>Philippine Red Cross Tacloban Chapter<br>123 Remedios Street, Tacloban City</span>
-                </div>
-                <div class="bank-field">
-                  <label>Business Hours</label>
-                  <span>Monday - Friday: 8:00 AM - 5:00 PM<br>Saturday: 8:00 AM - 12:00 PM</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Payment Receipt Upload (for non-cash payments) -->
-          <div class="receipt-upload" id="receiptUpload" style="display: none;">
-            <input type="file" name="payment_receipt" id="payment_receipt" accept=".jpg,.jpeg,.png,.pdf">
-            <div class="receipt-upload-content">
-              <i class="fas fa-receipt"></i>
-              <div class="upload-text">Upload Payment Receipt</div>
-              <div class="upload-note">Upload a clear photo or scan of your payment receipt/screenshot</div>
-              <div class="upload-note">Accepted formats: JPG, PNG, PDF (Max 5MB)</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Payment Summary -->
-        <div class="payment-summary" id="paymentSummary" style="display: none;">
-          <h4><i class="fas fa-file-invoice-dollar"></i> Payment Summary</h4>
-          <div class="summary-item">
-            <span class="summary-label">Payment Method:</span>
-            <span class="summary-value" id="selectedPaymentMethod">-</span>
-          </div>
-          <div class="summary-item">
-            <span class="summary-label">Event Fee:</span>
-            <span class="summary-value" id="summaryEventFee">₱0.00</span>
-          </div>
-          <div class="summary-item">
-            <span class="summary-label">Total Amount:</span>
-            <span class="summary-value total" id="summaryTotalAmount">₱0.00</span>
-          </div>
-        </div>
-      </div>
-      
-      <!-- Common Fields -->
-      <div class="form-row">
-        <div class="form-group">
-          <label for="valid_id">Valid ID *</label>
-          <div class="file-upload-container">
-            <input type="file" id="valid_id" name="valid_id" required accept=".jpg,.jpeg,.png,.pdf">
-            <div class="file-upload-info">
-              <i class="fas fa-id-card"></i>
-              <span>Upload a clear photo of your valid ID</span>
-              <small>Accepted formats: JPG, PNG, PDF (Max 5MB)</small>
-            </div>
-          </div>
-        </div>
-        
-        <div class="form-group">
-          <label for="documents">Additional Documents</label>
-          <div class="file-upload-container">
-            <input type="file" id="documents" name="documents" accept=".jpg,.jpeg,.png,.pdf,.doc,.docx">
-            <div class="file-upload-info">
-              <i class="fas fa-file-upload"></i>
-              <span>Upload supporting documents (optional)</span>
-              <small>Accepted formats: JPG, PNG, PDF, DOC, DOCX (Max 10MB)</small>
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      <div class="form-notice">
-        <i class="fas fa-info-circle"></i>
-        <p>By registering, you agree to provide accurate information. Your documents will be securely stored and used only for event registration purposes.</p>
-      </div>
-      
-      <button type="submit" class="btn-submit">
-        <i class="fas fa-user-plus"></i> Register for Event
-      </button>
-    </form>
-  </div>
-</div>
   <script> window.calendarEventsData = <?= json_encode($extendedCalendarEvents) ?>;</script>
     <script src="/js/register.js"></script>
     <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
@@ -1020,6 +1093,51 @@ let currentEventData = null;
 // Global variables for calendar modal
 let currentCalendarMonth = new Date().getMonth();
 let currentCalendarYear = new Date().getFullYear();
+
+// Store calendar events and user registrations in global scope
+window.calendarEventsData = <?= json_encode($extendedCalendarEvents) ?>;
+window.userRegistrations = <?= json_encode($userRegistrations) ?>;
+
+
+// Fixed date formatting function that handles timezone properly
+function formatDateToString(date) {
+    if (typeof date === 'string') {
+        // If it's already a string in YYYY-MM-DD format, return as is
+        if (date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            return date;
+        }
+        // For other string formats, create date but add timezone offset
+        date = new Date(date + 'T12:00:00'); // Force noon to avoid timezone issues
+    }
+    
+    if (!(date instanceof Date) || isNaN(date)) {
+        console.error('Invalid date passed to formatDateToString:', date);
+        return '';
+    }
+    
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+// Alternative: Create dates in local timezone consistently
+function createLocalDate(dateString) {
+    if (typeof dateString === 'string' && dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        // Split the date string and create date in local timezone
+        const [year, month, day] = dateString.split('-').map(Number);
+        return new Date(year, month - 1, day); // month is 0-indexed
+    }
+    return new Date(dateString);
+}
+
+// Helper function to escape HTML to prevent XSS
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
 
 // Function to open the calendar modal
 function openCalendarModal() {
@@ -1080,7 +1198,24 @@ function updateLargeCalendar() {
 function checkUserRegistrationForDate(dateStr) {
     if (typeof window.userRegistrations === 'undefined') return false;
     
-    return window.userRegistrations.some(reg => reg.event_date === dateStr);
+    const targetDate = createLocalDate(dateStr);
+    
+    return window.userRegistrations.some(reg => {
+        // Find the event in calendar data to check its date range
+        const event = window.calendarEventsData.find(e => e.event_id === reg.event_id);
+        if (event) {
+            const eventStart = createLocalDate(event.event_date);
+            const eventEnd = createLocalDate(event.event_end_date || event.event_date);
+            
+            // Check if the target date falls within the event's date range
+            const targetTime = targetDate.getTime();
+            const startTime = eventStart.getTime();
+            const endTime = eventEnd.getTime();
+            
+            return targetTime >= startTime && targetTime <= endTime;
+        }
+        return false;
+    });
 }
 
 // Helper function to check if user is registered for a specific event
@@ -1090,7 +1225,7 @@ function checkUserRegistrationForEvent(eventId) {
     return window.userRegistrations.some(reg => reg.event_id === parseInt(eventId));
 }
 
-// Fixed calendar generation with proper event indicators
+// Enhanced calendar generation with multi-day event spans
 function generateCalendar() {
     const container = document.getElementById('calendarContainer');
     if (!container) return;
@@ -1112,7 +1247,7 @@ function generateCalendar() {
     container.innerHTML = calendarHTML;
 }
 
-// Fixed month calendar generation with proper indicators
+// Enhanced month calendar generation with multi-day event spans
 function generateMonthCalendar(year, month, today) {
     const monthNames = [
         'January', 'February', 'March', 'April', 'May', 'June',
@@ -1123,6 +1258,16 @@ function generateMonthCalendar(year, month, today) {
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const todayStr = formatDateToString(today);
     
+    // Get events for this month with expanded range to catch multi-day events
+    const monthStart = new Date(year, month, 1);
+    const monthEnd = new Date(year, month + 1, 0);
+    const extendedStart = new Date(monthStart);
+    extendedStart.setDate(extendedStart.getDate() - 7); // Look back 7 days
+    const extendedEnd = new Date(monthEnd);
+    extendedEnd.setDate(extendedEnd.getDate() + 7); // Look ahead 7 days
+    
+    const monthEvents = getEventsInRange(extendedStart, extendedEnd);
+    
     let html = `
         <div class="month-calendar">
             <div class="month-header">
@@ -1132,95 +1277,79 @@ function generateMonthCalendar(year, month, today) {
                 <div class="day-header">Sun</div>
                 <div class="day-header">Mon</div>
                 <div class="day-header">Tue</div>
-                <div class="day-header">Wed</div>
+                 <div class="day-header">Wed</div>
                 <div class="day-header">Thu</div>
                 <div class="day-header">Fri</div>
                 <div class="day-header">Sat</div>
     `;
     
-    // Empty cells for days before month starts
+    // Fill in the days
     for (let i = 0; i < firstDay; i++) {
         html += '<div class="day-cell empty"></div>';
     }
     
-    // Days of the month
     for (let day = 1; day <= daysInMonth; day++) {
-        const date = new Date(year, month, day);
-        const dateStr = formatDateToString(date);
-        
-        // Get events for this day - use the correct data source
-        const dayEvents = (typeof window.calendarEventsData !== 'undefined' ? 
-            window.calendarEventsData : (typeof window.calendarEvents !== 'undefined' ? window.calendarEvents : []))
-            .filter(event => event.event_date === dateStr);
+        const dateStr = formatDateToString(new Date(year, month, day));
+        const dateEvents = getEventsForDate(dateStr);
+        const isRegistered = checkUserRegistrationForDate(dateStr);
+        const isToday = dateStr === todayStr;
         
         let dayClass = 'day-cell';
-        let hasRegisteredEvent = false;
+        let dayContent = `<span class="day-number">${day}</span>`;
         
-        if (dayEvents.length > 0) {
+        if (isToday) dayClass += ' today';
+        if (dateEvents.length > 0) {
             dayClass += ' has-events';
+            if (isRegistered) dayClass += ' has-registered-event';
             
-            // Check if user is registered for any event on this day
-            hasRegisteredEvent = checkUserRegistrationForDate(dateStr);
-            
-            if (hasRegisteredEvent) {
-                dayClass += ' has-registered-event';
-            }
-        }
-        
-        if (dateStr === todayStr) {
-            dayClass += ' today';
-        }
-        
-        // Build tooltip text with registration status
-        let tooltipText = '';
-        if (dayEvents.length > 0) {
-            tooltipText = dayEvents.map(e => {
-                const isRegistered = checkUserRegistrationForEvent(e.event_id);
-                const status = isRegistered ? ' (Registered)' : '';
-                return `${e.title}${status}`;
-            }).join(', ');
-        }
-        
-        html += `<div class="${dayClass}" data-date="${dateStr}" title="${escapeHtml(tooltipText)}">
-            <span class="day-number">${day}</span>`;
-        
-        if (dayEvents.length > 0) {
-            html += '<div class="event-indicators">';
-            
-            // Show up to 3 event indicators
-            dayEvents.slice(0, 3).forEach(event => {
-                const isRegistered = checkUserRegistrationForEvent(event.event_id);
-                let eventClass = 'event-indicator';
-                
-                if (isRegistered) {
-                    eventClass += ' registered';
-                }
-                
-                html += `<div class="${eventClass}" 
-                           title="${escapeHtml(event.title)} - ${escapeHtml(event.location)}${isRegistered ? ' (You are registered)' : ''}">
-                         </div>`;
+            // Add event indicators
+            dayContent += '<div class="event-indicators">';
+            dateEvents.slice(0, 3).forEach(event => {
+                const isUserRegistered = window.userRegistrations.some(reg => reg.event_id === event.event_id);
+                dayContent += `<div class="event-indicator ${isUserRegistered ? 'registered' : ''}" 
+                                  style="background-color: ${getEventServiceColor(event.major_service)}"
+                                  title="${event.title}"></div>`;
             });
-            
-            // Show count for additional events
-            if (dayEvents.length > 3) {
-                html += `<div class="event-indicator more" title="+${dayEvents.length - 3} more events">+${dayEvents.length - 3}</div>`;
+            if (dateEvents.length > 3) {
+                dayContent += `<div class="event-count">+${dateEvents.length - 3}</div>`;
             }
-            html += '</div>';
+            dayContent += '</div>';
         }
         
-        html += '</div>';
+        html += `<div class="${dayClass}" data-date="${dateStr}" 
+                     onmouseover="showEventTooltip(event, '${dateStr}')"
+                     onmouseout="hideEventTooltip()">
+                     ${dayContent}
+                 </div>`;
+    }
+    
+    // Fill remaining cells
+    const totalCells = Math.ceil((daysInMonth + firstDay) / 7) * 7;
+    const remainingCells = totalCells - (daysInMonth + firstDay);
+    for (let i = 0; i < remainingCells; i++) {
+        html += '<div class="day-cell empty"></div>';
     }
     
     html += '</div></div>';
     return html;
 }
 
-// Fixed large calendar generation for modal
+// Enhanced large calendar generation for modal with multi-day support
 function generateLargeCalendarGrid(year, month) {
     const today = new Date();
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const todayStr = formatDateToString(today);
+    
+    // Get events for this month with extended range
+    const monthStart = new Date(year, month, 1);
+    const monthEnd = new Date(year, month + 1, 0);
+    const extendedStart = new Date(monthStart);
+    extendedStart.setDate(extendedStart.getDate() - 7);
+    const extendedEnd = new Date(monthEnd);
+    extendedEnd.setDate(extendedEnd.getDate() + 7);
+    
+    const monthEvents = getEventsInRange(extendedStart, extendedEnd);
     
     let html = `
         <div class="large-calendar-grid">
@@ -1236,80 +1365,126 @@ function generateLargeCalendarGrid(year, month) {
             <div class="calendar-days">
     `;
     
-    // Empty cells for days before month starts
+    // Fill in the days
     for (let i = 0; i < firstDay; i++) {
         html += '<div class="calendar-day empty"></div>';
     }
     
-    // Days of the month
     for (let day = 1; day <= daysInMonth; day++) {
-        const date = new Date(year, month, day);
-        const dateStr = formatDateToString(date);
-        
-        // Get events for this day from the extended calendar events data
-        const dayEvents = typeof window.calendarEventsData !== 'undefined' ? 
-            window.calendarEventsData.filter(event => event.event_date === dateStr) : [];
+        const dateStr = formatDateToString(new Date(year, month, day));
+        const dateEvents = getEventsForDate(dateStr);
+        const isRegistered = checkUserRegistrationForDate(dateStr);
+        const isToday = dateStr === todayStr;
+        const cellDate = new Date(dateStr + 'T00:00:00');
+        const isPast = cellDate < today && !isToday;
         
         let dayClass = 'calendar-day';
-        let hasRegisteredEvent = false;
         
-        if (dayEvents.length > 0) {
+        if (dateEvents.length > 0) {
             dayClass += ' has-events';
-            hasRegisteredEvent = checkUserRegistrationForDate(dateStr);
-            
-            if (hasRegisteredEvent) {
-                dayClass += ' has-registered-event';
-            }
+            if (isRegistered) dayClass += ' has-registered-event';
         }
         
-        if (dateStr === todayStr) {
-            dayClass += ' today';
-        }
-        if (date < today && dateStr !== todayStr) {
-            dayClass += ' past';
-        }
+        if (isToday) dayClass += ' today';
+        if (isPast) dayClass += ' past';
         
         html += `<div class="${dayClass}" data-date="${dateStr}" 
                     onmouseover="showEventTooltip(event, '${dateStr}')"
                     onmouseout="hideEventTooltip()">
             <div class="day-number">${day}</div>`;
         
-        if (dayEvents.length > 0) {
-            html += '<div class="event-dots">';
+        if (dateEvents.length > 0) {
+            html += '<div class="event-display">';
             
-            // Show up to 3 event dots with registration status
-            for (let i = 0; i < Math.min(dayEvents.length, 3); i++) {
-                const event = dayEvents[i];
-                const isRegistered = checkUserRegistrationForEvent(event.event_id);
-                const registrationClass = isRegistered ? ' registered' : '';
+            // Show event indicators
+            dateEvents.slice(0, 2).forEach(event => {
+                const isUserRegistered = window.userRegistrations.some(reg => reg.event_id === event.event_id);
+                const eventClass = `event-bar ${isUserRegistered ? 'registered' : ''}`;
                 
-                html += `<div class="event-dot${registrationClass}"></div>`;
+                html += `<div class="${eventClass}" 
+                           style="--event-color: ${getEventServiceColor(event.major_service)};"
+                           title="${escapeHtml(event.title)}${isUserRegistered ? ' (Registered)' : ''}">
+                           ${truncateText(event.title, 12)}
+                         </div>`;
+            });
+            
+            // Show dots for additional events
+            if (dateEvents.length > 2) {
+                html += '<div class="event-dots">';
+                dateEvents.slice(2, 5).forEach(event => {
+                    const isUserRegistered = window.userRegistrations.some(reg => reg.event_id === event.event_id);
+                    const dotClass = `event-dot ${isUserRegistered ? 'registered' : ''}`;
+                    html += `<div class="${dotClass}" 
+                               style="background-color: ${getEventServiceColor(event.major_service)};"
+                               title="${escapeHtml(event.title)}${isUserRegistered ? ' (Registered)' : ''}"></div>`;
+                });
+                
+                if (dateEvents.length > 5) {
+                    html += `<div class="event-count">+${dateEvents.length - 5}</div>`;
+                }
+                html += '</div>';
             }
             
-            if (dayEvents.length > 3) {
-                html += `<div class="event-count">+${dayEvents.length - 3}</div>`;
-            }
             html += '</div>';
             
-            // Add registration status indicator for large calendar
-            if (hasRegisteredEvent) {
-                html += '<div class="registration-indicator"></div>';
+            // Add registration status indicator
+            if (isRegistered) {
+                html += '<div class="registration-indicator">✓</div>';
             }
         }
         
         html += '</div>';
     }
     
+    // Fill remaining cells
+    const totalCells = Math.ceil((daysInMonth + firstDay) / 7) * 7;
+    const remainingCells = totalCells - (daysInMonth + firstDay);
+    for (let i = 0; i < remainingCells; i++) {
+        html += '<div class="calendar-day empty"></div>';
+    }
+    
     html += '</div></div>';
     return html;
 }
 
-// Enhanced event tooltip with registration status
+// Helper functions
+function getEventsInRange(startDate, endDate) {
+    if (typeof window.calendarEventsData === 'undefined') return [];
+    
+    const start = formatDateToString(startDate);
+    const end = formatDateToString(endDate);
+    
+    return window.calendarEventsData.filter(event => {
+        const eventStart = event.event_date;
+        const eventEnd = event.event_end_date || event.event_date;
+        
+        // Check if event overlaps with the range
+        return eventStart <= end && eventEnd >= start;
+    });
+}
+
+function getEventServiceColor(service) {
+    const serviceColors = {
+        'Health Service': '#4CAF50',
+        'Safety Service': '#FF5722',
+        'Welfare Service': '#2196F3',
+        'Disaster Management Service': '#FF9800',
+        'Red Cross Youth': '#9C27B0'
+    };
+    return serviceColors[service] || '#607D8B';
+}
+
+function truncateText(text, maxLength) {
+    if (!text) return '';
+    return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+}
+
+// Enhanced event tooltip with multi-day event info
 function showEventTooltip(event, dateStr) {
     const tooltip = document.getElementById('eventTooltip');
     if (!tooltip || typeof window.calendarEventsData === 'undefined') return;
     
-    const dayEvents = window.calendarEventsData.filter(e => e.event_date === dateStr);
+    const dayEvents = getEventsForDate(dateStr);
     if (dayEvents.length === 0) return;
     
     let tooltipContent = '';
@@ -1319,12 +1494,23 @@ function showEventTooltip(event, dateStr) {
             '<div class="tooltip-event-status registered">✓ Registered</div>' : 
             '<div class="tooltip-event-status available">Available</div>';
         
+        // Calculate event duration
+        const startDate = new Date(eventData.event_date);
+        const endDate = new Date(eventData.event_end_date || eventData.event_date);
+        const durationDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+        
+        const durationText = durationDays > 1 ? 
+            `📅 ${durationDays} days (${formatDateForTooltip(startDate)} - ${formatDateForTooltip(endDate)})` :
+            `📅 ${formatDateForTooltip(startDate)}`;
+        
         tooltipContent += `
             <div class="tooltip-event ${isRegistered ? 'registered' : ''}">
                 <div class="tooltip-event-title">${escapeHtml(eventData.title)}</div>
+                <div class="tooltip-event-duration">${durationText}</div>
                 <div class="tooltip-event-location">📍 ${escapeHtml(eventData.location)}</div>
                 <div class="tooltip-event-capacity">👥 ${eventData.registrations_count || 0}/${eventData.capacity || '∞'}</div>
                 ${eventData.fee > 0 ? `<div class="tooltip-event-fee">💰 ₱${parseFloat(eventData.fee).toFixed(2)}</div>` : '<div class="tooltip-event-fee">🆓 Free</div>'}
+                <div class="tooltip-event-service">🏥 ${escapeHtml(eventData.major_service)}</div>
                 ${registrationStatus}
             </div>
         `;
@@ -1333,10 +1519,31 @@ function showEventTooltip(event, dateStr) {
     tooltip.querySelector('.tooltip-content').innerHTML = tooltipContent;
     tooltip.style.display = 'block';
     
-    // Position tooltip
+    // Position tooltip - fixed positioning to handle scrolling
     const rect = event.target.getBoundingClientRect();
+    tooltip.style.position = 'fixed';
     tooltip.style.left = (rect.left + window.scrollX) + 'px';
     tooltip.style.top = (rect.bottom + window.scrollY + 5) + 'px';
+}
+
+// Updated getEventsForDate function
+function getEventsForDate(dateStr) {
+    if (typeof window.calendarEventsData === 'undefined') return [];
+    
+    // Create target date in local timezone
+    const targetDate = createLocalDate(dateStr);
+    
+    return window.calendarEventsData.filter(event => {
+        const eventStart = createLocalDate(event.event_date);
+        const eventEnd = createLocalDate(event.event_end_date || event.event_date);
+        
+        // Compare dates without time components
+        const targetTime = targetDate.getTime();
+        const startTime = eventStart.getTime();
+        const endTime = eventEnd.getTime();
+        
+        return targetTime >= startTime && targetTime <= endTime;
+    });
 }
 
 // Function to hide event tooltip
@@ -1440,7 +1647,7 @@ function switchTab(tabName) {
         });
         
         individualFieldsReq.forEach(field => {
-            const element = document.getElementById(field.id);
+           const element = document.getElementById(field.id);
             if (element) element.required = field.required;
         });
     }
@@ -1627,7 +1834,7 @@ function handleFileUpload(inputElement) {
             } else if (inputElement.name === 'payment_receipt') {
                 info.textContent = 'Upload Payment Receipt';
             } else {
-                info.textContent = 'Upload supporting documents (optional)';
+                info.textContent = 'Upload supporting documents (optional';
             }
         }
     }
@@ -1772,7 +1979,7 @@ function initializePaymentListeners() {
     }
 }
 
-// Enhanced openRegisterModal function
+// Enhanced openRegisterModal function with multi-day support
 function openRegisterModal(event) {
     // Store current event data
     currentEventData = event;
@@ -1785,15 +1992,28 @@ function openRegisterModal(event) {
     
     const eventInfo = document.getElementById('eventInfo');
     if (eventInfo) {
-        const eventDate = new Date(event.event_date + 'T00:00:00'); // Force local time interpretation
+        const eventStartDate = new Date(event.event_date + 'T00:00:00');
+        const eventEndDate = new Date((event.event_end_date || event.event_date) + 'T00:00:00');
+        const durationDays = Math.ceil((eventEndDate - eventStartDate) / (1000 * 60 * 60 * 24)) + 1;
+        
+        // Format date display based on duration
+        let dateDisplay;
+        if (durationDays === 1) {
+            dateDisplay = eventStartDate.toLocaleDateString('en-US', {year: 'numeric', month: 'long', day: 'numeric'});
+        } else {
+            const startStr = eventStartDate.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+            const endStr = eventEndDate.toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
+            dateDisplay = `${startStr} - ${endStr} (${durationDays} days)`;
+        }
         
         eventInfo.innerHTML = `
             <div class="event-details">
                 <h3>${escapeHtml(event.title)}</h3>
-                <p><i class="fas fa-calendar"></i> ${eventDate.toLocaleDateString('en-US', {year: 'numeric', month: 'long', day: 'numeric'})}</p>
+                <p><i class="fas fa-calendar"></i> ${dateDisplay}</p>
                 <p><i class="fas fa-map-marker-alt"></i> ${escapeHtml(event.location)}</p>
                 <p><i class="fas fa-info-circle"></i> ${escapeHtml(event.description || 'No description available')}</p>
                 ${event.fee > 0 ? `<p><i class="fas fa-money-bill"></i> Fee: ₱${parseFloat(event.fee).toFixed(2)}</p>` : '<p><i class="fas fa-gift"></i> Free Event</p>'}
+                <p><i class="fas fa-tag"></i> ${escapeHtml(event.major_service)}</p>
             </div>
         `;
     }
@@ -1927,13 +2147,22 @@ function showDayEvents(date, events) {
 
     let eventsHtml = `<h4>Events on ${formattedDate}</h4><ul>`;
     events.forEach(event => {
-        eventsHtml += `<li><strong>${escapeHtml(event.title)}</strong> - ${escapeHtml(event.location)}</li>`;
+        const startDate = new Date(event.event_date);
+        const endDate = new Date(event.event_end_date || event.event_date);
+        const durationDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+        const durationText = durationDays > 1 ? ` (${durationDays} days)` : '';
+        
+        eventsHtml += `<li><strong>${escapeHtml(event.title)}</strong>${durationText} - ${escapeHtml(event.location)}</li>`;
     });
     eventsHtml += '</ul>';
 
-    // You can implement a tooltip or small popup here
-    // For now, we'll just use an alert as an example
-    alert(`Events on ${formattedDate}:\n${events.map(e => `• ${e.title} - ${e.location}`).join('\n')}`);
+    alert(`Events on ${formattedDate}:\n${events.map(e => {
+        const startDate = new Date(e.event_date);
+        const endDate = new Date(e.event_end_date || e.event_date);
+        const durationDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+        const durationText = durationDays > 1 ? ` (${durationDays} days)` : '';
+        return `• ${e.title}${durationText} - ${e.location}`;
+    }).join('\n')}`);
 }
 
 // Utility function to debounce search input
@@ -1967,22 +2196,6 @@ function initializeLiveSearch() {
             debouncedSearch(this.value.trim());
         });
     }
-}
-
-// Helper function to format date to YYYY-MM-DD string without timezone issues
-function formatDateToString(date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-}
-
-// Helper function to escape HTML to prevent XSS
-function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
 }
 
 // Initialize event listeners when DOM is loaded
@@ -2109,13 +2322,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const date = dayCell.getAttribute('data-date');
             if (date) {
                 // Get events for this date from available data sources
-                let dayEvents = [];
-                
-                if (typeof window.calendarEventsData !== 'undefined') {
-                    dayEvents = window.calendarEventsData.filter(event => event.event_date === date);
-                } else if (typeof window.calendarEvents !== 'undefined') {
-                    dayEvents = window.calendarEvents.filter(event => event.event_date === date);
-                }
+                let dayEvents = getEventsForDate(date);
                 
                 if (dayEvents.length > 0) {
                     showDayEvents(date, dayEvents);
@@ -2131,7 +2338,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const indicators = dayCell.querySelectorAll('.event-indicator');
             indicators.forEach((indicator, index) => {
                 setTimeout(() => {
-                    indicator.style.transform = 'scale(1.2)';
+                    indicator.style.transform = 'scale(1.05)';
                 }, index * 50);
             });
             dayCell.classList.add('tooltip-shown');
@@ -2152,8 +2359,253 @@ document.addEventListener('DOMContentLoaded', function() {
     // Console log for debugging calendar data
     console.log('Calendar Events Data:', typeof window.calendarEventsData !== 'undefined' ? window.calendarEventsData : 'Not available');
     console.log('User Registrations:', typeof window.userRegistrations !== 'undefined' ? window.userRegistrations : 'Not available');
-    console.log('Calendar Events:', typeof window.calendarEvents !== 'undefined' ? window.calendarEvents : 'Not available');
+    
+    // Inject multi-day calendar styles
+    injectMultiDayCalendarStyles();
 });
+
+// Function to inject multi-day calendar styles
+function injectMultiDayCalendarStyles() {
+    const multiDayCalendarStyles = `
+/* Multi-day event span styles */
+.event-spans {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin-top: 2px;
+    position: relative;
+    z-index: 1;
+}
+
+.event-span {
+    height: 12px;
+    border-radius: 2px;
+    font-size: 8px;
+    font-weight: 600;
+    color: white;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    padding: 1px 3px;
+    margin-bottom: 1px;
+    position: relative;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: var(--event-color, #607D8B);
+    border: 1px solid rgba(255,255,255,0.2);
+    transition: transform 0.2s ease;
+}
+
+.event-span.start {
+    border-radius: 6px 2px 2px 6px;
+    padding-left: 4px;
+}
+
+.event-span.end {
+    border-radius: 2px 6px 6px 2px;
+    padding-right: 4px;
+}
+
+.event-span.middle {
+    border-radius: 2px;
+    border-left: none;
+    border-right: none;
+}
+
+.event-span.single {
+    border-radius: 6px;
+    padding: 1px 4px;
+}
+
+.event-span.registered {
+    background: linear-gradient(45deg, var(--event-color, #607D8B) 0%, #4CAF50 100%);
+    box-shadow: 0 0 4px rgba(76, 175, 80, 0.4);
+}
+
+.event-span.registered::after {
+    content: "✓";
+    position: absolute;
+    right: 2px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 8px;
+    color: white;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+
+/* Large calendar event bars */
+.event-display {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 4px;
+}
+
+.event-bar {
+    height: 16px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    color: white;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    padding: 2px 4px;
+    position: relative;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: var(--event-color, #607D8B);
+    border: 1px solid rgba(255,255,255,0.2);
+    line-height: 12px;
+    transition: transform 0.2s ease;
+}
+
+.event-bar.start {
+    border-radius: 8px 3px 3px 8px;
+}
+
+.event-bar.end {
+    border-radius: 3px 8px 8px 3px;
+}
+
+.event-bar.middle {
+    border-radius: 3px;
+    border-left: none;
+    border-right: none;
+}
+
+.event-bar.single {
+    border-radius: 8px;
+}
+
+.event-bar.registered {
+    background: linear-gradient(45deg, var(--event-color, #607D8B) 0%, #4CAF50 100%);
+    box-shadow: 0 0 6px rgba(76, 175, 80, 0.4);
+}
+
+/* Enhanced event dots */
+.event-dots {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    margin-top: 2px;
+}
+
+.event-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 1px solid white;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    transition: transform 0.2s ease;
+}
+
+.event-dot.registered {
+    border: 2px solid #4CAF50;
+    box-shadow: 0 0 4px rgba(76, 175, 80, 0.4);
+}
+
+/* Registration indicator */
+.registration-indicator {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 12px;
+    height: 12px;
+    background: #4CAF50;
+    color: white;
+    border-radius: 50%;
+    font-size: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    z-index: 2;
+}
+
+/* Enhanced tooltips for multi-day events */
+.tooltip-event-duration {
+    color: #666;
+    font-size: 0.85rem;
+    margin: 2px 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.tooltip-event-service {
+    color: #666;
+    font-size: 0.8rem;
+    margin: 2px 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Enhanced calendar day cells */
+.day-cell.has-events {
+    border: 2px solid rgba(33, 150, 243, 0.3);
+}
+
+.day-cell.has-registered-event {
+    border: 2px solid rgba(76, 175, 80, 0.5);
+    background: linear-gradient(135deg, rgba(76, 175, 80, 0.05) 0%, rgba(76, 175, 80, 0.1) 100%);
+}
+
+.calendar-day.has-registered-event {
+    border: 2px solid rgba(76, 175, 80, 0.5);
+    background: linear-gradient(135deg, rgba(76, 175, 80, 0.05) 0%, rgba(76, 175, 80, 0.1) 100%);
+}
+
+/* Animation for multi-day spans */
+.event-span, .event-bar {
+    animation: slideIn 0.3s ease;
+}
+
+.event-count {
+    font-size: 7px;
+    background: rgba(0,0,0,0.6);
+    color: white;
+    padding: 1px 3px;
+    border-radius: 3px;
+    margin-top: 1px;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-3px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .event-span {
+        height: 10px;
+        font-size: 7px;
+    }
+    
+    .event-bar {
+        height: 14px;
+        font-size: 9px;
+    }
+    
+    .event-dot {
+        width: 6px;
+        height: 6px;
+    }
+}
+    `;
+    
+    // Create and append style element
+    const styleElement = document.createElement('style');
+    styleElement.innerHTML = multiDayCalendarStyles;
+    document.head.appendChild(styleElement);
+}
+
     </script>
 </body>
 </html>

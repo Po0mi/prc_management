@@ -1,11 +1,15 @@
 
 :root {
     --prc-red: #a00000;
-    --prc-red-dark: #a00000;
+    --prc-red-dark: #800000;
     --prc-blue: #222e60;
+    --prc-blue-dark: #1a2347;
     --prc-blue-light: #f0f8ff;
+    --transition: all 0.3s ease;
+    --box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    --box-shadow-hover: 0 15px 40px rgba(0, 0, 0, 0.2);
+    --border-radius: 8px;
 }
-
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background-color: #f9f9f9;
@@ -31,6 +35,12 @@ body {
     width: 100%;
     top: 0;
     z-index: 1000;  
+     transition: var(--transition);
+    animation: slideInFromLeft 0.8s ease-out;
+}
+.system-header.scrolled {
+    padding: 0.7rem 2rem;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
 }
 
 .logo-title {
@@ -42,7 +52,12 @@ body {
 .prc-logo {
     width: 50px;
     height: auto;
+    transition: var(--transition);
 }
+.prc-logo:hover {
+    transform: rotate(5deg) scale(1.05);
+}
+
 
 .logo-title h1 {
     margin: 0;
@@ -59,6 +74,7 @@ body {
 .system-info {
     display: flex;
     gap: 1rem;
+    animation: slideInFromRight 0.8s ease-out;
 }
 
 .tag {
@@ -66,6 +82,11 @@ body {
     padding: 0.5rem 1rem;
     border-radius: 20px;
     font-size: 0.8rem;
+    transition: var(--transition);
+}
+.tag:hover {
+    background-color: rgba(255,255,255,0.3);
+    transform: translateY(-2px);
 }
 
 .login-container {
@@ -75,6 +96,7 @@ body {
     flex-grow: 1;
     padding: 2rem;
     background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
+     animation: fadeIn 1s ease-out;
 }
 
 .login-box {
@@ -84,6 +106,12 @@ body {
     width: 100%;
     max-width: 400px;
     padding: 2rem;
+    transition: var(--transition);
+    animation: pulse 1s ease-in-out;
+}
+.login-box:hover {
+    box-shadow: var(--box-shadow-hover);
+    transform: translateY(-5px);
 }
 
 .login-box h2 {
@@ -94,11 +122,13 @@ body {
     display: flex;
     align-items: center;
     gap: 10px;
+    animation: slideInFromLeft 0.6s ease-out;
 }
 
 .login-box p {
     color: #666;
     margin-bottom: 1.5rem;
+     animation: slideInFromRight 0.6s ease-out;
 }
 
 .error {
@@ -111,6 +141,12 @@ body {
     display: flex;
     align-items: center;
     gap: 8px;
+     animation: shake 0.5s ease-in-out;
+}
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
 }
 
 .login-form {
@@ -123,6 +159,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+      animation: fadeIn 0.8s ease-out;
 }
 
 .login-form label {
@@ -136,12 +173,13 @@ body {
     border: 1px solid #ddd;
     border-radius: 4px;
     font-size: 1rem;
-    transition: border-color 0.3s;
+    transition: var(--transition);
 }
 
 .login-form input:focus {
     border-color: var(--prc-red);
     outline: none;
+      transform: translateY(-2px);
 }
 
 .btn {
@@ -151,36 +189,97 @@ body {
     font-size: 1rem;
     font-weight: 500;
     cursor: pointer;
-    transition: background-color 0.3s;
+    transition: var(--transition);
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
+
 }
 
 .btn-login {
     background-color: var(--prc-red);
     color: white;
+    animation: pulse 2s infinite;
 }
 
 .btn-login:hover {
     background-color: var(--prc-red-dark);
+    transform: translateY(-3px);
+    box-shadow: 0 5px 15px rgba(160, 0, 0, 0.3);
+    animation: none;
 }
 
 .register-link {
     text-align: center;
     margin-top: 1.5rem;
     color: #666;
+     animation: fadeIn 1s ease-out;
 }
 
 .register-link a {
     color: var(--prc-red);
     text-decoration: none;
     font-weight: 500;
+    transition: var(--transition);
 }
 
 .register-link a:hover {
     text-decoration: underline;
+}
+
+/* Reduce motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+/* Animation Keyframes */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+@keyframes slideInFromLeft {
+    from {
+        opacity: 0;
+        transform: translateX(-30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes slideInFromRight {
+    from {
+        opacity: 0;
+        transform: translateX(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
 }
 
 /* Responsive Styles */
