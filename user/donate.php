@@ -2,44 +2,48 @@
 require_once __DIR__ . '/../config.php';
 ensure_logged_in();
 
-// Add debug logging
-error_log("=== DONATION FORM DEBUG START ===");
-error_log("REQUEST_METHOD: " . $_SERVER['REQUEST_METHOD']);
-error_log("POST data: " . print_r($_POST, true));
-
+// FIX: Allow regular users to access donation form, only redirect admins
 $user_role = get_user_role();
-if ($user_role) {
-    // If user has an admin role, redirect to admin dashboard
+if ($user_role && $user_role !== 'user') {
     header("Location: /admin/dashboard.php");
     exit;
 }
 
 $userId = current_user_id();
-$pdo    = $GLOBALS['pdo'];
+$pdo = $GLOBALS['pdo'];
 $successMessage = '';
-$errorMessage   = '';
+$errorMessage = '';
 $activeTab = $_POST['donation_type'] ?? 'monetary';
 
-// Debug: Check if form was submitted
+// Debug: Log user access
+error_log("=== DONATION FORM DEBUG START ===");
+error_log("User ID: $userId, Role: " . ($user_role ?? 'none'));
+error_log("Request Method: " . $_SERVER['REQUEST_METHOD']);
+
+// Enhanced form processing with detailed debugging
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    error_log("Form submitted with POST method");
+    error_log("POST Request received");
+    error_log("POST keys: " . implode(', ', array_keys($_POST)));
     
-    // Check for the hidden field instead of button name
-    if (isset($_POST['submit_donation']) && $_POST['submit_donation'] == '1') {
-        error_log("submit_donation field found");
+    if (isset($_POST['submit_donation'])) {
+        error_log("=== DONATION FORM SUBMISSION DETECTED ===");
+        error_log("Full POST data: " . print_r($_POST, true));
         
-        $donor_name  = trim($_POST['donor_name'] ?? '');
+        // Sanitize and validate inputs
+        $donor_name = trim($_POST['donor_name'] ?? '');
         $donor_email = trim($_POST['donor_email'] ?? '');
         $donor_phone = trim($_POST['donor_phone'] ?? '');
         $donation_type = $_POST['donation_type'] ?? 'monetary';
         
-        error_log("Extracted data - Name: $donor_name, Email: $donor_email, Phone: $donor_phone, Type: $donation_type");
+        error_log("Basic fields - Name: '$donor_name', Email: '$donor_email', Phone: '$donor_phone', Type: '$donation_type'");
         
-        // Better validation
+        // Validation
         $validation_errors = [];
         
         if (empty($donor_name)) {
             $validation_errors[] = "Donor name is required";
+        } elseif (strlen($donor_name) < 2) {
+            $validation_errors[] = "Donor name must be at least 2 characters";
         }
         
         if (empty($donor_email)) {
@@ -52,174 +56,162 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $validation_errors[] = "Phone number is required";
         }
         
-        if (empty($validation_errors)) {
+        if (!in_array($donation_type, ['monetary', 'inkind'])) {
+            $validation_errors[] = "Invalid donation type";
+        }
+        
+        // FIXED: Handle date field properly based on donation type
+        // FIXED: Handle date field properly based on donation type
+$donation_date = $_POST['donation_date'] ?? '';
+if ($donation_type === 'monetary') {
+    $amount = filter_var($_POST['amount'] ?? 0, FILTER_VALIDATE_FLOAT);
+    $payment_method = trim($_POST['payment_method'] ?? '');
+    
+    error_log("Monetary fields - Amount: $amount, Date: '$donation_date', Payment: '$payment_method'");
+    
+    if (!$amount || $amount <= 0) {
+        $validation_errors[] = "Invalid donation amount";
+    }
+    
+    if (empty($donation_date)) {
+        $validation_errors[] = "Donation date is required";
+    }
+    
+    if (empty($payment_method)) {
+        $validation_errors[] = "Payment method is required";
+    }
+    
+} elseif ($donation_type === 'inkind') {
+    $item_description = trim($_POST['item_description'] ?? '');
+    $quantity = filter_var($_POST['quantity'] ?? 0, FILTER_VALIDATE_INT);
+    
+    error_log("In-kind fields - Item: '$item_description', Quantity: $quantity, Date: '$donation_date'");
+    
+    if (empty($item_description)) {
+        $validation_errors[] = "Item description is required";
+    }
+    
+    if (!$quantity || $quantity <= 0) {
+        $validation_errors[] = "Quantity must be greater than 0";
+    }
+    
+    if (empty($donation_date)) {
+        $validation_errors[] = "Donation date is required";
+    }
+}
+        
+        // Log validation results
+        if (!empty($validation_errors)) {
+            error_log("Validation failed: " . implode(", ", $validation_errors));
+            $errorMessage = "Please fix the following errors: " . implode(", ", $validation_errors);
+        } else {
+            error_log("Validation passed - proceeding with database operations");
+            
             try {
                 $pdo->beginTransaction();
-                error_log("Transaction started");
+                error_log("Database transaction started");
                 
-                // Insert/Update donor information with better error handling
-                $stmt = $pdo->prepare("
-                    INSERT INTO donors (name, email, phone) 
-                    VALUES (?, ?, ?)
-                    ON DUPLICATE KEY UPDATE 
-                        phone = CASE WHEN phone IS NULL OR phone = '' THEN VALUES(phone) ELSE phone END,
-                        name = VALUES(name)
-                ");
+                // Check if donor exists
+                $stmt = $pdo->prepare("SELECT donor_id FROM donors WHERE email = ?");
+                $stmt->execute([$donor_email]);
+                $existingDonorId = $stmt->fetchColumn();
                 
-                if (!$stmt->execute([$donor_name, $donor_email, $donor_phone])) {
-                    throw new Exception("Failed to insert/update donor: " . print_r($stmt->errorInfo(), true));
+                if ($existingDonorId) {
+                    // Update existing donor
+                    $stmt = $pdo->prepare("UPDATE donors SET name = ?, phone = ? WHERE donor_id = ?");
+                    $stmt->execute([$donor_name, $donor_phone, $existingDonorId]);
+                    $donorId = $existingDonorId;
+                    error_log("Updated existing donor ID: $donorId");
+                } else {
+                    // Insert new donor
+                    $stmt = $pdo->prepare("INSERT INTO donors (name, email, phone) VALUES (?, ?, ?)");
+                    $stmt->execute([$donor_name, $donor_email, $donor_phone]);
+                    $donorId = $pdo->lastInsertId();
+                    error_log("Created new donor ID: $donorId");
                 }
                 
-                $donorId = $pdo->lastInsertId();
                 if (!$donorId) {
-                    // Get existing donor ID
-                    $stmt = $pdo->prepare("SELECT donor_id FROM donors WHERE email = ?");
-                    $stmt->execute([$donor_email]);
-                    $donorId = $stmt->fetchColumn();
-                    
-                    if (!$donorId) {
-                        throw new Exception("Could not retrieve donor ID");
-                    }
+                    throw new Exception("Failed to get donor ID");
                 }
                 
-                error_log("Donor ID: $donorId");
-
                 if ($donation_type === 'monetary') {
-                    error_log("Processing monetary donation");
-                    
-                    $amount = floatval($_POST['amount'] ?? 0);
-                    $donation_date = $_POST['donation_date'] ?? '';
-                    $payment_method = $_POST['payment_method'] ?? '';
                     $message = trim($_POST['message'] ?? '');
                     $payment_receipt = '';
                     
-                    // Validation for monetary donation
-                    if ($amount <= 0) {
-                        throw new Exception("Invalid donation amount");
-                    }
-                    
-                    if (empty($donation_date)) {
-                        throw new Exception("Donation date is required");
-                    }
-                    
-                    if (empty($payment_method)) {
-                        throw new Exception("Payment method is required");
-                    }
-
-                    // Handle payment receipt upload
+                    // Handle file upload
                     if (isset($_FILES['payment_receipt']) && $_FILES['payment_receipt']['error'] === UPLOAD_ERR_OK) {
                         error_log("Processing file upload");
-                        
                         $allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
                         $fileType = $_FILES['payment_receipt']['type'];
+                        $fileSize = $_FILES['payment_receipt']['size'];
+                        $maxFileSize = 5 * 1024 * 1024; // 5MB
                         
-                        if (in_array($fileType, $allowedTypes)) {
-                            $userFolder = __DIR__ . "/../uploads/user_" . $userId;
-                            if (!file_exists($userFolder)) {
-                                mkdir($userFolder, 0755, true);
-                            }
-                            
-                            $fileExtension = pathinfo($_FILES['payment_receipt']['name'], PATHINFO_EXTENSION);
-                            $fileName = 'receipt_' . time() . '.' . $fileExtension;
-                            $filePath = $userFolder . '/' . $fileName;
-                            
-                            if (move_uploaded_file($_FILES['payment_receipt']['tmp_name'], $filePath)) {
-                                $payment_receipt = 'uploads/user_' . $userId . '/' . $fileName;
-                                error_log("File uploaded successfully: $payment_receipt");
-                            } else {
-                                error_log("File upload failed");
-                            }
+                        if (!in_array($fileType, $allowedTypes)) {
+                            throw new Exception("Invalid file type. Please upload JPG, PNG, or PDF files only.");
+                        }
+                        
+                        if ($fileSize > $maxFileSize) {
+                            throw new Exception("File size too large. Maximum allowed: 5MB");
+                        }
+                        
+                        $uploadsDir = __DIR__ . "/../uploads";
+                        if (!file_exists($uploadsDir)) {
+                            mkdir($uploadsDir, 0755, true);
+                        }
+                        
+                        $userFolder = $uploadsDir . "/user_" . $userId;
+                        if (!file_exists($userFolder)) {
+                            mkdir($userFolder, 0755, true);
+                        }
+                        
+                        $fileExtension = pathinfo($_FILES['payment_receipt']['name'], PATHINFO_EXTENSION);
+                        $fileName = 'receipt_' . time() . '_' . uniqid() . '.' . $fileExtension;
+                        $filePath = $userFolder . '/' . $fileName;
+                        
+                        if (move_uploaded_file($_FILES['payment_receipt']['tmp_name'], $filePath)) {
+                            $payment_receipt = 'uploads/user_' . $userId . '/' . $fileName;
+                            error_log("File uploaded successfully: $payment_receipt");
                         } else {
-                            error_log("Invalid file type: $fileType");
+                            error_log("File upload failed");
                         }
                     }
-
-                    $stmt2 = $pdo->prepare("
-                        INSERT INTO donations (donor_id, amount, donation_date, payment_method, message, recorded_by, payment_receipt, status)
+                    
+                    // Insert monetary donation
+                    $stmt = $pdo->prepare("
+                        INSERT INTO donations (donor_id, amount, donation_date, payment_method, message, recorded_by, payment_receipt, status) 
                         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
                     ");
                     
-                    if (!$stmt2->execute([$donorId, $amount, $donation_date, $payment_method, $message, $userId, $payment_receipt])) {
-                        throw new Exception("Failed to insert donation: " . print_r($stmt2->errorInfo(), true));
-                    }
-                    
-                    $successMessage = "Thank you for your monetary donation! Your donation is pending approval and a receipt will be sent to your email once processed.";
-                    error_log("Monetary donation successful");
-                    
-                } elseif ($donation_type === 'blood') {
-                    error_log("Processing blood donation");
-                    
-                    $blood_type = trim($_POST['blood_type'] ?? '');
-                    $donation_date = $_POST['donation_date'] ?? '';
-                    $donation_location = trim($_POST['donation_location'] ?? '');
-                    $medical_history = trim($_POST['medical_history'] ?? '');
-                    $emergency_contact = trim($_POST['emergency_contact'] ?? '');
-                    $last_donation_date = !empty($_POST['last_donation_date']) ? $_POST['last_donation_date'] : null;
-                    
-                    // Validation for blood donation
-                    if (empty($blood_type)) {
-                        throw new Exception("Blood type is required");
-                    }
-                    
-                    if (empty($donation_date)) {
-                        throw new Exception("Donation date is required");
-                    }
-                    
-                    if (empty($emergency_contact)) {
-                        throw new Exception("Emergency contact is required");
-                    }
-                    
-                    $stmt2 = $pdo->prepare("
-                        INSERT INTO blood_donations 
-                        (donor_id, blood_type, donation_date, donation_location, medical_history, emergency_contact, last_donation_date, recorded_by, status)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scheduled')
-                    ");
-                    
-                    if (!$stmt2->execute([
+                    $result = $stmt->execute([
                         $donorId, 
-                        $blood_type, 
+                        $amount, 
                         $donation_date, 
-                        $donation_location, 
-                        $medical_history,
-                        $emergency_contact,
-                        $last_donation_date,
-                        $userId
-                    ])) {
-                        throw new Exception("Failed to insert blood donation: " . print_r($stmt2->errorInfo(), true));
+                        $payment_method, 
+                        $message, 
+                        $userId, 
+                        $payment_receipt
+                    ]);
+                    
+                    if (!$result) {
+                        $errorInfo = $stmt->errorInfo();
+                        throw new Exception("Failed to insert donation: " . implode(' | ', $errorInfo));
                     }
                     
-                    $successMessage = "Thank you for your blood donation appointment! We'll contact you to confirm the schedule and provide pre-donation instructions.";
-                    error_log("Blood donation successful");
+                    $donationId = $pdo->lastInsertId();
+                    error_log("Monetary donation inserted successfully - ID: $donationId");
+                    $successMessage = "Thank you for your monetary donation of ₱" . number_format($amount, 2) . "!";
                     
-                } else { // in-kind donation
-                    error_log("Processing in-kind donation");
-                    
-                    $item_description = trim($_POST['item_description'] ?? '');
-                    $quantity = intval($_POST['quantity'] ?? 0);
-                    $estimated_value = floatval($_POST['estimated_value'] ?? 0);
-                    $donation_date = $_POST['donation_date'] ?? '';
+                } elseif ($donation_type === 'inkind') {
+                    $estimated_value = filter_var($_POST['estimated_value'] ?? 0, FILTER_VALIDATE_FLOAT) ?: 0;
                     $purpose = trim($_POST['purpose'] ?? '');
                     
-                    // Validation for in-kind donation
-                    if (empty($item_description)) {
-                        throw new Exception("Item description is required");
-                    }
-                    
-                    if ($quantity <= 0) {
-                        throw new Exception("Quantity must be greater than 0");
-                    }
-                    
-                    if (empty($donation_date)) {
-                        throw new Exception("Donation date is required");
-                    }
-                    
-                    $stmt2 = $pdo->prepare("
-                        INSERT INTO in_kind_donations 
-                        (donor_id, item_description, quantity, estimated_value, donation_date, purpose, recorded_by, status)
+                    // Insert in-kind donation
+                    $stmt = $pdo->prepare("
+                        INSERT INTO in_kind_donations (donor_id, item_description, quantity, estimated_value, donation_date, purpose, recorded_by, status) 
                         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
                     ");
                     
-                    if (!$stmt2->execute([
+                    $result = $stmt->execute([
                         $donorId, 
                         $item_description, 
                         $quantity, 
@@ -227,36 +219,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $donation_date, 
                         $purpose, 
                         $userId
-                    ])) {
-                        throw new Exception("Failed to insert in-kind donation: " . print_r($stmt2->errorInfo(), true));
+                    ]);
+                    
+                    if (!$result) {
+                        $errorInfo = $stmt->errorInfo();
+                        throw new Exception("Failed to insert in-kind donation: " . implode(' | ', $errorInfo));
                     }
                     
-                    $successMessage = "Thank you for your in-kind donation! We'll contact you to arrange the delivery and processing.";
-                    error_log("In-kind donation successful");
+                    $donationId = $pdo->lastInsertId();
+                    error_log("In-kind donation inserted successfully - ID: $donationId");
+                    $successMessage = "Thank you for your in-kind donation: $quantity x $item_description!";
                 }
                 
                 $pdo->commit();
-                error_log("Transaction committed successfully");
+                error_log("Transaction completed successfully");
                 
-                // Clear POST data to prevent resubmission
+                // Clear form data
                 $_POST = [];
-                $activeTab = 'monetary'; // Reset to default tab
+                $activeTab = 'monetary';
                 
             } catch (Exception $e) {
                 $pdo->rollBack();
-                $errorMessage = "An error occurred: " . $e->getMessage();
-                error_log("Transaction failed: " . $e->getMessage());
+                $errorMessage = "Error processing donation: " . $e->getMessage();
+                error_log("Database error: " . $e->getMessage());
                 error_log("Stack trace: " . $e->getTraceAsString());
             }
-        } else {
-            $errorMessage = "Please fix the following errors: " . implode(", ", $validation_errors);
-            error_log("Validation errors: " . implode(", ", $validation_errors));
         }
     } else {
-        error_log("submit_donation field not found in POST data");
+        error_log("Form submission not detected - submit_donation not in POST");
     }
-} else {
-    error_log("Not a POST request");
 }
 
 error_log("=== DONATION FORM DEBUG END ===");
@@ -278,7 +269,6 @@ error_log("=== DONATION FORM DEBUG END ===");
   <?php include 'sidebar.php'; ?>
     <div class="header-content">
     <?php include 'header.php'; ?>
-  
   <div class="main-content">
     <div class="donation-container">
       <div class="donation-header">
@@ -304,10 +294,6 @@ error_log("=== DONATION FORM DEBUG END ===");
         <button class="tab-button <?= $activeTab === 'monetary' ? 'active' : '' ?>" 
                 data-tab="monetary">
           <i class="fas fa-money-bill-wave"></i> Monetary
-        </button>
-        <button class="tab-button <?= $activeTab === 'blood' ? 'active' : '' ?>" 
-                data-tab="blood">
-          <i class="fas fa-tint"></i> Blood Donation
         </button>
         <button class="tab-button <?= $activeTab === 'inkind' ? 'active' : '' ?>" 
                 data-tab="inkind">
@@ -350,15 +336,14 @@ error_log("=== DONATION FORM DEBUG END ===");
           </div>
           
           <!-- Monetary Donation Fields -->
-          <div id="monetary-fields" class="donation-fields" 
-               style="<?= $activeTab !== 'monetary' ? 'display:none;' : '' ?>">
+          <div id="monetary-fields" class="donation-fields <?= $activeTab !== 'monetary' ? 'hidden' : '' ?>">
             <div class="form-row">
               <div class="form-group">
                 <label for="amount">Donation Amount (PHP) *</label>
                 <div class="input-with-icon">
                   <i class="fas fa-peso-sign"></i>
                   <input type="number" id="amount" name="amount" min="1" step="0.01" 
-                         class="monetary-required"
+                         class="monetary-required" required
                          value="<?= htmlspecialchars($_POST['amount'] ?? '') ?>">
                 </div>
               </div>
@@ -368,24 +353,40 @@ error_log("=== DONATION FORM DEBUG END ===");
                 <div class="input-with-icon">
                   <i class="fas fa-calendar-day"></i>
                   <input type="date" id="donation_date_monetary" name="donation_date" 
-                         class="monetary-required"
-                         value="<?= htmlspecialchars($_POST['donation_date'] ?? date('Y-m-d')) ?>">
+       class="monetary-required" required
+       value="<?= htmlspecialchars($_POST['donation_date'] ?? date('Y-m-d')) ?>">
                 </div>
               </div>
             </div>
             
-            <!-- Enhanced Payment Section -->
-            <div class="payment-section">
+            <!-- Payment Section -->
+            <div class="payment-section" id="paymentSection">
               <div class="payment-header">
                 <i class="fas fa-credit-card"></i>
-                <h3>Payment Method *</h3>
+                <h3>Payment Information</h3>
+              </div>
+
+              <!-- Fee Summary -->
+              <div class="fee-summary">
+                <h4><i class="fas fa-calculator"></i> Fee Summary</h4>
+                <div class="fee-breakdown">
+                  <div class="fee-item">
+                    <span class="fee-label">Donation Amount:</span>
+                    <span class="fee-amount" id="donationAmountDisplay">₱0.00</span>
+                  </div>
+                  <div class="fee-item">
+                    <span class="fee-label">Total Amount:</span>
+                    <span class="fee-amount total" id="totalAmountDisplay">₱0.00</span>
+                  </div>
+                </div>
               </div>
 
               <!-- Payment Methods -->
               <div class="payment-methods">
+                <h4><i class="fas fa-money-check-alt"></i> Payment Method *</h4>
                 <div class="payment-options">
                   <div class="payment-option">
-                    <input type="radio" name="payment_method" value="bank_transfer" id="bank_transfer" class="monetary-required">
+                    <input type="radio" name="payment_method" value="bank_transfer" id="bank_transfer" class="monetary-required" required>
                     <label for="bank_transfer" class="payment-card">
                       <div class="payment-icon bank">
                         <i class="fas fa-university"></i>
@@ -441,20 +442,6 @@ error_log("=== DONATION FORM DEBUG END ===");
                   </div>
 
                   <div class="payment-option">
-                    <input type="radio" name="payment_method" value="check" id="check">
-                    <label for="check" class="payment-card">
-                      <div class="payment-icon check">
-                        <i class="fas fa-money-check"></i>
-                      </div>
-                      <div class="payment-details">
-                        <div class="payment-name">Check Payment</div>
-                        <div class="payment-description">Pay via company check</div>
-                      </div>
-                      <div class="payment-status"></div>
-                    </label>
-                  </div>
-
-                  <div class="payment-option">
                     <input type="radio" name="payment_method" value="cash" id="cash">
                     <label for="cash" class="payment-card">
                       <div class="payment-icon cash">
@@ -470,101 +457,183 @@ error_log("=== DONATION FORM DEBUG END ===");
                 </div>
               </div>
 
-              <!-- Payment Receipt Upload -->
-              <div class="receipt-upload" id="receiptUpload" style="display: none;">
-                <input type="file" name="payment_receipt" id="payment_receipt" accept=".jpg,.jpeg,.png,.pdf">
-                <div class="receipt-upload-content">
-                  <i class="fas fa-receipt"></i>
-                  <div class="upload-text">Upload Payment Receipt</div>
-                  <div class="upload-note">Upload a clear photo or scan of your payment receipt/screenshot</div>
-                  <div class="upload-note">Accepted formats: JPG, PNG, PDF (Max 5MB)</div>
+              <!-- Payment Details Forms -->
+              <div class="payment-details-container">
+                <!-- Bank Transfer Form -->
+                <div class="payment-form" id="bank_transfer_form">
+                  <h5><i class="fas fa-university"></i> Bank Transfer Details</h5>
+                  <div class="bank-details">
+                    <div class="bank-info">
+                      <div class="bank-field">
+                        <label>Bank Name</label>
+                        <span>BDO Unibank</span>
+                      </div>
+                      <div class="bank-field">
+                        <label>Account Number</label>
+                        <span>1234-5678-9012</span>
+                      </div>
+                      <div class="bank-field">
+                        <label>Account Name</label>
+                        <span>Philippine Red Cross - Tacloban Chapter</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="payment-instructions">
+                    <h6><i class="fas fa-info-circle"></i> Instructions</h6>
+                    <ol>
+                      <li>Transfer the exact amount to the bank account above</li>
+                      <li>Keep your bank receipt/confirmation</li>
+                      <li>Upload a clear photo of your receipt below</li>
+                    </ol>
+                  </div>
+                </div>
+
+                <!-- GCash Form -->
+                <div class="payment-form" id="gcash_form">
+                  <h5><i class="fas fa-mobile-alt"></i> GCash Payment Details</h5>
+                  <div class="bank-details">
+                    <div class="bank-info">
+                      <div class="bank-field">
+                        <label>GCash Number</label>
+                        <span>+63 917 123 4567</span>
+                      </div>
+                      <div class="bank-field">
+                        <label>Account Name</label>
+                        <span>Philippine Red Cross Tacloban</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="payment-instructions">
+                    <h6><i class="fas fa-info-circle"></i> Instructions</h6>
+                    <ol>
+                      <li>Open your GCash app and select "Send Money"</li>
+                      <li>Send the exact amount to the number above</li>
+                      <li>Take a screenshot of the successful transaction</li>
+                      <li>Upload the screenshot below</li>
+                    </ol>
+                  </div>
+                </div>
+
+                <!-- PayMaya Form -->
+                <div class="payment-form" id="paymaya_form">
+                  <h5><i class="fas fa-mobile-alt"></i> PayMaya Payment Details</h5>
+                  <div class="bank-details">
+                    <div class="bank-info">
+                      <div class="bank-field">
+                        <label>PayMaya Number</label>
+                        <span>+63 918 765 4321</span>
+                      </div>
+                      <div class="bank-field">
+                        <label>Account Name</label>
+                        <span>Philippine Red Cross Tacloban</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="payment-instructions">
+                    <h6><i class="fas fa-info-circle"></i> Instructions</h6>
+                    <ol>
+                      <li>Open your PayMaya app and select "Send Money"</li>
+                      <li>Send the exact amount to the number above</li>
+                      <li>Take a screenshot of the successful transaction</li>
+                      <li>Upload the screenshot below</li>
+                    </ol>
+                  </div>
+                </div>
+
+                <!-- Credit Card Form -->
+                <div class="payment-form" id="credit_card_form">
+                  <h5><i class="fas fa-credit-card"></i> Credit Card Payment Details</h5>
+                  <div class="payment-note">
+                    <i class="fas fa-info-circle"></i>
+                    <div class="payment-note-content">
+                      <strong>Important Note:</strong>
+                      <p>Credit card payments are processed through our secure payment gateway. You will be redirected to complete your payment after registration.</p>
+                    </div>
+                  </div>
+                  <div class="bank-details">
+                    <div class="bank-info">
+                      <div class="bank-field">
+                        <label>Accepted Cards</label>
+                        <span>Visa, Mastercard, JCB</span>
+                      </div>
+                      <div class="bank-field">
+                        <label>Processing Fee</label>
+                        <span>3.5% of total amount</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="payment-instructions">
+                    <h6><i class="fas fa-info-circle"></i> Instructions</h6>
+                    <ol>
+                      <li>Complete the registration form</li>
+                      <li>You will be redirected to our secure payment gateway</li>
+                      <li>Enter your credit card details on the secure page</li>
+                      <li>Complete the payment to finalize your registration</li>
+                    </ol>
+                  </div>
+                </div>
+
+                <!-- Cash Payment Form -->
+                <div class="payment-form" id="cash_form">
+                  <h5><i class="fas fa-money-bill-wave"></i> Cash Payment Details</h5>
+                  <div class="payment-note">
+                    <i class="fas fa-info-circle"></i>
+                    <div class="payment-note-content">
+                      <strong>Important Note:</strong>
+                      <p>You have selected cash payment. Please visit our office during business hours to complete your payment.</p>
+                    </div>
+                  </div>
+                  <div class="bank-details">
+                    <div class="bank-info">
+                      <div class="bank-field">
+                        <label>Office Address</label>
+                        <span>Philippine Red Cross Tacloban Chapter<br>123 Remedios Street, Tacloban City</span>
+                      </div>
+                      <div class="bank-field">
+                        <label>Business Hours</label>
+                        <span>Monday - Friday: 8:00 AM - 5:00 PM<br>Saturday: 8:00 AM - 12:00 PM</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Payment Receipt Upload (for non-cash payments) -->
+                <div class="receipt-upload" id="receiptUpload" style="display: none;">
+                  <input type="file" name="payment_receipt" id="payment_receipt" accept=".jpg,.jpeg,.png,.pdf">
+                  <div class="receipt-upload-content">
+                    <i class="fas fa-receipt"></i>
+                    <div class="upload-text">Upload Payment Receipt</div>
+                    <div class="upload-note">Upload a clear photo or scan of your payment receipt/screenshot</div>
+                    <div class="upload-note">Accepted formats: JPG, PNG, PDF (Max 5MB)</div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
-          
-          <!-- Blood Donation Fields -->
-          <div id="blood-fields" class="donation-fields" 
-               style="<?= $activeTab !== 'blood' ? 'display:none;' : '' ?>">
-            <div class="form-row">
-              <div class="form-group">
-                <label for="blood_type">Blood Type *</label>
-                <div class="input-with-icon">
-                  <i class="fas fa-tint"></i>
-                  <select id="blood_type" name="blood_type" class="blood-required">
-                    <option value="">Select your blood type</option>
-                    <option value="A+">A+</option>
-                    <option value="A-">A-</option>
-                    <option value="B+">B+</option>
-                    <option value="B-">B-</option>
-                    <option value="AB+">AB+</option>
-                    <option value="AB-">AB-</option>
-                    <option value="O+">O+</option>
-                    <option value="O-">O-</option>
-                    <option value="Unknown">Unknown</option>
-                  </select>
+
+              <!-- Payment Summary -->
+              <div class="payment-summary" id="paymentSummary" style="display: none;">
+                <h4><i class="fas fa-file-invoice-dollar"></i> Payment Summary</h4>
+                <div class="summary-item">
+                  <span class="summary-label">Payment Method:</span>
+                  <span class="summary-value" id="selectedPaymentMethod">-</span>
+                </div>
+                <div class="summary-item">
+                  <span class="summary-label">Donation Amount:</span>
+                  <span class="summary-value" id="summaryDonationAmount">₱0.00</span>
+                </div>
+                <div class="summary-item">
+                  <span class="summary-label">Total Amount:</span>
+                  <span class="summary-value total" id="summaryTotalAmount">₱0.00</span>
                 </div>
               </div>
-              
-              <div class="form-group">
-                <label for="donation_date_blood">Preferred Donation Date *</label>
-                <div class="input-with-icon">
-                  <i class="fas fa-calendar-day"></i>
-                  <input type="date" id="donation_date_blood" name="donation_date" 
-                         class="blood-required"
-                         value="<?= htmlspecialchars($_POST['donation_date'] ?? date('Y-m-d')) ?>">
-                </div>
-              </div>
-            </div>
-            
-            <div class="form-row">
-              <div class="form-group">
-                <label for="donation_location">Preferred Location</label>
-                <div class="input-with-icon">
-                  <i class="fas fa-map-marker-alt"></i>
-                  <select id="donation_location" name="donation_location">
-                    <option value="">Select preferred location</option>
-                    <option value="PRC Main Office">PRC Main Office</option>
-                    <option value="Mobile Blood Drive">Mobile Blood Drive</option>
-                    <option value="Hospital Partner">Hospital Partner</option>
-                    <option value="Community Center">Community Center</option>
-                  </select>
-                </div>
-              </div>
-              
-              <div class="form-group">
-                <label for="last_donation_date">Last Blood Donation Date</label>
-                <div class="input-with-icon">
-                  <i class="fas fa-history"></i>
-                  <input type="date" id="last_donation_date" name="last_donation_date">
-                </div>
-              </div>
-            </div>
-            
-            <div class="form-group">
-              <label for="emergency_contact">Emergency Contact *</label>
-              <div class="input-with-icon">
-                <i class="fas fa-phone-alt"></i>
-                <input type="tel" id="emergency_contact" name="emergency_contact" 
-                       class="blood-required"
-                       placeholder="Emergency contact number">
-              </div>
-            </div>
-            
-            <div class="form-group">
-              <label for="medical_history">Medical History & Notes</label>
-              <textarea id="medical_history" name="medical_history" rows="3" 
-                        placeholder="Please mention any medications, allergies, or medical conditions..."></textarea>
             </div>
           </div>
           
           <!-- In-Kind Donation Fields -->
-          <div id="inkind-fields" class="donation-fields" 
-               style="<?= $activeTab !== 'inkind' ? 'display:none;' : '' ?>">
+          <div id="inkind-fields" class="donation-fields <?= $activeTab !== 'inkind' ? 'hidden' : '' ?>">
             <div class="form-group">
               <label for="item_description">Item Description *</label>
               <textarea id="item_description" name="item_description" rows="2" 
-                        class="inkind-required"><?= 
+                        class="inkind-required" required><?= 
                 htmlspecialchars($_POST['item_description'] ?? '') ?></textarea>
             </div>
             
@@ -572,7 +641,7 @@ error_log("=== DONATION FORM DEBUG END ===");
               <div class="form-group">
                 <label for="quantity">Quantity *</label>
                 <input type="number" id="quantity" name="quantity" min="1" 
-                       class="inkind-required"
+                       class="inkind-required" required
                        value="<?= htmlspecialchars($_POST['quantity'] ?? '1') ?>">
               </div>
               
@@ -591,9 +660,9 @@ error_log("=== DONATION FORM DEBUG END ===");
                 <label for="donation_date_inkind">Donation Date *</label>
                 <div class="input-with-icon">
                   <i class="fas fa-calendar-day"></i>
-                  <input type="date" id="donation_date_inkind" name="donation_date" 
-                         class="inkind-required"
-                         value="<?= htmlspecialchars($_POST['donation_date'] ?? date('Y-m-d')) ?>">
+                <input type="date" id="donation_date_inkind" name="donation_date" 
+       class="inkind-required" required
+       value="<?= htmlspecialchars($_POST['donation_date'] ?? date('Y-m-d')) ?>">
                 </div>
               </div>
               
@@ -611,12 +680,13 @@ error_log("=== DONATION FORM DEBUG END ===");
               htmlspecialchars($_POST['message'] ?? '') ?></textarea>
           </div>
           
-          <!-- Fixed submit button - removed the name attribute since we have hidden field -->
-          <button type="submit" class="donate-button">
+          <!-- Submit button -->
+          <button type="submit" class="donate-button" name="submit_donation" value="1">
             <i class="fas fa-heart"></i> Submit Donation
           </button>
         </form>
         
+        <!-- Rest of the info cards remain the same -->
         <div class="donation-info">
           <div class="info-card">
             <i class="fas fa-hand-holding-heart"></i>
@@ -645,10 +715,11 @@ error_log("=== DONATION FORM DEBUG END ===");
       </div>
     </div>
   </div>
-  
- 
+ <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
+  <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
+  <script src="js/header.js?v=<?php echo time(); ?>"></script>
   <script>
-// Simplified and fixed JavaScript for donation form
+// Fixed JavaScript for donation form
 document.addEventListener('DOMContentLoaded', function() {
   console.log('Donation form initialized');
   
@@ -657,6 +728,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const donationFields = document.querySelectorAll('.donation-fields');
   const donationTypeInput = document.getElementById('donation_type');
   const donationForm = document.querySelector('.donation-form');
+  const amountInput = document.getElementById('amount');
   
   // Verify critical elements exist
   if (!donationForm) {
@@ -665,6 +737,12 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   
   console.log(`Found ${tabButtons.length} tab buttons, ${donationFields.length} donation fields`);
+  
+  // Debug: Check field visibility
+  console.log('Monetary fields element:', document.getElementById('monetary-fields'));
+  console.log('In-kind fields element:', document.getElementById('inkind-fields'));
+  console.log('Monetary fields display:', document.getElementById('monetary-fields').style.display);
+  console.log('In-kind fields display:', document.getElementById('inkind-fields').style.display);
   
   // Tab switching functionality
   tabButtons.forEach(button => {
@@ -682,6 +760,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const targetField = document.getElementById(targetTab + '-fields');
       if (targetField) {
         targetField.style.display = 'block';
+        console.log(`Showing ${targetTab} fields`);
       }
       
       // Update hidden input
@@ -698,26 +777,117 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
   
-  // Initialize payment method handling
+  // Initialize payment methods
   initializePaymentMethods();
   
+  // Amount input listener for updating fee summary
+  if (amountInput) {
+    amountInput.addEventListener('input', updateFeeSummary);
+  }
+  
   // Form submission handling
-  donationForm.addEventListener('submit', function(e) {
+  // Update the form validation to handle payment methods
+donationForm.addEventListener('submit', function(e) {
     console.log('Form submission attempted');
-    console.log('Form data check:');
     
-    const formData = new FormData(this);
-    for (let [key, value] of formData.entries()) {
-      console.log(`  ${key}:`, value);
-    }
-    
-    // Basic validation
     const currentTab = donationTypeInput.value;
     console.log('Current tab for validation:', currentTab);
     
-    // Allow form to submit naturally
+    // Basic validation
+    let isValid = true;
+    let errorMessage = '';
+
+     // Validate common fields
+    const donorName = document.getElementById('donor_name');
+    const donorEmail = document.getElementById('donor_email');
+    const donorPhone = document.getElementById('donor_phone');
+
+        if (!donorName.value.trim()) {
+        isValid = false;
+        errorMessage = 'Please enter your name';
+        donorName.focus();
+    } else if (!donorEmail.value.trim() || !donorEmail.value.includes('@')) {
+        isValid = false;
+        errorMessage = 'Please enter a valid email address';
+        donorEmail.focus();
+    } else if (!donorPhone.value.trim()) {
+        isValid = false;
+        errorMessage = 'Please enter your phone number';
+        donorPhone.focus();
+    }
+     
+    // Validate tab-specific fields
+    if (isValid && currentTab === 'monetary') {
+        const amount = document.getElementById('amount');
+        const donationDate = document.getElementById('donation_date_monetary');
+        const paymentMethod = document.querySelector('input[name="payment_method"]:checked');
+        
+        if (!amount.value || parseFloat(amount.value) <= 0) {
+            isValid = false;
+            errorMessage = 'Please enter a valid donation amount';
+            amount.focus();
+        } else if (!donationDate.value) {
+            isValid = false;
+            errorMessage = 'Please select a donation date';
+            donationDate.focus();
+        } else if (!paymentMethod) {
+            isValid = false;
+            errorMessage = 'Please select a payment method';
+        }
+    }
+    
+    if (isValid && currentTab === 'inkind') {
+        const itemDescription = document.getElementById('item_description');
+        const quantity = document.getElementById('quantity');
+        const donationDate = document.getElementById('donation_date_inkind');
+        
+        if (!itemDescription.value.trim()) {
+            isValid = false;
+            errorMessage = 'Please enter an item description';
+            itemDescription.focus();
+        } else if (!quantity.value || parseInt(quantity.value) <= 0) {
+            isValid = false;
+            errorMessage = 'Please enter a valid quantity';
+            quantity.focus();
+        } else if (!donationDate.value) {
+            isValid = false;
+            errorMessage = 'Please select a donation date';
+            donationDate.focus();
+        }
+    }
+    
+    if (!isValid) {
+        e.preventDefault();
+        alert(errorMessage);
+        console.log('Form validation failed:', errorMessage);
+        return false;
+    }
+    
+    console.log('Form validation passed - submitting');
     return true;
-  });
+});
+    
+    
+    // Additional validation for monetary donations
+    if (currentTab === 'monetary') {
+        const paymentMethod = document.querySelector('input[name="payment_method"]:checked');
+        if (!paymentMethod) {
+            e.preventDefault();
+            alert('Please select a payment method');
+            return false;
+        }
+        
+        const amount = parseFloat(amountInput.value);
+        if (!amount || amount <= 0) {
+            e.preventDefault();
+            alert('Please enter a valid donation amount');
+            return false;
+        }
+    }
+    
+    // Allow form to submit naturally if validation passes
+    return true;
+});
   
   // Auto-hide alerts
   setTimeout(() => {
@@ -733,7 +903,103 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
   }, 8000);
+  
+  // Initialize fee summary
+  updateFeeSummary();
 });
+
+function validateForm(currentTab) {
+  const requiredFields = [];
+  
+  // Always required fields
+  requiredFields.push(
+    { field: document.getElementById('donor_name'), name: 'Donor Name' },
+    { field: document.getElementById('donor_email'), name: 'Email Address' },
+    { field: document.getElementById('donor_phone'), name: 'Phone Number' }
+  );
+  
+  // Tab-specific required fields
+  if (currentTab === 'monetary') {
+    requiredFields.push(
+      { field: document.getElementById('amount'), name: 'Donation Amount' },
+      { field: document.getElementById('donation_date_monetary'), name: 'Donation Date' }
+    );
+    
+    // Special handling for payment method (radio buttons)
+    const paymentMethodSelected = document.querySelector('input[name="payment_method"]:checked');
+    if (!paymentMethodSelected) {
+      alert('Payment method is required');
+      return false;
+    }
+    
+  } else if (currentTab === 'inkind') {
+    requiredFields.push(
+      { field: document.getElementById('item_description'), name: 'Item Description' },
+      { field: document.getElementById('quantity'), name: 'Quantity' },
+      { field: document.getElementById('donation_date_inkind'), name: 'Donation Date' }
+    );
+  }
+  
+  const errors = [];
+  
+  requiredFields.forEach(({ field, name }) => {
+    // Check if field exists and has a value
+    if (!field) {
+      errors.push(`${name} field not found`);
+    } else if (!field.value || field.value.trim() === '') {
+      errors.push(`${name} is required`);
+    }
+  });
+  
+  // Additional validations
+  const emailField = document.getElementById('donor_email');
+  if (emailField && emailField.value) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(emailField.value)) {
+      errors.push('Please enter a valid email address');
+    }
+  }
+  
+  if (currentTab === 'monetary') {
+    const amountField = document.getElementById('amount');
+    if (amountField && amountField.value) {
+      const amount = parseFloat(amountField.value);
+      if (isNaN(amount) || amount <= 0) {
+        errors.push('Donation amount must be greater than 0');
+      }
+    }
+  }
+  
+  if (currentTab === 'inkind') {
+    const quantityField = document.getElementById('quantity');
+    if (quantityField && quantityField.value) {
+      const quantity = parseInt(quantityField.value);
+      if (isNaN(quantity) || quantity <= 0) {
+        errors.push('Quantity must be greater than 0');
+      }
+    }
+  }
+  
+  if (errors.length > 0) {
+    console.error('Validation errors:', errors);
+    alert('Please fix the following errors:\n• ' + errors.join('\n• '));
+    return false;
+  }
+  
+  console.log('Validation passed!');
+  return true;
+}
+
+function debugPaymentMethods() {
+  const paymentMethods = document.querySelectorAll('input[name="payment_method"]');
+  console.log('Payment methods state:');
+  paymentMethods.forEach(method => {
+    console.log(`${method.value}: ${method.checked} ${method.required}`);
+  });
+  
+  const selectedMethod = document.querySelector('input[name="payment_method"]:checked');
+  console.log('Selected method:', selectedMethod ? selectedMethod.value : 'NONE');
+}
 
 function handlePaymentMethodRequirements(donationType) {
   console.log('Handling payment requirements for:', donationType);
@@ -743,12 +1009,14 @@ function handlePaymentMethodRequirements(donationType) {
   
   if (donationType === 'monetary') {
     paymentMethods.forEach(method => {
+      method.required = true;
       method.addEventListener('change', updatePaymentReceipt);
     });
     updatePaymentReceipt(); // Check current selection
   } else {
     paymentMethods.forEach(method => {
       method.checked = false;
+      method.required = false;
     });
     if (receiptUpload) receiptUpload.style.display = 'none';
   }
@@ -759,7 +1027,10 @@ function initializePaymentMethods() {
   
   const paymentMethods = document.querySelectorAll('input[name="payment_method"]');
   paymentMethods.forEach(method => {
-    method.addEventListener('change', updatePaymentReceipt);
+    method.addEventListener('change', function() {
+      updatePaymentReceipt();
+      updatePaymentSummary();
+    });
   });
   
   // File upload handling
@@ -778,6 +1049,16 @@ function updatePaymentReceipt() {
   if (selectedMethod) {
     console.log('Payment method selected:', selectedMethod.value);
     
+    // Show payment details for selected method
+    document.querySelectorAll('.payment-form').forEach(form => {
+      form.style.display = 'none';
+    });
+    
+    const selectedForm = document.getElementById(selectedMethod.value + '_form');
+    if (selectedForm) {
+      selectedForm.style.display = 'block';
+    }
+    
     if (selectedMethod.value !== 'cash') {
       if (receiptUpload) {
         receiptUpload.style.display = 'block';
@@ -787,6 +1068,58 @@ function updatePaymentReceipt() {
         receiptUpload.style.display = 'none';
       }
     }
+    
+    // Show payment summary
+    const paymentSummary = document.getElementById('paymentSummary');
+    if (paymentSummary) {
+      paymentSummary.style.display = 'block';
+    }
+    
+    updatePaymentSummary();
+  }
+}
+
+function updateFeeSummary() {
+  const amount = parseFloat(document.getElementById('amount')?.value) || 0;
+  const donationAmountDisplay = document.getElementById('donationAmountDisplay');
+  const totalAmountDisplay = document.getElementById('totalAmountDisplay');
+  
+  if (donationAmountDisplay) {
+    donationAmountDisplay.textContent = `₱${amount.toFixed(2)}`;
+  }
+  
+  if (totalAmountDisplay) {
+    totalAmountDisplay.textContent = `₱${amount.toFixed(2)}`;
+  }
+  
+  updatePaymentSummary();
+}
+
+function updatePaymentSummary() {
+  const amount = parseFloat(document.getElementById('amount')?.value) || 0;
+  const selectedMethod = document.querySelector('input[name="payment_method"]:checked');
+  const selectedMethodDisplay = document.getElementById('selectedPaymentMethod');
+  const summaryDonationAmount = document.getElementById('summaryDonationAmount');
+  const summaryTotalAmount = document.getElementById('summaryTotalAmount');
+  
+  if (selectedMethodDisplay && selectedMethod) {
+    selectedMethodDisplay.textContent = selectedMethod.value.replace('_', ' ').toUpperCase();
+  }
+  
+  if (summaryDonationAmount) {
+    summaryDonationAmount.textContent = `₱${amount.toFixed(2)}`;
+  }
+  
+  if (summaryTotalAmount) {
+    let totalAmount = amount;
+    
+    // Add processing fee for credit card
+    if (selectedMethod && selectedMethod.value === 'credit_card') {
+      const processingFee = amount * 0.035;
+      totalAmount += processingFee;
+    }
+    
+    summaryTotalAmount.textContent = `₱${totalAmount.toFixed(2)}`;
   }
 }
 
@@ -825,26 +1158,40 @@ function handleFileUpload(input) {
 }
 
 function updateRequiredFields(activeTab) {
-  // Reset all required fields first
-  document.querySelectorAll('input[required], select[required]').forEach(field => {
-    if (!['donor_name', 'donor_email', 'donor_phone'].includes(field.name)) {
-      field.required = false;
+    console.log('Updating required fields for:', activeTab);
+    
+    // Remove required from all tab-specific fields
+    document.querySelectorAll('.monetary-required, .inkind-required').forEach(field => {
+        field.required = false;
+    });
+     // Add required only to visible fields of active tab
+    if (activeTab === 'monetary') {
+        document.querySelectorAll('.monetary-required').forEach(field => {
+            if (field.offsetParent !== null) { // Check if visible
+                field.required = true;
+            }
+        });
+    } else if (activeTab === 'inkind') {
+        document.querySelectorAll('.inkind-required').forEach(field => {
+            if (field.offsetParent !== null) { // Check if visible
+                field.required = true;
+            }
+        });
     }
-  });
+}
   
   // Set required fields based on active tab
   if (activeTab === 'monetary') {
-    const monetaryRequiredFields = ['amount', 'donation_date', 'payment_method'];
+    const monetaryRequiredFields = ['amount', 'donation_date'];
     monetaryRequiredFields.forEach(fieldName => {
       const field = document.querySelector(`[name="${fieldName}"]`);
       if (field) field.required = true;
     });
-  } else if (activeTab === 'blood') {
-    const bloodRequiredFields = ['blood_type', 'donation_date', 'emergency_contact'];
-    bloodRequiredFields.forEach(fieldName => {
-      const field = document.querySelector(`[name="${fieldName}"]`);
-      if (field) field.required = true;
-    });
+    
+    // Payment method is handled separately since it's radio buttons
+    const paymentMethods = document.querySelectorAll('input[name="payment_method"]');
+    paymentMethods.forEach(method => method.required = true);
+    
   } else if (activeTab === 'inkind') {
     const inkindRequiredFields = ['item_description', 'quantity', 'donation_date'];
     inkindRequiredFields.forEach(fieldName => {
@@ -859,18 +1206,36 @@ window.debugDonationForm = function() {
   const form = document.querySelector('.donation-form');
   const formData = new FormData(form);
   console.log('=== FORM DEBUG ===');
+  console.log('Form method:', form.method);
+  console.log('Form action:', form.action);
+  console.log('Form data:');
   for (let [key, value] of formData.entries()) {
     console.log(`${key}:`, value);
   }
   console.log('=== END DEBUG ===');
 };
+// Debug function to check form state
+function debugFormState() {
+    console.log('=== FORM STATE DEBUG ===');
+    console.log('Active tab:', document.getElementById('donation_type').value);
+    
+    // Check required fields
+    const requiredFields = document.querySelectorAll('[required]');
+    console.log('Required fields:');
+    requiredFields.forEach(field => {
+        console.log(`${field.name}: ${field.value} (visible: ${field.offsetParent !== null})`);
+    });
+    
+    // Check payment method
+    const paymentMethod = document.querySelector('input[name="payment_method"]:checked');
+    console.log('Payment method selected:', paymentMethod ? paymentMethod.value : 'NONE');
+    
+    console.log('=== END DEBUG ===');
+}
+
+// Call this when needed for debugging
+window.debugForm = debugFormState;
   </script>
-  <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
-  <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
-  <script src="js/header.js?v=<?php echo time(); ?>"></script>
+ 
 </body>
 </html>
-
-
-
-

@@ -24,7 +24,7 @@ $announcements = $stmt->fetchAll();
   <link rel="stylesheet" href="../assets/sidebar.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/announcements.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/dashboard.css?v=<?php echo time(); ?>">
-     <link rel="stylesheet" href="../assets/header.css?v=<?php echo time(); ?>">
+  <link rel="stylesheet" href="../assets/header.css?v=<?php echo time(); ?>">
 
 </head>
 <body>

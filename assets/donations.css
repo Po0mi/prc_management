@@ -688,6 +688,7 @@ input[type="checkbox"] {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
+  width: 100px;
 }
 
 .btn-approve {
@@ -752,23 +753,24 @@ input[type="checkbox"] {
 }
 
 /* Action Buttons */
-.actions {
-  display: flex;
-  gap: 0.5rem;
-}
+ .quick-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
 
 .btn-action {
-  padding: 0.4rem 0.8rem;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.85rem;
-  transition: all 0.3s ease;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-weight: 500;
-  text-decoration: none;
+    padding: 0.5rem;
+      border-radius: 4px;
+      border: none;
+      cursor: pointer;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background-color 0.2s;
+      width: 50px;
+      height: 36px;
 }
 
 .btn-view {
@@ -1942,3 +1944,257 @@ textarea:focus-visible {
     transform: rotate(360deg);
   }
 }
+    /* Additional styles for modals and buttons */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .modal.active {
+      display: flex;
+    }
+    
+    .modal-content {
+      background-color: white;
+      border-radius: 8px;
+      width: 90%;
+      max-width: 600px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    }
+    
+    .modal-wide {
+      max-width: 800px;
+    }
+    
+    .modal-header {
+      padding: 1.5rem;
+      border-bottom: 1px solid #eee;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .modal-title {
+      margin: 0;
+      font-size: 1.5rem;
+      color: #333;
+    }
+    
+    .close-modal {
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      cursor: pointer;
+      color: #999;
+    }
+    
+    .close-modal:hover {
+      color: #333;
+    }
+    
+    .form-group {
+      margin-bottom: 1rem;
+      padding: 0 1.5rem;
+    }
+    
+    .form-row {
+      display: flex;
+      gap: 1rem;
+      padding: 0 1.5rem;
+    }
+    
+    .form-row .form-group {
+      flex: 1;
+      padding: 0;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 600;
+      color: #333;
+    }
+    
+    input, select, textarea {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 1rem;
+    }
+    
+    .modal-footer {
+      padding: 1.5rem;
+      border-top: 1px solid #eee;
+      display: flex;
+      justify-content: flex-end;
+      gap: 1rem;
+    }
+    
+    .btn-submit {
+      background-color: #dc3545;
+      color: white;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    
+    .btn-secondary {
+      background-color: #6c757d;
+      color: white;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    
+    .btn-action {
+      padding: 0.4rem 0.8rem;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      margin-right: 0.25rem;
+    }
+    
+    .btn-view {
+      background-color: #17a2b8;
+      color: white;
+    }
+    
+    .btn-edit {
+      background-color: #28a745;
+      color: white;
+    }
+    
+    .btn-delete {
+      background-color: #dc3545;
+      color: white;
+    }
+    
+    .btn-quick {
+      padding: 0.3rem 0.6rem;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      margin-right: 0.25rem;
+    }
+    
+    .btn-approve {
+      background-color: #28a745;
+      color: white;
+    }
+    
+    .btn-reject {
+      background-color: #dc3545;
+      color: white;
+    }
+    
+    .btn-complete {
+      background-color: #17a2b8;
+      color: white;
+    }
+    
+    .btn-pending {
+      background-color: #ffc107;
+      color: #333;
+    }
+    
+    .donation-detail-card {
+      padding: 1.5rem;
+    }
+    
+    .detail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .detail-section {
+      margin-bottom: 1.5rem;
+    }
+    
+    .detail-section h4 {
+      margin-bottom: 0.75rem;
+      color: #333;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .detail-section p {
+      margin-bottom: 0.5rem;
+      line-height: 1.5;
+    }
+    
+    .blood-badge {
+      display: inline-block;
+      padding: 0.25rem 0.5rem;
+      background-color: #dc3545;
+      color: white;
+      border-radius: 4px;
+      font-weight: bold;
+    }
+    
+    .approval-info-section {
+      padding: 1.5rem;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .donor-card {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    
+    .donor-avatar {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background-color: #dc3545;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 1.2rem;
+    }
+    
+    .bulk-summary {
+      padding: 1.5rem;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .type-breakdown, .status-breakdown {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .error-message {
+      padding: 1rem;
+      background-color: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+      border-radius: 4px;
+      margin: 1rem;
+      text-align: center;
+    }

@@ -2204,9 +2204,15 @@ function injectMultiDayTrainingStyles() {
 }
 
 .session-time {
-    font-size: 0.8rem;
-    color: var(--gray);
-    margin-top: 0.2rem;
+     font-size: 0.8rem;
+    color: #2196F3;
+    font-weight: 500;
+    background: rgba(33, 150, 243, 0.1);
+    padding: 0.1rem 0.3rem;
+    border-radius: 4px;
+    display: inline-block;
+    margin: 0.1rem 0;
+    border: 1px solid rgba(33, 150, 243, 0.2);
 }
 
 .session-duration {

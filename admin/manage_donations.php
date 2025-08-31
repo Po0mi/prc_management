@@ -7,87 +7,128 @@ $pdo = $GLOBALS['pdo'];
 $errorMessage = '';
 $successMessage = '';
 
-// Fixed deletion handler with proper error checking
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_donation'])) {
-    $donationId = (int)$_POST['donation_id'];
-    $donationType = $_POST['donation_type'];
+// Initialize statistics variables to prevent warnings
+$total_donations = 0;
+$completed_count = 0;
+$blood_count = 0;
+$pending_count = 0;
 
-    try {
-        // Begin transaction for data consistency
-        $pdo->beginTransaction();
-        
-        // First, delete related approval logs
-        $logStmt = $pdo->prepare("DELETE FROM donation_approval_log WHERE donation_id = ? AND donation_type = ?");
-        $logStmt->execute([$donationId, $donationType]);
-        
-        // Then delete the main donation record
-        if ($donationType === 'blood') {
-            $stmt = $pdo->prepare("DELETE FROM blood_donations WHERE donation_id = ?");
-        } elseif ($donationType === 'in_kind') {
-            $stmt = $pdo->prepare("DELETE FROM in_kind_donations WHERE donation_id = ?");
-        } else {
-            $stmt = $pdo->prepare("DELETE FROM donations WHERE donation_id = ?");
-        }
-        
-        $result = $stmt->execute([$donationId]);
-        
-        if ($result && $stmt->rowCount() > 0) {
-            $pdo->commit();
-            $successMessage = "Donation deleted successfully.";
-        } else {
+// Enhanced deletion handler with better security
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_donation'])) {
+    $donationId = filter_var($_POST['donation_id'], FILTER_VALIDATE_INT);
+    $donationType = filter_var($_POST['donation_type'], FILTER_SANITIZE_STRING);
+    
+    if (!$donationId || !in_array($donationType, ['monetary', 'blood', 'in_kind'])) {
+        $errorMessage = "Invalid donation parameters.";
+    } else {
+        try {
+            $pdo->beginTransaction();
+            
+            // Delete related approval logs first
+            $logStmt = $pdo->prepare("DELETE FROM donation_approval_log WHERE donation_id = ? AND donation_type = ?");
+            $logStmt->execute([$donationId, $donationType]);
+            
+            // Delete the main donation record
+            $table_map = [
+                'monetary' => 'donations',
+                'blood' => 'blood_donations', 
+                'in_kind' => 'in_kind_donations'
+            ];
+            
+            $stmt = $pdo->prepare("DELETE FROM {$table_map[$donationType]} WHERE donation_id = ?");
+            $result = $stmt->execute([$donationId]);
+            
+            if ($result && $stmt->rowCount() > 0) {
+                $pdo->commit();
+                $successMessage = "Donation deleted successfully.";
+            } else {
+                $pdo->rollback();
+                $errorMessage = "Donation not found or already deleted.";
+            }
+        } catch (Exception $e) {
             $pdo->rollback();
-            $errorMessage = "Donation not found or already deleted.";
+            $errorMessage = "Error deleting donation: " . $e->getMessage();
         }
-    } catch (Exception $e) {
-        $pdo->rollback();
-        $errorMessage = "Error deleting donation: " . $e->getMessage();
     }
 }
 
-// Handle donation updates
+// Enhanced update handler
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_donation'])) {
-    $donationId = (int)$_POST['donation_id'];
-    $donationType = $_POST['donation_type'];
-    $donorId = (int)$_POST['donor_id'];
+    $donationId = filter_var($_POST['donation_id'], FILTER_VALIDATE_INT);
+    $donationType = filter_var($_POST['donation_type'], FILTER_SANITIZE_STRING);
+    $donorId = filter_var($_POST['donor_id'], FILTER_VALIDATE_INT);
     $donationDate = $_POST['donation_date'];
     $status = $_POST['status'];
 
-    try {
-        if ($donationType === 'monetary') {
-            $amount = (float)$_POST['amount'];
-            $paymentMethod = $_POST['payment_method'];
-            $stmt = $pdo->prepare("UPDATE donations SET donor_id = ?, amount = ?, donation_date = ?, payment_method = ?, status = ? WHERE donation_id = ?");
-            $result = $stmt->execute([$donorId, $amount, $donationDate, $paymentMethod, $status, $donationId]);
-        } elseif ($donationType === 'blood') {
-            $bloodType = $_POST['blood_type'];
-            $emergencyContact = $_POST['emergency_contact'];
-            $donationLocation = $_POST['donation_location'];
-            $stmt = $pdo->prepare("UPDATE blood_donations SET donor_id = ?, blood_type = ?, donation_date = ?, donation_location = ?, emergency_contact = ?, status = ? WHERE donation_id = ?");
-            $result = $stmt->execute([$donorId, $bloodType, $donationDate, $donationLocation, $emergencyContact, $status, $donationId]);
-        } else {
-            $amount = (float)$_POST['estimated_value'];
-            $itemDescription = $_POST['item_description'];
-            $quantity = (int)$_POST['quantity'];
-            $stmt = $pdo->prepare("UPDATE in_kind_donations SET donor_id = ?, estimated_value = ?, donation_date = ?, item_description = ?, quantity = ?, status = ? WHERE donation_id = ?");
-            $result = $stmt->execute([$donorId, $amount, $donationDate, $itemDescription, $quantity, $status, $donationId]);
+    if (!$donationId || !$donorId || !$donationDate || !$status) {
+        $errorMessage = "All required fields must be filled.";
+    } else {
+        try {
+            $updated = false;
+            
+            if ($donationType === 'monetary') {
+                $amount = filter_var($_POST['amount'], FILTER_VALIDATE_FLOAT);
+                $paymentMethod = filter_var($_POST['payment_method'], FILTER_SANITIZE_STRING);
+                
+                if ($amount && $paymentMethod) {
+                    $stmt = $pdo->prepare("
+                        UPDATE donations 
+                        SET donor_id = ?, amount = ?, donation_date = ?, payment_method = ?, status = ?, 
+                            updated_at = NOW(), updated_by = ?
+                        WHERE donation_id = ?
+                    ");
+                    $updated = $stmt->execute([$donorId, $amount, $donationDate, $paymentMethod, $status, $_SESSION['user_id'], $donationId]);
+                }
+                
+            } elseif ($donationType === 'blood') {
+                $bloodType = filter_var($_POST['blood_type'], FILTER_SANITIZE_STRING);
+                $emergencyContact = filter_var($_POST['emergency_contact'], FILTER_SANITIZE_STRING);
+                $donationLocation = filter_var($_POST['donation_location'], FILTER_SANITIZE_STRING);
+                
+                if ($bloodType && $emergencyContact) {
+                    $stmt = $pdo->prepare("
+                        UPDATE blood_donations 
+                        SET donor_id = ?, blood_type = ?, donation_date = ?, donation_location = ?, 
+                            emergency_contact = ?, status = ?, updated_at = NOW(), updated_by = ?
+                        WHERE donation_id = ?
+                    ");
+                    $updated = $stmt->execute([$donorId, $bloodType, $donationDate, $donationLocation, $emergencyContact, $status, $_SESSION['user_id'], $donationId]);
+                }
+                
+            } elseif ($donationType === 'in_kind') {
+                $estimatedValue = filter_var($_POST['estimated_value'], FILTER_VALIDATE_FLOAT) ?? 0;
+                $itemDescription = filter_var($_POST['item_description'], FILTER_SANITIZE_STRING);
+                $quantity = filter_var($_POST['quantity'], FILTER_VALIDATE_INT) ?? 1;
+                
+                if ($itemDescription) {
+                    $stmt = $pdo->prepare("
+                        UPDATE in_kind_donations 
+                        SET donor_id = ?, estimated_value = ?, donation_date = ?, item_description = ?, 
+                            quantity = ?, status = ?, updated_at = NOW(), updated_by = ?
+                        WHERE donation_id = ?
+                    ");
+                    $updated = $stmt->execute([$donorId, $estimatedValue, $donationDate, $itemDescription, $quantity, $status, $_SESSION['user_id'], $donationId]);
+                }
+            }
+            
+            if ($updated) {
+                $successMessage = "Donation updated successfully.";
+            } else {
+                $errorMessage = "Failed to update donation - invalid data provided.";
+            }
+            
+        } catch (Exception $e) {
+            $errorMessage = "Error updating donation: " . $e->getMessage();
         }
-        
-        if ($result) {
-            $successMessage = "Donation updated successfully.";
-        } else {
-            $errorMessage = "Failed to update donation.";
-        }
-    } catch (Exception $e) {
-        $errorMessage = "Error updating donation: " . $e->getMessage();
     }
 }
 
-// Fixed approval handler with proper validation
+// Enhanced approval handler with proper validation
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['quick_approve_donation'])) {
-    $donationId = (int)$_POST['donation_id'];
-    $donationType = $_POST['donation_type'];
-    $newStatus = $_POST['new_status'];
-    $notes = $_POST['notes'] ?? '';
+    $donationId = filter_var($_POST['donation_id'], FILTER_VALIDATE_INT);
+    $donationType = filter_var($_POST['donation_type'], FILTER_SANITIZE_STRING);
+    $newStatus = filter_var($_POST['new_status'], FILTER_SANITIZE_STRING);
+    $notes = filter_var($_POST['notes'] ?? '', FILTER_SANITIZE_STRING);
     
     // Validate status values
     $validStatuses = [
@@ -96,45 +137,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['quick_approve_donatio
         'in_kind' => ['pending', 'approved', 'rejected']
     ];
     
-    if (!in_array($newStatus, $validStatuses[$donationType] ?? [])) {
-        $errorMessage = "Invalid status for this donation type.";
+    if (!$donationId || !in_array($donationType, ['monetary', 'blood', 'in_kind']) || 
+        !in_array($newStatus, $validStatuses[$donationType] ?? [])) {
+        $errorMessage = "Invalid approval parameters.";
     } else {
         try {
             $pdo->beginTransaction();
             
-            // Verify donation exists first
-            if ($donationType === 'blood') {
-                $checkStmt = $pdo->prepare("SELECT donation_id FROM blood_donations WHERE donation_id = ?");
-            } elseif ($donationType === 'in_kind') {
-                $checkStmt = $pdo->prepare("SELECT donation_id FROM in_kind_donations WHERE donation_id = ?");
-            } else {
-                $checkStmt = $pdo->prepare("SELECT donation_id FROM donations WHERE donation_id = ?");
-            }
+            // Verify donation exists
+            $table_map = [
+                'monetary' => 'donations',
+                'blood' => 'blood_donations',
+                'in_kind' => 'in_kind_donations'
+            ];
             
+            $checkStmt = $pdo->prepare("SELECT donation_id FROM {$table_map[$donationType]} WHERE donation_id = ?");
             $checkStmt->execute([$donationId]);
+            
             if (!$checkStmt->fetch()) {
                 throw new Exception("Donation not found.");
             }
             
             // Update the donation status
-            if ($donationType === 'blood') {
-                $stmt = $pdo->prepare("UPDATE blood_donations SET status = ?, approval_notes = ?, approved_by = ?, approved_date = NOW() WHERE donation_id = ?");
-            } elseif ($donationType === 'in_kind') {
-                $stmt = $pdo->prepare("UPDATE in_kind_donations SET status = ?, approval_notes = ?, approved_by = ?, approved_date = NOW() WHERE donation_id = ?");
-            } else {
-                $stmt = $pdo->prepare("UPDATE donations SET status = ?, approval_notes = ?, approved_by = ?, approved_date = NOW() WHERE donation_id = ?");
-            }
+            $stmt = $pdo->prepare("
+                UPDATE {$table_map[$donationType]} 
+                SET status = ?, approval_notes = ?, approved_by = ?, approved_date = NOW(),
+                    updated_at = NOW(), updated_by = ?
+                WHERE donation_id = ?
+            ");
             
-            $result = $stmt->execute([$newStatus, $notes, $_SESSION['user_id'], $donationId]);
+            $result = $stmt->execute([$newStatus, $notes, $_SESSION['user_id'], $_SESSION['user_id'], $donationId]);
             
             if ($result && $stmt->rowCount() > 0) {
                 // Log the approval action
-                $logStmt = $pdo->prepare("INSERT INTO donation_approval_log (donation_id, donation_type, action, notes, admin_id, created_at) VALUES (?, ?, ?, ?, ?, NOW())");
+                $logStmt = $pdo->prepare("
+                    INSERT INTO donation_approval_log (donation_id, donation_type, action, notes, admin_id, created_at) 
+                    VALUES (?, ?, ?, ?, ?, NOW())
+                ");
                 $logStmt->execute([$donationId, $donationType, $newStatus, $notes, $_SESSION['user_id']]);
                 
+                // Send notification email if approved
+                if (in_array($newStatus, ['approved', 'completed', 'confirmed'])) {
+                    sendDonationApprovalEmail($donationId, $donationType, $newStatus);
+                }
+                
                 $pdo->commit();
-                $action = ucfirst($newStatus);
-                $successMessage = "Donation status updated to {$action} successfully.";
+                $successMessage = "Donation status updated to " . ucfirst($newStatus) . " successfully.";
             } else {
                 throw new Exception("No changes were made to the donation.");
             }
@@ -145,11 +193,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['quick_approve_donatio
     }
 }
 
-// Fixed bulk approval with better error handling
+// Enhanced bulk approval with better validation
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_approve'])) {
     $selectedDonations = $_POST['selected_donations'] ?? [];
-    $bulkAction = $_POST['bulk_action'] ?? '';
-    $bulkNotes = $_POST['bulk_notes'] ?? '';
+    $bulkAction = filter_var($_POST['bulk_action'] ?? '', FILTER_SANITIZE_STRING);
+    $bulkNotes = filter_var($_POST['bulk_notes'] ?? '', FILTER_SANITIZE_STRING);
     
     if (empty($selectedDonations)) {
         $errorMessage = "No donations selected.";
@@ -159,6 +207,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_approve'])) {
         $successCount = 0;
         $failureCount = 0;
         $errors = [];
+        
+        $validStatuses = [
+            'monetary' => ['pending', 'approved', 'rejected'],
+            'blood' => ['scheduled', 'confirmed', 'completed', 'cancelled', 'pending'],
+            'in_kind' => ['pending', 'approved', 'rejected']
+        ];
         
         try {
             $pdo->beginTransaction();
@@ -170,37 +224,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_approve'])) {
                     continue;
                 }
                 
-                $donationId = (int)$parts[0];
-                $donationType = $parts[1];
+                $donationId = filter_var($parts[0], FILTER_VALIDATE_INT);
+                $donationType = filter_var($parts[1], FILTER_SANITIZE_STRING);
                 
-                // Validate the action for this donation type
-                $validStatuses = [
-                    'monetary' => ['pending', 'approved', 'rejected'],
-                    'blood' => ['scheduled', 'confirmed', 'completed', 'cancelled', 'pending'],
-                    'in_kind' => ['pending', 'approved', 'rejected']
-                ];
-                
-                if (!in_array($bulkAction, $validStatuses[$donationType] ?? [])) {
+                if (!$donationId || !in_array($donationType, ['monetary', 'blood', 'in_kind']) ||
+                    !in_array($bulkAction, $validStatuses[$donationType] ?? [])) {
                     $failureCount++;
-                    $errors[] = "Invalid action '$bulkAction' for $donationType donation #$donationId";
                     continue;
                 }
                 
                 try {
-                    if ($donationType === 'blood') {
-                        $stmt = $pdo->prepare("UPDATE blood_donations SET status = ?, approval_notes = ?, approved_by = ?, approved_date = NOW() WHERE donation_id = ?");
-                    } elseif ($donationType === 'in_kind') {
-                        $stmt = $pdo->prepare("UPDATE in_kind_donations SET status = ?, approval_notes = ?, approved_by = ?, approved_date = NOW() WHERE donation_id = ?");
-                    } else {
-                        $stmt = $pdo->prepare("UPDATE donations SET status = ?, approval_notes = ?, approved_by = ?, approved_date = NOW() WHERE donation_id = ?");
-                    }
+                    $table_map = [
+                        'monetary' => 'donations',
+                        'blood' => 'blood_donations',
+                        'in_kind' => 'in_kind_donations'
+                    ];
                     
-                    if ($stmt->execute([$bulkAction, "Bulk: " . $bulkNotes, $_SESSION['user_id'], $donationId]) && $stmt->rowCount() > 0) {
+                    $stmt = $pdo->prepare("
+                        UPDATE {$table_map[$donationType]} 
+                        SET status = ?, approval_notes = ?, approved_by = ?, approved_date = NOW(),
+                            updated_at = NOW(), updated_by = ?
+                        WHERE donation_id = ?
+                    ");
+                    
+                    if ($stmt->execute([$bulkAction, "Bulk: " . $bulkNotes, $_SESSION['user_id'], $_SESSION['user_id'], $donationId]) && 
+                        $stmt->rowCount() > 0) {
+                        
                         $successCount++;
                         
                         // Log the bulk action
-                        $logStmt = $pdo->prepare("INSERT INTO donation_approval_log (donation_id, donation_type, action, notes, admin_id, created_at) VALUES (?, ?, ?, ?, ?, NOW())");
+                        $logStmt = $pdo->prepare("
+                            INSERT INTO donation_approval_log (donation_id, donation_type, action, notes, admin_id, created_at) 
+                            VALUES (?, ?, ?, ?, ?, NOW())
+                        ");
                         $logStmt->execute([$donationId, $donationType, $bulkAction, "Bulk: " . $bulkNotes, $_SESSION['user_id']]);
+                        
+                        // Send notification if approved
+                        if (in_array($bulkAction, ['approved', 'completed', 'confirmed'])) {
+                            sendDonationApprovalEmail($donationId, $donationType, $bulkAction);
+                        }
                     } else {
                         $failureCount++;
                     }
@@ -215,10 +277,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_approve'])) {
                 $successMessage = "Successfully updated {$successCount} donation(s) to {$bulkAction}.";
             } else {
                 $pdo->rollback();
-                $errorMessage = "Bulk operation failed. {$failureCount} donation(s) could not be updated.";
-                if (!empty($errors)) {
-                    $errorMessage .= " Errors: " . implode(', ', array_slice($errors, 0, 3));
-                }
+                $errorMessage = "Bulk operation partially failed. {$successCount} succeeded, {$failureCount} failed.";
             }
         } catch (Exception $e) {
             $pdo->rollback();
@@ -227,119 +286,198 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_approve'])) {
     }
 }
 
-// Create new donation handler
+// Enhanced create donation handler
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_donation'])) {
-    $donationType = $_POST['donation_type'];
-    $donorId = (int)$_POST['donor_id'];
+    $donationType = filter_var($_POST['donation_type'], FILTER_SANITIZE_STRING);
+    $donorId = filter_var($_POST['donor_id'], FILTER_VALIDATE_INT);
     $donationDate = $_POST['donation_date'];
     $recordedBy = $_SESSION['user_id'];
-    $status = $_POST['status'] ?? 'pending';
+    $status = filter_var($_POST['status'] ?? 'pending', FILTER_SANITIZE_STRING);
 
-    if ($donorId && $donationDate) {
+    if (!$donorId || !$donationDate || !in_array($donationType, ['monetary', 'blood', 'in_kind'])) {
+        $errorMessage = "Please fill all required fields with valid data.";
+    } else {
         try {
+            $created = false;
+            
             if ($donationType === 'monetary') {
-                $amount = (float)$_POST['amount'];
-                $paymentMethod = $_POST['payment_method'];
-                if ($amount > 0) {
-                    $stmt = $pdo->prepare("INSERT INTO donations (donor_id, amount, donation_date, payment_method, recorded_by, status) VALUES (?, ?, ?, ?, ?, ?)");
-                    $stmt->execute([$donorId, $amount, $donationDate, $paymentMethod, $recordedBy, $status]);
-                    $successMessage = "Monetary donation recorded successfully.";
-                } else {
-                    $errorMessage = "Amount must be greater than 0.";
+                $amount = filter_var($_POST['amount'], FILTER_VALIDATE_FLOAT);
+                $paymentMethod = filter_var($_POST['payment_method'], FILTER_SANITIZE_STRING);
+                
+                if ($amount > 0 && $paymentMethod) {
+                    $stmt = $pdo->prepare("
+                        INSERT INTO donations (donor_id, amount, donation_date, payment_method, recorded_by, status, created_at) 
+                        VALUES (?, ?, ?, ?, ?, ?, NOW())
+                    ");
+                    $created = $stmt->execute([$donorId, $amount, $donationDate, $paymentMethod, $recordedBy, $status]);
                 }
+                
             } elseif ($donationType === 'blood') {
-                $bloodType = $_POST['blood_type'];
-                $donationLocation = $_POST['donation_location'] ?? '';
-                $emergencyContact = $_POST['emergency_contact'];
+                $bloodType = filter_var($_POST['blood_type'], FILTER_SANITIZE_STRING);
+                $donationLocation = filter_var($_POST['donation_location'] ?? '', FILTER_SANITIZE_STRING);
+                $emergencyContact = filter_var($_POST['emergency_contact'], FILTER_SANITIZE_STRING);
+                
                 if ($bloodType && $emergencyContact) {
-                    $stmt = $pdo->prepare("INSERT INTO blood_donations (donor_id, blood_type, donation_date, donation_location, emergency_contact, recorded_by, status) VALUES (?, ?, ?, ?, ?, ?, ?)");
-                    $stmt->execute([$donorId, $bloodType, $donationDate, $donationLocation, $emergencyContact, $recordedBy, $status]);
-                    $successMessage = "Blood donation appointment scheduled successfully.";
-                } else {
-                    $errorMessage = "Blood type and emergency contact are required.";
+                    $stmt = $pdo->prepare("
+                        INSERT INTO blood_donations (donor_id, blood_type, donation_date, donation_location, emergency_contact, recorded_by, status, created_at) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+                    ");
+                    $created = $stmt->execute([$donorId, $bloodType, $donationDate, $donationLocation, $emergencyContact, $recordedBy, $status]);
                 }
+                
+            } elseif ($donationType === 'in_kind') {
+                $estimatedValue = filter_var($_POST['estimated_value'], FILTER_VALIDATE_FLOAT) ?? 0;
+                $itemDescription = filter_var($_POST['item_description'], FILTER_SANITIZE_STRING);
+                $quantity = filter_var($_POST['quantity'], FILTER_VALIDATE_INT) ?? 1;
+                
+                if ($itemDescription && $quantity > 0) {
+                    $stmt = $pdo->prepare("
+                        INSERT INTO in_kind_donations (donor_id, estimated_value, donation_date, item_description, quantity, recorded_by, status, created_at) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+                    ");
+                    $created = $stmt->execute([$donorId, $estimatedValue, $donationDate, $itemDescription, $quantity, $recordedBy, $status]);
+                }
+            }
+            
+            if ($created) {
+                $successMessage = ucfirst($donationType) . " donation recorded successfully.";
             } else {
-                $amount = (float)$_POST['estimated_value'];
-                $itemDescription = trim($_POST['item_description']);
-                $quantity = (int)$_POST['quantity'];
-                if ($itemDescription) {
-                    $stmt = $pdo->prepare("INSERT INTO in_kind_donations (donor_id, estimated_value, donation_date, item_description, quantity, recorded_by, status) VALUES (?, ?, ?, ?, ?, ?, ?)");
-                    $stmt->execute([$donorId, $amount, $donationDate, $itemDescription, $quantity, $recordedBy, $status]);
-                    $successMessage = "In-kind donation recorded successfully.";
-                } else {
-                    $errorMessage = "Item description is required.";
-                }
+                $errorMessage = "Failed to create donation - invalid data provided.";
             }
         } catch (Exception $e) {
             $errorMessage = "Error creating donation: " . $e->getMessage();
         }
-    } else {
-        $errorMessage = "Please fill all required fields.";
     }
 }
 
-// Enhanced queries to include blood donations
-$monetaryDonations = $pdo->query("
-    SELECT d.donation_id, r.name AS donor_name, r.email AS donor_email, r.phone AS donor_phone,
-           d.amount, d.donation_date, d.payment_method, d.payment_receipt,
-           u.username AS recorded_by, 'monetary' AS donation_type,
-           d.status, r.donor_id, d.approval_notes, d.approved_by, d.approved_date,
-           approver.username AS approved_by_name, d.message
-    FROM donations d
-    JOIN donors r ON d.donor_id = r.donor_id
-    JOIN users u ON d.recorded_by = u.user_id
-    LEFT JOIN users approver ON d.approved_by = approver.user_id
-    ORDER BY d.donation_date DESC
-")->fetchAll();
+// Function to send approval email
+function sendDonationApprovalEmail($donationId, $donationType, $status) {
+    global $pdo;
+    
+    try {
+        $table_map = [
+            'monetary' => 'donations',
+            'blood' => 'blood_donations',
+            'in_kind' => 'in_kind_donations'
+        ];
+        
+        $stmt = $pdo->prepare("
+            SELECT d.*, donor.name, donor.email 
+            FROM {$table_map[$donationType]} d
+            JOIN donors donor ON d.donor_id = donor.donor_id
+            WHERE d.donation_id = ?
+        ");
+        $stmt->execute([$donationId]);
+        $donation = $stmt->fetch();
+        
+        if ($donation) {
+            // Here you would integrate with your email system
+            // For now, we'll log it
+            error_log("Sending approval email to {$donation['email']} for donation #{$donationId} - Status: {$status}");
+        }
+    } catch (Exception $e) {
+        error_log("Error sending approval email: " . $e->getMessage());
+    }
+}
 
-$bloodDonations = $pdo->query("
-    SELECT d.donation_id, r.name AS donor_name, r.email AS donor_email, r.phone AS donor_phone,
-           0 AS amount, d.donation_date, d.blood_type, d.donation_location, d.emergency_contact,
-           u.username AS recorded_by, 'blood' AS donation_type, d.medical_history,
-           d.status, r.donor_id, d.approval_notes, d.approved_by, d.approved_date,
-           approver.username AS approved_by_name, d.last_donation_date
-    FROM blood_donations d
-    JOIN donors r ON d.donor_id = r.donor_id
-    JOIN users u ON d.recorded_by = u.user_id
-    LEFT JOIN users approver ON d.approved_by = approver.user_id
-    ORDER BY d.donation_date DESC
-")->fetchAll();
+// Enhanced queries with better error handling
+try {
+    // Get monetary donations
+    $monetaryDonations = $pdo->query("
+        SELECT d.donation_id, r.name AS donor_name, r.email AS donor_email, r.phone AS donor_phone,
+               d.amount, d.donation_date, d.payment_method, d.payment_receipt,
+               u.username AS recorded_by, 'monetary' AS donation_type,
+               d.status, r.donor_id, d.approval_notes, d.approved_by, d.approved_date,
+               approver.username AS approved_by_name, d.message,
+               d.created_at, d.updated_at
+        FROM donations d
+        JOIN donors r ON d.donor_id = r.donor_id
+        JOIN users u ON d.recorded_by = u.user_id
+        LEFT JOIN users approver ON d.approved_by = approver.user_id
+        ORDER BY d.created_at DESC, d.donation_date DESC
+    ")->fetchAll() ?: [];
 
-$inkindDonations = $pdo->query("
-    SELECT d.donation_id, r.name AS donor_name, r.email AS donor_email, r.phone AS donor_phone,
-           d.estimated_value AS amount, d.donation_date, d.item_description, d.quantity,
-           u.username AS recorded_by, 'in_kind' AS donation_type, d.status, r.donor_id,
-           d.approval_notes, d.approved_by, d.approved_date, d.purpose,
-           approver.username AS approved_by_name
-    FROM in_kind_donations d
-    JOIN donors r ON d.donor_id = r.donor_id
-    JOIN users u ON d.recorded_by = u.user_id
-    LEFT JOIN users approver ON d.approved_by = approver.user_id
-    ORDER BY d.donation_date DESC
-")->fetchAll();
+    // Get blood donations
+    $bloodDonations = $pdo->query("
+        SELECT d.donation_id, r.name AS donor_name, r.email AS donor_email, r.phone AS donor_phone,
+               0 AS amount, d.donation_date, d.blood_type, d.donation_location, d.emergency_contact,
+               u.username AS recorded_by, 'blood' AS donation_type, d.medical_history,
+               d.status, r.donor_id, d.approval_notes, d.approved_by, d.approved_date,
+               approver.username AS approved_by_name, d.last_donation_date,
+               d.created_at, d.updated_at
+        FROM blood_donations d
+        JOIN donors r ON d.donor_id = r.donor_id
+        JOIN users u ON d.recorded_by = u.user_id
+        LEFT JOIN users approver ON d.approved_by = approver.user_id
+        ORDER BY d.created_at DESC, d.donation_date DESC
+    ")->fetchAll() ?: [];
 
-$allDonations = array_merge($monetaryDonations, $bloodDonations, $inkindDonations);
-usort($allDonations, function($a, $b) {
-    return strtotime($b['donation_date']) - strtotime($a['donation_date']);
-});
+    // Get in-kind donations
+    $inkindDonations = $pdo->query("
+        SELECT d.donation_id, r.name AS donor_name, r.email AS donor_email, r.phone AS donor_phone,
+               d.estimated_value AS amount, d.donation_date, d.item_description, d.quantity,
+               u.username AS recorded_by, 'in_kind' AS donation_type, d.status, r.donor_id,
+               d.approval_notes, d.approved_by, d.approved_date, d.purpose,
+               approver.username AS approved_by_name,
+               d.created_at, d.updated_at
+        FROM in_kind_donations d
+        JOIN donors r ON d.donor_id = r.donor_id
+        JOIN users u ON d.recorded_by = u.user_id
+        LEFT JOIN users approver ON d.approved_by = approver.user_id
+        ORDER BY d.created_at DESC, d.donation_date DESC
+    ")->fetchAll() ?: [];
 
-$donors = $pdo->query("SELECT donor_id, name, email FROM donors ORDER BY name")->fetchAll();
+    // Combine and sort all donations
+    $allDonations = array_merge($monetaryDonations, $bloodDonations, $inkindDonations);
+    usort($allDonations, function($a, $b) {
+        $timeA = strtotime($a['created_at'] ?? $a['donation_date']);
+        $timeB = strtotime($b['created_at'] ?? $b['donation_date']);
+        return $timeB - $timeA; // Most recent first
+    });
 
-// Enhanced statistics including blood donations
-$monetary_count = $pdo->query("SELECT COUNT(*) FROM donations")->fetchColumn();
-$blood_count = $pdo->query("SELECT COUNT(*) FROM blood_donations")->fetchColumn();
-$inkind_count = $pdo->query("SELECT COUNT(*) FROM in_kind_donations")->fetchColumn();
-$total_donations = $monetary_count + $blood_count + $inkind_count;
+    // Get donors for dropdown
+    $donors = $pdo->query("SELECT donor_id, name, email FROM donors ORDER BY name")->fetchAll();
 
-$completed_count = $pdo->query("SELECT COUNT(*) FROM donations WHERE status = 'approved'")->fetchColumn() + 
-                   $pdo->query("SELECT COUNT(*) FROM blood_donations WHERE status = 'completed'")->fetchColumn() +
-                   $pdo->query("SELECT COUNT(*) FROM in_kind_donations WHERE status = 'approved'")->fetchColumn();
-$pending_count = $pdo->query("SELECT COUNT(*) FROM donations WHERE status = 'pending'")->fetchColumn() + 
-                 $pdo->query("SELECT COUNT(*) FROM blood_donations WHERE status IN ('scheduled', 'pending')")->fetchColumn() +
-                 $pdo->query("SELECT COUNT(*) FROM in_kind_donations WHERE status = 'pending'")->fetchColumn();
-$rejected_count = $pdo->query("SELECT COUNT(*) FROM donations WHERE status = 'rejected'")->fetchColumn() + 
-                  $pdo->query("SELECT COUNT(*) FROM blood_donations WHERE status = 'cancelled'")->fetchColumn() +
-                  $pdo->query("SELECT COUNT(*) FROM in_kind_donations WHERE status = 'rejected'")->fetchColumn();
+    // Enhanced statistics - assign to the variables that will be used in HTML
+    $stats = [
+        'monetary_count' => $pdo->query("SELECT COUNT(*) FROM donations")->fetchColumn() ?: 0,
+        'blood_count' => $pdo->query("SELECT COUNT(*) FROM blood_donations")->fetchColumn() ?: 0,
+        'inkind_count' => $pdo->query("SELECT COUNT(*) FROM in_kind_donations")->fetchColumn() ?: 0,
+    ];
+
+    // Assign to the variables that are used in the HTML
+    $total_donations = $stats['monetary_count'] + $stats['blood_count'] + $stats['inkind_count'];
+    $blood_count = $stats['blood_count'];
+    
+    $completed_count = 
+        ($pdo->query("SELECT COUNT(*) FROM donations WHERE status = 'approved'")->fetchColumn() ?: 0) + 
+        ($pdo->query("SELECT COUNT(*) FROM blood_donations WHERE status = 'completed'")->fetchColumn() ?: 0) +
+        ($pdo->query("SELECT COUNT(*) FROM in_kind_donations WHERE status = 'approved'")->fetchColumn() ?: 0);
+        
+    $pending_count = 
+        ($pdo->query("SELECT COUNT(*) FROM donations WHERE status = 'pending'")->fetchColumn() ?: 0) + 
+        ($pdo->query("SELECT COUNT(*) FROM blood_donations WHERE status IN ('scheduled', 'pending')")->fetchColumn() ?: 0) +
+        ($pdo->query("SELECT COUNT(*) FROM in_kind_donations WHERE status = 'pending'")->fetchColumn() ?: 0);
+        
+    $rejected_count = 
+        ($pdo->query("SELECT COUNT(*) FROM donations WHERE status = 'rejected'")->fetchColumn() ?: 0) + 
+        ($pdo->query("SELECT COUNT(*) FROM blood_donations WHERE status = 'cancelled'")->fetchColumn() ?: 0) +
+        ($pdo->query("SELECT COUNT(*) FROM in_kind_donations WHERE status = 'rejected'")->fetchColumn() ?: 0);
+
+} catch (Exception $e) {
+    error_log("Database error in donations.php: " . $e->getMessage());
+    $allDonations = [];
+    $donors = [];
+    // Ensure variables have default values even on error
+    $total_donations = 0;
+    $completed_count = 0;
+    $blood_count = 0;
+    $pending_count = 0;
+    $rejected_count = 0;
+    if (empty($errorMessage)) {
+        $errorMessage = "Error loading donation data. Please refresh the page.";
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -363,262 +501,6 @@ $rejected_count = $pdo->query("SELECT COUNT(*) FROM donations WHERE status = 're
   <link rel="stylesheet" href="../assets/sidebar_admin.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/styles.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/donations.css?v=<?php echo time(); ?>">
-  <style>
-    /* Additional styles for modals and buttons */
-    .modal {
-      display: none;
-      position: fixed;
-      z-index: 1000;
-      left: 0;
-      top: 0;
-      width: 100%;
-      height: 100%;
-      background-color: rgba(0, 0, 0, 0.5);
-      align-items: center;
-      justify-content: center;
-    }
-    
-    .modal.active {
-      display: flex;
-    }
-    
-    .modal-content {
-      background-color: white;
-      border-radius: 8px;
-      width: 90%;
-      max-width: 600px;
-      max-height: 90vh;
-      overflow-y: auto;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-    }
-    
-    .modal-wide {
-      max-width: 800px;
-    }
-    
-    .modal-header {
-      padding: 1.5rem;
-      border-bottom: 1px solid #eee;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    
-    .modal-title {
-      margin: 0;
-      font-size: 1.5rem;
-      color: #333;
-    }
-    
-    .close-modal {
-      background: none;
-      border: none;
-      font-size: 1.5rem;
-      cursor: pointer;
-      color: #999;
-    }
-    
-    .close-modal:hover {
-      color: #333;
-    }
-    
-    .form-group {
-      margin-bottom: 1rem;
-      padding: 0 1.5rem;
-    }
-    
-    .form-row {
-      display: flex;
-      gap: 1rem;
-      padding: 0 1.5rem;
-    }
-    
-    .form-row .form-group {
-      flex: 1;
-      padding: 0;
-    }
-    
-    label {
-      display: block;
-      margin-bottom: 0.5rem;
-      font-weight: 600;
-      color: #333;
-    }
-    
-    input, select, textarea {
-      width: 100%;
-      padding: 0.75rem;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      font-size: 1rem;
-    }
-    
-    .modal-footer {
-      padding: 1.5rem;
-      border-top: 1px solid #eee;
-      display: flex;
-      justify-content: flex-end;
-      gap: 1rem;
-    }
-    
-    .btn-submit {
-      background-color: #dc3545;
-      color: white;
-      border: none;
-      padding: 0.75rem 1.5rem;
-      border-radius: 4px;
-      cursor: pointer;
-      font-weight: 600;
-    }
-    
-    .btn-secondary {
-      background-color: #6c757d;
-      color: white;
-      border: none;
-      padding: 0.75rem 1.5rem;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    
-    .btn-action {
-      padding: 0.4rem 0.8rem;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 0.85rem;
-      margin-right: 0.25rem;
-    }
-    
-    .btn-view {
-      background-color: #17a2b8;
-      color: white;
-    }
-    
-    .btn-edit {
-      background-color: #28a745;
-      color: white;
-    }
-    
-    .btn-delete {
-      background-color: #dc3545;
-      color: white;
-    }
-    
-    .btn-quick {
-      padding: 0.3rem 0.6rem;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 0.8rem;
-      margin-right: 0.25rem;
-    }
-    
-    .btn-approve {
-      background-color: #28a745;
-      color: white;
-    }
-    
-    .btn-reject {
-      background-color: #dc3545;
-      color: white;
-    }
-    
-    .btn-complete {
-      background-color: #17a2b8;
-      color: white;
-    }
-    
-    .btn-pending {
-      background-color: #ffc107;
-      color: #333;
-    }
-    
-    .donation-detail-card {
-      padding: 1.5rem;
-    }
-    
-    .detail-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 1.5rem;
-      padding-bottom: 1rem;
-      border-bottom: 1px solid #eee;
-    }
-    
-    .detail-section {
-      margin-bottom: 1.5rem;
-    }
-    
-    .detail-section h4 {
-      margin-bottom: 0.75rem;
-      color: #333;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    
-    .detail-section p {
-      margin-bottom: 0.5rem;
-      line-height: 1.5;
-    }
-    
-    .blood-badge {
-      display: inline-block;
-      padding: 0.25rem 0.5rem;
-      background-color: #dc3545;
-      color: white;
-      border-radius: 4px;
-      font-weight: bold;
-    }
-    
-    .approval-info-section {
-      padding: 1.5rem;
-      border-bottom: 1px solid #eee;
-    }
-    
-    .donor-card {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-    }
-    
-    .donor-avatar {
-      width: 50px;
-      height: 50px;
-      border-radius: 50%;
-      background-color: #dc3545;
-      color: white;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: bold;
-      font-size: 1.2rem;
-    }
-    
-    .bulk-summary {
-      padding: 1.5rem;
-      border-bottom: 1px solid #eee;
-    }
-    
-    .type-breakdown, .status-breakdown {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin-top: 0.5rem;
-      flex-wrap: wrap;
-    }
-
-    .error-message {
-      padding: 1rem;
-      background-color: #f8d7da;
-      color: #721c24;
-      border: 1px solid #f5c6cb;
-      border-radius: 4px;
-      margin: 1rem;
-      text-align: center;
-    }
-  </style>
 </head>
 <body>
   <?php include 'sidebar.php'; ?>
@@ -747,7 +629,8 @@ $rejected_count = $pdo->query("SELECT COUNT(*) FROM donations WHERE status = 're
                 <th>Donor</th>
                 <th>Type & Value</th>
                 <th>Date</th>
-                <th>Status & Quick Actions</th>
+                <th>Status</th>
+                <th>Quick Actions</th>
                 <th>Approval Info</th>
                 <th>Actions</th>
               </tr>
@@ -833,44 +716,43 @@ $rejected_count = $pdo->query("SELECT COUNT(*) FROM donations WHERE status = 're
                     </div>
                   </td>
                   <td>
-                    <div class="status-actions">
-                      <span class="status-badge <?= $statusClass ?>">
-                        <?= ucfirst($status) ?>
-                      </span>
-                      
-                      <div class="quick-actions" style="margin-top: 0.5rem;">
-                        <?php if (in_array($status, ['pending', 'scheduled'])): ?>
-                          <?php if ($d['donation_type'] === 'blood'): ?>
-                            <button type="button" class="btn-quick btn-approve" 
-                                    onclick="openApprovalModal('<?= $d['donation_id'] ?>', '<?= $d['donation_type'] ?>', 'confirmed', '<?= htmlspecialchars(addslashes($d['donor_name'])) ?>')">
-                              <i class="fas fa-check"></i> Confirm
-                            </button>
-                            <button type="button" class="btn-quick btn-reject" 
-                                    onclick="openApprovalModal('<?= $d['donation_id'] ?>', '<?= $d['donation_type'] ?>', 'cancelled', '<?= htmlspecialchars(addslashes($d['donor_name'])) ?>')">
-                              <i class="fas fa-times"></i> Cancel
-                            </button>
-                          <?php else: ?>
-                            <button type="button" class="btn-quick btn-approve" 
-                                    onclick="openApprovalModal('<?= $d['donation_id'] ?>', '<?= $d['donation_type'] ?>', 'approved', '<?= htmlspecialchars(addslashes($d['donor_name'])) ?>')">
-                              <i class="fas fa-check"></i> Approve
-                            </button>
-                            <button type="button" class="btn-quick btn-reject" 
-                                    onclick="openApprovalModal('<?= $d['donation_id'] ?>', '<?= $d['donation_type'] ?>', 'rejected', '<?= htmlspecialchars(addslashes($d['donor_name'])) ?>')">
-                              <i class="fas fa-times"></i> Reject
-                            </button>
-                          <?php endif; ?>
-                        <?php elseif ($status === 'confirmed' && $d['donation_type'] === 'blood'): ?>
-                          <button type="button" class="btn-quick btn-complete" 
-                                  onclick="openApprovalModal('<?= $d['donation_id'] ?>', '<?= $d['donation_type'] ?>', 'completed', '<?= htmlspecialchars(addslashes($d['donor_name'])) ?>')">
-                            <i class="fas fa-check-double"></i> Complete
+                    <span class="status-badge <?= $statusClass ?>">
+                      <?= ucfirst($status) ?>
+                    </span>
+                  </td>
+                  <td>
+                    <div class="quick-actions">
+                      <?php if (in_array($status, ['pending', 'scheduled'])): ?>
+                        <?php if ($d['donation_type'] === 'blood'): ?>
+                          <button type="button" class="btn-quick btn-approve" 
+                                  onclick="openApprovalModal('<?= $d['donation_id'] ?>', '<?= $d['donation_type'] ?>', 'confirmed', '<?= htmlspecialchars(addslashes($d['donor_name'])) ?>')">
+                            <i class="fas fa-check"></i> Confirm
                           </button>
-                        <?php elseif (in_array($status, ['approved', 'completed'])): ?>
-                          <button type="button" class="btn-quick btn-pending" 
-                                  onclick="openApprovalModal('<?= $d['donation_id'] ?>', '<?= $d['donation_type'] ?>', 'pending', '<?= htmlspecialchars(addslashes($d['donor_name'])) ?>')">
-                            <i class="fas fa-undo"></i> Revert
+                          <button type="button" class="btn-quick btn-reject" 
+                                  onclick="openApprovalModal('<?= $d['donation_id'] ?>', '<?= $d['donation_type'] ?>', 'cancelled', '<?= htmlspecialchars(addslashes($d['donor_name'])) ?>')">
+                            <i class="fas fa-times"></i> Cancel
+                          </button>
+                        <?php else: ?>
+                          <button type="button" class="btn-quick btn-approve" 
+                                  onclick="openApprovalModal('<?= $d['donation_id'] ?>', '<?= $d['donation_type'] ?>', 'approved', '<?= htmlspecialchars(addslashes($d['donor_name'])) ?>')">
+                            <i class="fas fa-check"></i> Approve
+                          </button>
+                          <button type="button" class="btn-quick btn-reject" 
+                                  onclick="openApprovalModal('<?= $d['donation_id'] ?>', '<?= $d['donation_type'] ?>', 'rejected', '<?= htmlspecialchars(addslashes($d['donor_name'])) ?>')">
+                            <i class="fas fa-times"></i> Reject
                           </button>
                         <?php endif; ?>
-                      </div>
+                      <?php elseif ($status === 'confirmed' && $d['donation_type'] === 'blood'): ?>
+                        <button type="button" class="btn-quick btn-complete" 
+                                onclick="openApprovalModal('<?= $d['donation_id'] ?>', '<?= $d['donation_type'] ?>', 'completed', '<?= htmlspecialchars(addslashes($d['donor_name'])) ?>')">
+                          <i class="fas fa-check-double"></i> Complete
+                        </button>
+                      <?php elseif (in_array($status, ['approved', 'completed'])): ?>
+                        <button type="button" class="btn-quick btn-pending" 
+                                onclick="openApprovalModal('<?= $d['donation_id'] ?>', '<?= $d['donation_type'] ?>', 'pending', '<?= htmlspecialchars(addslashes($d['donor_name'])) ?>')">
+                          <i class="fas fa-undo"></i> Revert
+                        </button>
+                      <?php endif; ?>
                     </div>
                   </td>
                   <td>
@@ -884,7 +766,7 @@ $rejected_count = $pdo->query("SELECT COUNT(*) FROM donations WHERE status = 're
                         </div>
                         <?php if ($d['approval_notes']): ?>
                           <div class="approval-notes" title="<?= htmlspecialchars($d['approval_notes']) ?>">
-                            <i class="fas fa-sticky-note"></i>
+                            <i class="fas fa-sticky-note"></i> Notes provided
                           </div>
                         <?php endif; ?>
                       <?php else: ?>
@@ -893,18 +775,23 @@ $rejected_count = $pdo->query("SELECT COUNT(*) FROM donations WHERE status = 're
                     </div>
                   </td>
                   <td class="actions">
-                    <button class="btn-action btn-view" 
-                            onclick="viewDonationDetails(<?= htmlspecialchars(json_encode($d), ENT_QUOTES, 'UTF-8') ?>)">
-                      <i class="fas fa-eye"></i> View
-                    </button>
-                    <button class="btn-action btn-edit" 
-                            onclick="openEditModal(<?= htmlspecialchars(json_encode($d), ENT_QUOTES, 'UTF-8') ?>)">
-                      <i class="fas fa-edit"></i> Edit
-                    </button>
-                    <button type="button" class="btn-action btn-delete" 
-                            onclick="confirmDeleteDonation('<?= $d['donation_id'] ?>', '<?= $d['donation_type'] ?>', '<?= htmlspecialchars(addslashes($d['donor_name'])) ?>')">
-                      <i class="fas fa-trash"></i> Delete
-                    </button>
+                    <div class="action-buttons">
+                     <button class="btn-action btn-view" 
+        data-donation='<?= htmlspecialchars(json_encode($d), ENT_QUOTES, 'UTF-8') ?>'
+        title="View Details">
+    <i class="fas fa-eye"></i>
+</button>
+<button class="btn-action btn-edit" 
+        data-donation='<?= htmlspecialchars(json_encode($d), ENT_QUOTES, 'UTF-8') ?>'
+        title="Edit Donation">
+    <i class="fas fa-edit"></i>
+</button>
+                      <button type="button" class="btn-action btn-delete" 
+                              onclick="confirmDeleteDonation('<?= $d['donation_id'] ?>', '<?= $d['donation_type'] ?>', '<?= htmlspecialchars(addslashes($d['donor_name'])) ?>')"
+                              title="Delete Donation">
+                        <i class="fas fa-trash"></i>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               <?php endforeach; ?>
@@ -1156,95 +1043,106 @@ $rejected_count = $pdo->query("SELECT COUNT(*) FROM donations WHERE status = 're
   </div>
 
   <script>
-    // Global variables for managing selections
-    let selectedDonations = new Set();
+   // Global variables for managing selections
+let selectedDonations = new Set();
 
-    function openCreateModal() {
-      document.getElementById('modalTitle').textContent = 'Record New Donation';
-      document.getElementById('formAction').name = 'create_donation';
-      document.getElementById('formAction').value = '1';
-      document.getElementById('donationForm').reset();
-      document.getElementById('donation_date').valueAsDate = new Date();
-      toggleDonationFields();
-      document.getElementById('donationModal').classList.add('active');
-    }
+// Enhanced modal functions with event prevention
+function openCreateModal(e) {
+    if (e) e.preventDefault();
+    document.getElementById('modalTitle').textContent = 'Record New Donation';
+    document.getElementById('formAction').name = 'create_donation';
+    document.getElementById('formAction').value = '1';
+    document.getElementById('donationForm').reset();
+    document.getElementById('donation_date').valueAsDate = new Date();
+    toggleDonationFields();
+    document.getElementById('donationModal').classList.add('active');
+}
 
-    function openEditModal(donation) {
-      document.getElementById('modalTitle').textContent = 'Edit Donation';
-      document.getElementById('formAction').name = 'update_donation';
-      document.getElementById('formAction').value = '1';
-      document.getElementById('donationId').value = donation.donation_id;
-      document.getElementById('donation_type').value = donation.donation_type;
-      document.getElementById('donor_id').value = donation.donor_id || '';
-      document.getElementById('donation_date').value = donation.donation_date;
-      document.getElementById('status').value = donation.status || 'pending';
-      
-      if (donation.donation_type === 'monetary') {
+function openEditModal(donation, e) {
+    if (e) e.preventDefault();
+    document.getElementById('modalTitle').textContent = 'Edit Donation';
+    document.getElementById('formAction').name = 'update_donation';
+    document.getElementById('formAction').value = '1';
+    document.getElementById('donationId').value = donation.donation_id;
+    document.getElementById('donation_type').value = donation.donation_type;
+    document.getElementById('donor_id').value = donation.donor_id || '';
+    document.getElementById('donation_date').value = donation.donation_date;
+    document.getElementById('status').value = donation.status || 'pending';
+    
+    if (donation.donation_type === 'monetary') {
         document.getElementById('amount').value = donation.amount;
         document.getElementById('payment_method').value = donation.payment_method || 'cash';
-      } else if (donation.donation_type === 'blood') {
+    } else if (donation.donation_type === 'blood') {
         document.getElementById('blood_type').value = donation.blood_type || '';
         document.getElementById('emergency_contact').value = donation.emergency_contact || '';
         document.getElementById('donation_location').value = donation.donation_location || '';
-      } else {
+    } else {
         document.getElementById('item_description').value = donation.item_description || '';
         document.getElementById('quantity').value = donation.quantity || 1;
         document.getElementById('estimated_value').value = donation.amount || '';
-      }
-      
-      toggleDonationFields();
-      document.getElementById('donationModal').classList.add('active');
     }
+    
+    toggleDonationFields();
+    document.getElementById('donationModal').classList.add('active');
+}
 
-    // Fixed view donation details function
-    function viewDonationDetails(donation) {
-      if (!donation) {
-        console.error('No donation data provided');
+function viewDonationDetails(donation, e) {
+    if (e) e.preventDefault();
+    if (!donation || typeof donation !== 'object') {
+        console.error('Invalid donation data provided');
+        alert('Error: Could not load donation details. Please try again.');
         return;
-      }
-      
-      const detailsDiv = document.getElementById('donationDetails');
-      if (!detailsDiv) {
+    }
+    
+    const detailsDiv = document.getElementById('donationDetails');
+    if (!detailsDiv) {
         console.error('Details container not found');
         return;
-      }
-      
-      try {
-        // Sanitize all string values
+    }
+    
+    try {
+        // Sanitize function
         const sanitize = (str) => {
-          if (!str) return '';
-          return String(str).replace(/[<>&"']/g, function(match) {
-            const entities = {'<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#x27;'};
-            return entities[match];
-          });
+            if (str === null || str === undefined) return '';
+            const text = String(str);
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         };
         
+        // Format currency
         const formatAmount = (amount) => {
-          const num = parseFloat(amount) || 0;
-          return num.toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            const num = parseFloat(amount) || 0;
+            return num.toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
         };
         
+        // Format date
         const formatDate = (dateStr) => {
-          if (!dateStr) return 'N/A';
-          try {
-            return new Date(dateStr).toLocaleDateString('en-PH', {
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric'
-            });
-          } catch (e) {
-            return sanitize(dateStr);
-          }
+            if (!dateStr) return 'N/A';
+            try {
+                const date = new Date(dateStr);
+                return isNaN(date.getTime()) ? sanitize(dateStr) : 
+                    date.toLocaleDateString('en-PH', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+            } catch (e) {
+                return sanitize(dateStr);
+            }
         };
         
-        // Determine badge class
+        // Determine badge class based on donation type
         const badgeClass = donation.donation_type === 'monetary' ? 'badge-primary' : 
-                          (donation.donation_type === 'blood' ? 'badge-danger' : 'badge-info');
+                            (donation.donation_type === 'blood' ? 'badge-danger' : 'badge-info');
         
         // Determine status class
         const statusClass = ['approved', 'completed'].includes(donation.status) ? 'approved' : 
-                           (['pending', 'scheduled'].includes(donation.status) ? 'pending' : 'rejected');
+                            (['pending', 'scheduled'].includes(donation.status) ? 'pending' : 'rejected');
         
+        // Build the details HTML
         let detailsHTML = `
             <div class="donation-detail-card">
                 <div class="detail-header">
@@ -1264,91 +1162,91 @@ $rejected_count = $pdo->query("SELECT COUNT(*) FROM donations WHERE status = 're
                         <h4><i class="fas fa-user"></i> Donor Information</h4>
                         <p><strong>Name:</strong> ${sanitize(donation.donor_name)}</p>
                         <p><strong>Email:</strong> ${sanitize(donation.donor_email)}</p>
-        `;
+                `;
         
         if (donation.donor_phone) {
-          detailsHTML += `<p><strong>Phone:</strong> ${sanitize(donation.donor_phone)}</p>`;
+            detailsHTML += `<p><strong>Phone:</strong> ${sanitize(donation.donor_phone)}</p>`;
         }
         
-        detailsHTML += '</div>';
+        detailsHTML += `</div>`;
         
         // Type-specific details
         if (donation.donation_type === 'monetary') {
-          detailsHTML += `
+            detailsHTML += `
                 <div class="detail-section">
                     <h4><i class="fas fa-money-bill-wave"></i> Monetary Donation</h4>
                     <p><strong>Amount:</strong> ₱${formatAmount(donation.amount)}</p>
                     <p><strong>Payment Method:</strong> ${sanitize(donation.payment_method)}</p>
-          `;
-          
-          if (donation.payment_receipt) {
-            detailsHTML += `<p><strong>Receipt:</strong> <a href="../${sanitize(donation.payment_receipt)}" target="_blank" rel="noopener">View Receipt</a></p>`;
-          }
-          
-          if (donation.message) {
-            detailsHTML += `<p><strong>Message:</strong> ${sanitize(donation.message)}</p>`;
-          }
-          
-          detailsHTML += '</div>';
-          
+                `;
+            
+            if (donation.payment_receipt) {
+                detailsHTML += `<p><strong>Receipt:</strong> <a href="../${sanitize(donation.payment_receipt)}" target="_blank" rel="noopener">View Receipt</a></p>`;
+            }
+            
+            if (donation.message) {
+                detailsHTML += `<p><strong>Message:</strong> ${sanitize(donation.message)}</p>`;
+            }
+            
+            detailsHTML += `</div>`;
+            
         } else if (donation.donation_type === 'blood') {
-          detailsHTML += `
+            detailsHTML += `
                 <div class="detail-section">
                     <h4><i class="fas fa-tint"></i> Blood Donation</h4>
                     <p><strong>Blood Type:</strong> <span class="blood-badge">${sanitize(donation.blood_type)}</span></p>
                     <p><strong>Emergency Contact:</strong> ${sanitize(donation.emergency_contact)}</p>
-          `;
-          
-          if (donation.donation_location) {
-            detailsHTML += `<p><strong>Location:</strong> ${sanitize(donation.donation_location)}</p>`;
-          }
-          
-          if (donation.last_donation_date) {
-            detailsHTML += `<p><strong>Last Donation:</strong> ${formatDate(donation.last_donation_date)}</p>`;
-          }
-          
-          if (donation.medical_history) {
-            detailsHTML += `<p><strong>Medical History:</strong> ${sanitize(donation.medical_history)}</p>`;
-          }
-          
-          detailsHTML += '</div>';
-          
+                `;
+            
+            if (donation.donation_location) {
+                detailsHTML += `<p><strong>Location:</strong> ${sanitize(donation.donation_location)}</p>`;
+            }
+            
+            if (donation.last_donation_date) {
+                detailsHTML += `<p><strong>Last Donation:</strong> ${formatDate(donation.last_donation_date)}</p>`;
+            }
+            
+            if (donation.medical_history) {
+                detailsHTML += `<p><strong>Medical History:</strong> ${sanitize(donation.medical_history)}</p>`;
+            }
+            
+            detailsHTML += `</div>`;
+            
         } else if (donation.donation_type === 'in_kind') {
-          detailsHTML += `
+            detailsHTML += `
                 <div class="detail-section">
                     <h4><i class="fas fa-box-open"></i> In-Kind Donation</h4>
                     <p><strong>Description:</strong> ${sanitize(donation.item_description)}</p>
-          `;
-          
-          if (donation.quantity && donation.quantity > 1) {
-            detailsHTML += `<p><strong>Quantity:</strong> ${sanitize(donation.quantity)}</p>`;
-          }
-          
-          if (donation.amount && donation.amount > 0) {
-            detailsHTML += `<p><strong>Estimated Value:</strong> ₱${formatAmount(donation.amount)}</p>`;
-          }
-          
-          if (donation.purpose) {
-            detailsHTML += `<p><strong>Purpose:</strong> ${sanitize(donation.purpose)}</p>`;
-          }
-          
-          detailsHTML += '</div>';
+                `;
+            
+            if (donation.quantity && donation.quantity > 1) {
+                detailsHTML += `<p><strong>Quantity:</strong> ${sanitize(donation.quantity)}</p>`;
+            }
+            
+            if (donation.amount && donation.amount > 0) {
+                detailsHTML += `<p><strong>Estimated Value:</strong> ₱${formatAmount(donation.amount)}</p>`;
+            }
+            
+            if (donation.purpose) {
+                detailsHTML += `<p><strong>Purpose:</strong> ${sanitize(donation.purpose)}</p>`;
+            }
+            
+            detailsHTML += `</div>`;
         }
         
         // General information
         detailsHTML += `
-                    <div class="detail-section">
-                        <h4><i class="fas fa-info-circle"></i> General Information</h4>
-                        <p><strong>Date:</strong> ${formatDate(donation.donation_date)}</p>
-                        <p><strong>Recorded by:</strong> ${sanitize(donation.recorded_by)}</p>
-        `;
+            <div class="detail-section">
+                <h4><i class="fas fa-info-circle"></i> General Information</h4>
+                <p><strong>Date:</strong> ${formatDate(donation.donation_date)}</p>
+                <p><strong>Recorded by:</strong> ${sanitize(donation.recorded_by)}</p>
+            `;
         
         if (donation.approved_by_name && donation.approved_date) {
-          detailsHTML += `<p><strong>Approved by:</strong> ${sanitize(donation.approved_by_name)} on ${formatDate(donation.approved_date)}</p>`;
+            detailsHTML += `<p><strong>Approved by:</strong> ${sanitize(donation.approved_by_name)} on ${formatDate(donation.approved_date)}</p>`;
         }
         
         if (donation.approval_notes) {
-          detailsHTML += `<p><strong>Notes:</strong> ${sanitize(donation.approval_notes)}</p>`;
+            detailsHTML += `<p><strong>Notes:</strong> ${sanitize(donation.approval_notes)}</p>`;
         }
         
         detailsHTML += `
@@ -1361,33 +1259,35 @@ $rejected_count = $pdo->query("SELECT COUNT(*) FROM donations WHERE status = 're
         
         const modal = document.getElementById('detailsModal');
         if (modal) {
-          modal.classList.add('active');
+            modal.classList.add('active');
         }
         
-      } catch (error) {
+    } catch (error) {
         console.error('Error creating donation details:', error);
         detailsDiv.innerHTML = '<div class="error-message">Error loading donation details. Please try again.</div>';
-      }
     }
+}
 
-    function closeModal() {
-      document.getElementById('donationModal').classList.remove('active');
-    }
+function closeModal(e) {
+    if (e) e.preventDefault();
+    document.getElementById('donationModal').classList.remove('active');
+}
 
-    function closeDetailsModal() {
-      document.getElementById('detailsModal').classList.remove('active');
-    }
+function closeDetailsModal(e) {
+    if (e) e.preventDefault();
+    document.getElementById('detailsModal').classList.remove('active');
+}
 
-    // Fixed approval modal function with better error handling
-    function openApprovalModal(donationId, donationType, newStatus, donorName) {
-      // Validate inputs
-      if (!donationId || !donationType || !newStatus || !donorName) {
+function openApprovalModal(donationId, donationType, newStatus, donorName, e) {
+    if (e) e.preventDefault();
+    // Validate inputs
+    if (!donationId || !donationType || !newStatus || !donorName) {
         console.error('Missing required parameters for approval modal');
         return;
-      }
-      
-      // Set modal data
-      const modalElements = {
+    }
+    
+    // Set modal data
+    const modalElements = {
         donationId: document.getElementById('approvalDonationId'),
         donationType: document.getElementById('approvalDonationType'),
         newStatus: document.getElementById('approvalNewStatus'),
@@ -1395,245 +1295,248 @@ $rejected_count = $pdo->query("SELECT COUNT(*) FROM donations WHERE status = 're
         submitBtn: document.getElementById('approvalSubmitBtn'),
         donorSummary: document.getElementById('donorSummary'),
         notesField: document.getElementById('approvalNotes')
-      };
-      
-      // Check if all required elements exist
-      const missingElements = Object.entries(modalElements).filter(([key, element]) => !element);
-      if (missingElements.length > 0) {
+    };
+    
+    // Check if all required elements exist
+    const missingElements = Object.entries(modalElements).filter(([key, element]) => !element);
+    if (missingElements.length > 0) {
         console.error('Missing modal elements:', missingElements.map(([key]) => key));
         alert('Error: Modal elements not found. Please refresh the page.');
         return;
-      }
-      
-      modalElements.donationId.value = donationId;
-      modalElements.donationType.value = donationType;
-      modalElements.newStatus.value = newStatus;
-      
-      // Define action properties
-      const actionConfig = {
+    }
+    
+    modalElements.donationId.value = donationId;
+    modalElements.donationType.value = donationType;
+    modalElements.newStatus.value = newStatus;
+    
+    // Define action properties
+    const actionConfig = {
         'approved': { text: 'Approve', color: '#28a745', icon: 'fa-check' },
         'rejected': { text: 'Reject', color: '#dc3545', icon: 'fa-times' },
         'pending': { text: 'Mark as Pending', color: '#ffc107', icon: 'fa-clock' },
         'confirmed': { text: 'Confirm', color: '#17a2b8', icon: 'fa-check-circle' },
         'completed': { text: 'Mark Complete', color: '#28a745', icon: 'fa-check-double' },
         'cancelled': { text: 'Cancel', color: '#6c757d', icon: 'fa-ban' }
-      };
-      
-      const config = actionConfig[newStatus];
-      if (!config) {
+    };
+    
+    const config = actionConfig[newStatus];
+    if (!config) {
         console.error('Unknown status:', newStatus);
         return;
-      }
-      
-      modalElements.title.textContent = `${config.text} Donation`;
-      modalElements.submitBtn.innerHTML = `<i class="fas ${config.icon}"></i> ${config.text}`;
-      modalElements.submitBtn.style.backgroundColor = config.color;
-      
-      // Create donor summary with safe HTML
-      const donorInitial = donorName.charAt(0).toUpperCase();
-      const safeId = String(donationId).replace(/[^0-9]/g, '');
-      const safeType = donationType.replace(/[^a-z_]/gi, '').replace('_', ' ').toUpperCase();
-      const safeName = donorName.replace(/[<>&"']/g, function(match) {
+    }
+    
+    modalElements.title.textContent = `${config.text} Donation`;
+    modalElements.submitBtn.innerHTML = `<i class="fas ${config.icon}"></i> ${config.text}`;
+    modalElements.submitBtn.style.backgroundColor = config.color;
+    
+    // Create donor summary with safe HTML
+    const donorInitial = donorName.charAt(0).toUpperCase();
+    const safeId = String(donationId).replace(/[^0-9]/g, '');
+    const safeType = donationType.replace(/[^a-z_]/gi, '').replace('_', ' ').toUpperCase();
+    const safeName = donorName.replace(/[<>&"']/g, function(match) {
         const entities = {'<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#x27;'};
         return entities[match];
-      });
-      
-      modalElements.donorSummary.innerHTML = `
-          <div class="donor-card">
-              <div class="donor-avatar">${donorInitial}</div>
-              <div class="donor-details">
-                  <strong>${safeName}</strong>
-                  <div style="color: var(--gray); font-size: 0.9rem;">Donation ID: #${safeId}</div>
-                  <div style="color: var(--gray); font-size: 0.9rem;">Type: ${safeType}</div>
-              </div>
-          </div>
-      `;
-      
-      modalElements.notesField.value = '';
-      
-      const modal = document.getElementById('approvalModal');
-      if (modal) {
+    });
+    
+    modalElements.donorSummary.innerHTML = `
+            <div class="donor-card">
+                <div class="donor-avatar">${donorInitial}</div>
+                <div class="donor-details">
+                    <strong>${safeName}</strong>
+                    <div style="color: var(--gray); font-size: 0.9rem;">Donation ID: #${safeId}</div>
+                    <div style="color: var(--gray); font-size: 0.9rem;">Type: ${safeType}</div>
+                </div>
+            </div>
+        `;
+    
+    modalElements.notesField.value = '';
+    
+    const modal = document.getElementById('approvalModal');
+    if (modal) {
         modal.classList.add('active');
         
         // Focus on notes field after modal opens
         setTimeout(() => {
-          if (modalElements.notesField) {
-            modalElements.notesField.focus();
-          }
+            if (modalElements.notesField) {
+                modalElements.notesField.focus();
+            }
         }, 150);
-      }
     }
+}
 
-    function closeApprovalModal() {
-      document.getElementById('approvalModal').classList.remove('active');
-    }
+function closeApprovalModal(e) {
+    if (e) e.preventDefault();
+    document.getElementById('approvalModal').classList.remove('active');
+}
 
-    function openBulkModal() {
-      updateBulkSummary();
-      document.getElementById('bulkModal').classList.add('active');
-    }
+function openBulkModal(e) {
+    if (e) e.preventDefault();
+    updateBulkSummary();
+    document.getElementById('bulkModal').classList.add('active');
+}
 
-    function closeBulkModal() {
-      document.getElementById('bulkModal').classList.remove('active');
-    }
+function closeBulkModal(e) {
+    if (e) e.preventDefault();
+    document.getElementById('bulkModal').classList.remove('active');
+}
 
-    function toggleSelectAll() {
-      const headerCheckbox = document.getElementById('headerSelect') || document.getElementById('selectAll');
-      const checkboxes = document.querySelectorAll('.donation-checkbox');
-      
-      checkboxes.forEach(checkbox => {
+function toggleSelectAll() {
+    const headerCheckbox = document.getElementById('headerSelect') || document.getElementById('selectAll');
+    const checkboxes = document.querySelectorAll('.donation-checkbox');
+    
+    checkboxes.forEach(checkbox => {
         checkbox.checked = headerCheckbox.checked;
-      });
-      
-      updateBulkActions();
-    }
+    });
+    
+    updateBulkActions();
+}
 
-    function updateBulkActions() {
-      const checkboxes = document.querySelectorAll('.donation-checkbox:checked');
-      const bulkButton = document.querySelector('button[onclick="openBulkModal()"]');
-      const bulkSubmitBtn = document.getElementById('bulkSubmitBtn');
-      
-      if (checkboxes.length > 0) {
+function updateBulkActions() {
+    const checkboxes = document.querySelectorAll('.donation-checkbox:checked');
+    const bulkButton = document.querySelector('button[onclick="openBulkModal()"]');
+    const bulkSubmitBtn = document.getElementById('bulkSubmitBtn');
+    
+    if (checkboxes.length > 0) {
         if (bulkButton) bulkButton.style.display = 'inline-flex';
         if (bulkSubmitBtn) bulkSubmitBtn.disabled = false;
-      } else {
+    } else {
         if (bulkButton) bulkButton.style.display = 'none';
         if (bulkSubmitBtn) bulkSubmitBtn.disabled = true;
-      }
-      
-      updateBulkSummary();
     }
+    
+    updateBulkSummary();
+}
 
-    function updateBulkSummary() {
-      const checkboxes = document.querySelectorAll('.donation-checkbox:checked');
-      const summaryElement = document.getElementById('bulkSummary');
-      
-      if (!summaryElement) return;
-      
-      if (checkboxes.length === 0) {
+function updateBulkSummary() {
+    const checkboxes = document.querySelectorAll('.donation-checkbox:checked');
+    const summaryElement = document.getElementById('bulkSummary');
+    
+    if (!summaryElement) return;
+    
+    if (checkboxes.length === 0) {
         summaryElement.innerHTML = '<p style="color: var(--gray);">No donations selected</p>';
-      } else {
+    } else {
         const typeCounts = {};
         const statusCounts = {};
         
         checkboxes.forEach(checkbox => {
-          const row = checkbox.closest('tr');
-          if (row) {
-            const type = row.dataset.type;
-            const status = row.dataset.status;
-            
-            typeCounts[type] = (typeCounts[type] || 0) + 1;
-            statusCounts[status] = (statusCounts[status] || 0) + 1;
-          }
+            const row = checkbox.closest('tr');
+            if (row) {
+                const type = row.dataset.type;
+                const status = row.dataset.status;
+                
+                typeCounts[type] = (typeCounts[type] || 0) + 1;
+                statusCounts[status] = (statusCounts[status] || 0) + 1;
+            }
         });
         
         let summaryHTML = `<div class="bulk-selection-summary">
-          <h4>Selected ${checkboxes.length} donation(s):</h4>
-          <div class="type-breakdown">
-            <strong>Types:</strong> `;
+            <h4>Selected ${checkboxes.length} donation(s):</h4>
+            <div class="type-breakdown">
+                <strong>Types:</strong> `;
         
         Object.entries(typeCounts).forEach(([type, count]) => {
-          const typeClass = type === 'monetary' ? 'badge-primary' : (type === 'blood' ? 'badge-danger' : 'badge-info');
-          summaryHTML += `<span class="badge ${typeClass}">${count} ${type}</span> `;
+            const typeClass = type === 'monetary' ? 'badge-primary' : (type === 'blood' ? 'badge-danger' : 'badge-info');
+            summaryHTML += `<span class="badge ${typeClass}">${count} ${type}</span> `;
         });
         
         summaryHTML += `</div><div class="status-breakdown"><strong>Status:</strong> `;
         
         Object.entries(statusCounts).forEach(([status, count]) => {
-          const statusClass = ['approved', 'completed'].includes(status) ? 'approved' : 
-                            (['pending', 'scheduled'].includes(status) ? 'pending' : 'rejected');
-          summaryHTML += `<span class="status-badge ${statusClass}">${count} ${status}</span> `;
+            const statusClass = ['approved', 'completed'].includes(status) ? 'approved' : 
+                                (['pending', 'scheduled'].includes(status) ? 'pending' : 'rejected');
+            summaryHTML += `<span class="status-badge ${statusClass}">${count} ${status}</span> `;
         });
         
         summaryHTML += '</div></div>';
         summaryElement.innerHTML = summaryHTML;
-      }
     }
+}
 
-    function filterStatus(status) {
-      const rows = document.querySelectorAll('.donation-row');
-      const buttons = document.querySelectorAll('.status-filter button');
-      
-      buttons.forEach(btn => btn.classList.remove('active'));
-      event.target.classList.add('active');
-      
-      rows.forEach(row => {
+function filterStatus(status) {
+    const rows = document.querySelectorAll('.donation-row');
+    const buttons = document.querySelectorAll('.status-filter button');
+    
+    buttons.forEach(btn => btn.classList.remove('active'));
+    event.target.classList.add('active');
+    
+    rows.forEach(row => {
         if (status === 'all') {
-          row.style.display = '';
+            row.style.display = '';
         } else {
-          const rowStatus = row.dataset.status;
-          const shouldShow = status === 'pending' ? 
-            ['pending', 'scheduled'].includes(rowStatus) :
-            status === 'approved' ? 
-            ['approved', 'completed', 'confirmed'].includes(rowStatus) :
-            status === 'rejected' ?
-            ['rejected', 'cancelled'].includes(rowStatus) :
-            rowStatus === status;
-          
-          row.style.display = shouldShow ? '' : 'none';
+            const rowStatus = row.dataset.status;
+            const shouldShow = status === 'pending' ? 
+                ['pending', 'scheduled'].includes(rowStatus) :
+                status === 'approved' ? 
+                ['approved', 'completed', 'confirmed'].includes(rowStatus) :
+                status === 'rejected' ?
+                ['rejected', 'cancelled'].includes(rowStatus) :
+                rowStatus === status;
+            
+            row.style.display = shouldShow ? '' : 'none';
         }
-      });
-    }
+    });
+}
 
-    function filterType(type) {
-      const rows = document.querySelectorAll('.donation-row');
-      const buttons = document.querySelectorAll('.status-filter button');
-      
-      buttons.forEach(btn => btn.classList.remove('active'));
-      event.target.classList.add('active');
-      
-      rows.forEach(row => {
+function filterType(type) {
+    const rows = document.querySelectorAll('.donation-row');
+    const buttons = document.querySelectorAll('.status-filter button');
+    
+    buttons.forEach(btn => btn.classList.remove('active'));
+    event.target.classList.add('active');
+    
+    rows.forEach(row => {
         const rowType = row.dataset.type;
         row.style.display = rowType === type ? '' : 'none';
-      });
-    }
+    });
+}
 
-    function toggleDonationFields() {
-      const type = document.getElementById('donation_type')?.value;
-      const monetaryFields = document.getElementById('monetary-fields');
-      const bloodFields = document.getElementById('blood-fields');
-      const inkindFields = document.getElementById('inkind-fields');
-      
-      if (!type) return;
-      
-      // Hide all fields
-      if (monetaryFields) monetaryFields.style.display = 'none';
-      if (bloodFields) bloodFields.style.display = 'none';
-      if (inkindFields) inkindFields.style.display = 'none';
-      
-      // Show relevant fields and update status options
-      const statusSelect = document.getElementById('status');
-      if (statusSelect) {
+function toggleDonationFields() {
+    const type = document.getElementById('donation_type')?.value;
+    const monetaryFields = document.getElementById('monetary-fields');
+    const bloodFields = document.getElementById('blood-fields');
+    const inkindFields = document.getElementById('inkind-fields');
+    
+    if (!type) return;
+    
+    // Hide all fields
+    if (monetaryFields) monetaryFields.style.display = 'none';
+    if (bloodFields) bloodFields.style.display = 'none';
+    if (inkindFields) inkindFields.style.display = 'none';
+    
+    // Show relevant fields and update status options
+    const statusSelect = document.getElementById('status');
+    if (statusSelect) {
         statusSelect.innerHTML = '';
         
         if (type === 'monetary') {
-          if (monetaryFields) monetaryFields.style.display = 'block';
-          statusSelect.innerHTML = `
-            <option value="pending">Pending</option>
-            <option value="approved">Pre-approved</option>
-          `;
+            if (monetaryFields) monetaryFields.style.display = 'block';
+            statusSelect.innerHTML = `
+                <option value="pending">Pending</option>
+                <option value="approved">Pre-approved</option>
+            `;
         } else if (type === 'blood') {
-          if (bloodFields) bloodFields.style.display = 'block';
-          statusSelect.innerHTML = `
-            <option value="scheduled">Scheduled</option>
-            <option value="confirmed">Confirmed</option>
-          `;
+            if (bloodFields) bloodFields.style.display = 'block';
+            statusSelect.innerHTML = `
+                <option value="scheduled">Scheduled</option>
+                <option value="confirmed">Confirmed</option>
+            `;
         } else {
-          if (inkindFields) inkindFields.style.display = 'block';
-          statusSelect.innerHTML = `
-            <option value="pending">Pending</option>
-            <option value="approved">Pre-approved</option>
-          `;
+            if (inkindFields) inkindFields.style.display = 'block';
+            statusSelect.innerHTML = `
+                <option value="pending">Pending</option>
+                <option value="approved">Pre-approved</option>
+            `;
         }
-      }
     }
+}
 
-    // Fixed delete function with confirmation
-    function confirmDeleteDonation(donationId, donationType, donorName) {
-      const safeName = String(donorName).replace(/[<>&"']/g, '');
-      const safeId = String(donationId).replace(/[^0-9]/g, '');
-      
-      if (confirm(`Are you sure you want to delete the ${donationType} donation from ${safeName}? This action cannot be undone.`)) {
+function confirmDeleteDonation(donationId, donationType, donorName, e) {
+    if (e) e.preventDefault();
+    const safeName = String(donorName).replace(/[<>&"']/g, '');
+    const safeId = String(donationId).replace(/[^0-9]/g, '');
+    
+    if (confirm(`Are you sure you want to delete the ${donationType} donation from ${safeName}? This action cannot be undone.`)) {
         const form = document.createElement('form');
         form.method = 'POST';
         form.style.display = 'none';
@@ -1659,85 +1562,107 @@ $rejected_count = $pdo->query("SELECT COUNT(*) FROM donations WHERE status = 're
         
         document.body.appendChild(form);
         form.submit();
-      }
     }
+}
 
-    // Enhanced error handling for modal operations
-    function handleModalError(operation, error) {
-      console.error(`Modal ${operation} error:`, error);
-      alert(`An error occurred while ${operation}. Please refresh the page and try again.`);
-    }
+// Enhanced error handling for modal operations
+function handleModalError(operation, error) {
+    console.error(`Modal ${operation} error:`, error);
+    alert(`An error occurred while ${operation}. Please refresh the page and try again.`);
+}
 
-    // Auto-hide alerts
-    setTimeout(() => {
-      document.querySelectorAll('.alert').forEach(alert => {
+// Auto-hide alerts
+setTimeout(() => {
+    document.querySelectorAll('.alert').forEach(alert => {
         alert.style.transition = 'opacity 0.3s ease';
         alert.style.opacity = '0';
         setTimeout(() => alert.remove(), 300);
-      });
-    }, 5000);
+    });
+}, 5000);
 
-    // Improved modal closing - only close when clicking on the modal backdrop
-    document.addEventListener('click', function(e) {
-      if (e.target.classList.contains('modal')) {
+// Improved modal closing - only close when clicking on the modal backdrop
+document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('modal')) {
         if (e.target.id === 'donationModal') closeModal();
         if (e.target.id === 'approvalModal') closeApprovalModal();
         if (e.target.id === 'bulkModal') closeBulkModal();
         if (e.target.id === 'detailsModal') closeDetailsModal();
-      }
-    });
+    }
+});
 
-    // Add escape key handler for modals
-    document.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape') {
+// Add escape key handler for modals
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
         // Close any open modals
         const modals = document.querySelectorAll('.modal.active');
         modals.forEach(modal => {
-          modal.classList.remove('active');
+            modal.classList.remove('active');
         });
-      }
-    });
+    }
+});
 
-    // Initialize everything when DOM is ready
-    document.addEventListener('DOMContentLoaded', function() {
-      // Initialize date field
-      const donationDateField = document.getElementById('donation_date');
-      if (donationDateField) {
+// Initialize everything when DOM is ready
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize date field
+    const donationDateField = document.getElementById('donation_date');
+    if (donationDateField) {
         donationDateField.valueAsDate = new Date();
-      }
-      
-      // Initialize donation fields
-      toggleDonationFields();
-      updateBulkActions();
-      
-      // Add event listeners for checkboxes
-      const checkboxes = document.querySelectorAll('.donation-checkbox');
-      checkboxes.forEach(checkbox => {
+    }
+    
+    // Initialize donation fields
+    toggleDonationFields();
+    updateBulkActions();
+    
+    // Add event listeners for checkboxes
+    const checkboxes = document.querySelectorAll('.donation-checkbox');
+    checkboxes.forEach(checkbox => {
         checkbox.addEventListener('change', updateBulkActions);
-      });
-      
-      // Handle bulk form submission
-      const bulkForm = document.getElementById('bulkForm');
-      if (bulkForm) {
-        bulkForm.addEventListener('submit', function(e) {
-          const selectedCheckboxes = document.querySelectorAll('.donation-checkbox:checked');
-          
-          if (selectedCheckboxes.length === 0) {
-            e.preventDefault();
-            alert('Please select at least one donation.');
-            return;
-          }
-          
-          selectedCheckboxes.forEach(checkbox => {
-            const hiddenInput = document.createElement('input');
-            hiddenInput.type = 'hidden';
-            hiddenInput.name = 'selected_donations[]';
-            hiddenInput.value = checkbox.value;
-            this.appendChild(hiddenInput);
-          });
-        });
-      }
     });
+    
+    // Handle bulk form submission
+    const bulkForm = document.getElementById('bulkForm');
+    if (bulkForm) {
+        bulkForm.addEventListener('submit', function(e) {
+            const selectedCheckboxes = document.querySelectorAll('.donation-checkbox:checked');
+            
+            if (selectedCheckboxes.length === 0) {
+                e.preventDefault();
+                alert('Please select at least one donation.');
+                return;
+            }
+            
+            selectedCheckboxes.forEach(checkbox => {
+                const hiddenInput = document.createElement('input');
+                hiddenInput.type = 'hidden';
+                hiddenInput.name = 'selected_donations[]';
+                hiddenInput.value = checkbox.value;
+                this.appendChild(hiddenInput);
+            });
+        });
+    }
+    
+    // Update action button event listeners to prevent default behavior
+    document.querySelectorAll('.btn-view').forEach(button => {
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const donationData = JSON.parse(this.getAttribute('data-donation') || '{}');
+            viewDonationDetails(donationData, e);
+        });
+    });
+    
+    document.querySelectorAll('.btn-edit').forEach(button => {
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const donationData = JSON.parse(this.getAttribute('data-donation') || '{}');
+            openEditModal(donationData, e);
+        });
+    });
+    
+    // Add data attributes to buttons in PHP
+    // This will be done by modifying the PHP code below
+});
   </script>
 </body>
 </html>

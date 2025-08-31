@@ -250,6 +250,8 @@ $cache_buster = time(); // or use a version number that increments when events c
 // Modify your main query to include a comment that changes
 $query = "
     SELECT /* cache_bust_{$cache_buster} */ e.*, 
+           e.start_time,           -- Add this
+           e.end_time,            -- Add this
            COUNT(r.registration_id) AS registrations_count,
            ur.registration_id AS user_registered,
            ur.status AS user_status
@@ -274,15 +276,30 @@ $userRegistrations = $pdo->prepare("
     SELECT r.registration_id, r.event_id, r.full_name, r.email, r.age, r.payment_mode, 
            r.valid_id_path, r.documents_path, r.status, r.registration_date, r.registration_type,
            r.organization_name, r.contact_person, r.contact_email, r.pax_count, r.location,
-           e.title, e.event_date, e.event_end_date, e.duration_days, e.major_service, e.location as event_location,
+           e.title, e.event_date, e.event_end_date, e.duration_days, 
+           e.start_time, e.end_time,  -- Add these lines
+           e.major_service, e.location as event_location,
            e.fee, e.capacity
     FROM registrations r
     JOIN events e ON r.event_id = e.event_id
     WHERE r.user_id = ?
     ORDER BY e.event_date ASC
 ");
+
 $userRegistrations->execute([$userId]);
 $myRegistrations = $userRegistrations->fetchAll();
+
+// Helper function to format time display
+function formatTimeRange($startTime, $endTime) {
+    if (empty($startTime) || empty($endTime)) {
+        return '';
+    }
+    
+    $start = date('g:i A', strtotime($startTime));
+    $end = date('g:i A', strtotime($endTime));
+    
+    return "{$start} - {$end}";
+}
 
 
 // Get statistics - FIXED to match the main query logic
@@ -472,19 +489,27 @@ $userRegistrations = $userRegistrationsStmt->fetchAll();
     </span>
         </td>
         <td>
-                                            <div class="event-date-range">
-                <?php if ($durationDays == 1): ?>
-                    <div class="event-date-single">
-                        <span class="event-date-start"><?= date('M d, Y', $eventStartDate) ?></span>
-                        <div class="event-duration">Single Day</div>
-                    </div>
-                <?php else: ?>
-                    <div class="event-date-start"><?= date('M d, Y', $eventStartDate) ?></div>
-                    <div class="event-date-end">to <?= date('M d, Y', $eventEndDate) ?></div>
-                    <div class="event-duration"><?= $durationDays ?> days</div>
+            <div class="event-date-range">
+        <?php if ($durationDays == 1): ?>
+            <div class="event-date-single">
+                <span class="event-date-start"><?= date('M d, Y', $eventStartDate) ?></span>
+                <!-- Add time display -->
+                <?php if (!empty($e['start_time']) && !empty($e['end_time'])): ?>
+                    <span class="event-time"><?= formatTimeRange($e['start_time'], $e['end_time']) ?></span>
                 <?php endif; ?>
+                <div class="event-duration">Single Day</div>
             </div>
-        </td>
+        <?php else: ?>
+            <div class="event-date-start"><?= date('M d, Y', $eventStartDate) ?></div>
+            <div class="event-date-end">to <?= date('M d, Y', $eventEndDate) ?></div>
+            <!-- Add time for multi-day events -->
+            <?php if (!empty($e['start_time']) && !empty($e['end_time'])): ?>
+                <span class="event-time"><?= formatTimeRange($e['start_time'], $e['end_time']) ?></span>
+            <?php endif; ?>
+            <div class="event-duration"><?= $durationDays ?> days</div>
+        <?php endif; ?>
+    </div>
+</td>
                                         <td><?= htmlspecialchars($e['location']) ?></td>
                                         <td>
                                             <div class="registrations-badge <?= $isFull ? 'full' : '' ?>">
@@ -576,17 +601,25 @@ $userRegistrations = $userRegistrationsStmt->fetchAll();
                                         </td>
                                         <td>
                                             <div class="event-date-range">
-                                                <?php if ($durationDays == 1): ?>
-                                                    <div class="event-date-single">
-                                                        <span class="event-date-start"><?= date('M d, Y', $eventStartDate) ?></span>
-                                                        <div class="event-duration">Single Day</div>
-                                                    </div>
-                                                <?php else: ?>
-                                                    <div class="event-date-start"><?= date('M d, Y', $eventStartDate) ?></div>
-                                                    <div class="event-date-end">to <?= date('M d, Y', $eventEndDate) ?></div>
-                                                    <div class="event-duration"><?= $durationDays ?> days</div>
-                                                <?php endif; ?>
-                                            </div>
+        <?php if ($durationDays == 1): ?>
+            <div class="event-date-single">
+                <span class="event-date-start"><?= date('M d, Y', $eventStartDate) ?></span>
+                <!-- Add time display -->
+                <?php if (!empty($r['start_time']) && !empty($r['end_time'])): ?>
+                    <span class="event-time"><?= formatTimeRange($r['start_time'], $r['end_time']) ?></span>
+                <?php endif; ?>
+                <div class="event-duration">Single Day</div>
+            </div>
+        <?php else: ?>
+            <div class="event-date-start"><?= date('M d, Y', $eventStartDate) ?></div>
+            <div class="event-date-end">to <?= date('M d, Y', $eventEndDate) ?></div>
+            <!-- Add time for multi-day events -->
+            <?php if (!empty($r['start_time']) && !empty($r['end_time'])): ?>
+                <span class="event-time"><?= formatTimeRange($r['start_time'], $r['end_time']) ?></span>
+            <?php endif; ?>
+            <div class="event-duration"><?= $durationDays ?> days</div>
+        <?php endif; ?>
+    </div>
                                         </td>
                                         <td><?= htmlspecialchars($r['event_location']) ?></td>
                                         <td><?= htmlspecialchars($r['full_name']) ?></td>
@@ -2029,7 +2062,21 @@ function openRegisterModal(event) {
         const eventStartDate = new Date(event.event_date + 'T00:00:00');
         const eventEndDate = new Date((event.event_end_date || event.event_date) + 'T00:00:00');
         const durationDays = Math.ceil((eventEndDate - eventStartDate) / (1000 * 60 * 60 * 24)) + 1;
-        
+         // Format time display
+        let timeDisplay = '';
+        if (event.start_time && event.end_time) {
+            const startTime = new Date(`2000-01-01T${event.start_time}`);
+            const endTime = new Date(`2000-01-01T${event.end_time}`);
+            timeDisplay = startTime.toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+            }) + ' - ' + endTime.toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+            });
+        }
         // Format date display based on duration
         let dateDisplay;
         if (durationDays === 1) {

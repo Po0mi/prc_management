@@ -524,8 +524,14 @@ body.sidebar-collapsed .sessions-container {
 }
 
 .session-time {
-  font-size: 0.85rem;
-  color: var(--gray);
+    font-size: 0.8rem;
+    color: var(--blue);
+    font-weight: 500;
+    padding: 0.1rem 0.3rem;
+    background: rgba(33, 150, 243, 0.1);
+    border-radius: 4px;
+    display: inline-block;
+    margin: 0.2rem 0;
 }
 
 .fee-display {

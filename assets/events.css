@@ -485,21 +485,152 @@ body.sidebar-collapsed .events-container {
   margin-bottom: 0.2rem;
 }
 
+/* Enhanced Event DateTime Display in Tables */
 .event-datetime {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
 }
 
-.event-date {
-  font-weight: 500;
-  color: var(--dark);
+.event-date-range {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.event-date-single .event-date,
+.event-date-start {
+    font-weight: 600;
+    color: var(--dark);
+    font-size: 0.9rem;
+}
+
+.event-date-end {
+    font-size: 0.85rem;
+    color: var(--gray);
+    font-style: italic;
 }
 
 .event-time {
-  font-size: 0.85rem;
-  color: var(--gray);
+    font-size: 0.8rem;
+    color: var(--blue);
+    font-weight: 500;
+    padding: 0.1rem 0.3rem;
+    background: rgba(33, 150, 243, 0.1);
+    border-radius: 4px;
+    display: inline-block;
+    margin: 0.2rem 0;
 }
+
+.event-duration {
+    font-size: 0.75rem;
+    background: linear-gradient(135deg, var(--light) 0%, #e3f2fd 100%);
+    color: var(--blue);
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    display: inline-block;
+    margin-top: 0.2rem;
+    font-weight: 500;
+    border: 1px solid rgba(33, 150, 243, 0.2);
+}
+.ongoing-badge {
+    background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+    color: white;
+    padding: 0.2rem 0.5rem;
+    border-radius: 12px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    margin-top: 0.3rem;
+    display: inline-block;
+    animation: pulse 2s infinite;
+    box-shadow: 0 2px 4px rgba(255, 152, 0, 0.3);
+}
+
+.status-badge.ongoing {
+    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+    color: #856404;
+    border: 1px solid #f7dc6f;
+    animation: glow 2s ease-in-out infinite alternate;
+}
+
+.status-badge.ongoing i {
+    color: #ff9800;
+}
+
+/* Animations */
+@keyframes pulse {
+    0% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.8; transform: scale(1.05); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes glow {
+    from {
+        box-shadow: 0 0 5px rgba(255, 152, 0, 0.3);
+    }
+    to {
+        box-shadow: 0 0 15px rgba(255, 152, 0, 0.6), 0 0 25px rgba(255, 152, 0, 0.3);
+    }
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+        max-height: 0;
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+        max-height: 200px;
+    }
+}
+/* Form Notice Styling */
+.form-notice {
+    background: linear-gradient(135deg, #e8f5e8 0%, #f0f8f0 100%);
+    border: 1px solid #4caf50;
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 1rem 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+
+.form-notice i {
+    color: #4caf50;
+    font-size: 1.1rem;
+    margin-top: 0.1rem;
+    flex-shrink: 0;
+}
+
+.form-notice p {
+    margin: 0;
+    color: #2e7d32;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+/* Time Validation Styling */
+.form-group.time-error input[type="time"] {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.1);
+}
+
+.form-group.time-valid input[type="time"] {
+    border-color: #28a745;
+    box-shadow: 0 0 0 3px rgba(40, 167, 69, 0.1);
+}
+
+.time-validation-message {
+    color: #dc3545;
+    font-size: 0.8rem;
+    margin-top: 0.3rem;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+
 
 /* Status Badge - Updated to match inventory */
 .status-badge {
@@ -1102,6 +1233,19 @@ body.sidebar-collapsed .events-container {
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
 }
+.form-row .form-group input[type="time"] {
+    padding: 0.7rem;
+    border: 2px solid #e1e5e9;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    transition: border-color 0.3s ease;
+}
+
+.form-row .form-group input[type="time"]:focus {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+}
+
 
 .btn-submit {
   background: linear-gradient(
@@ -1783,6 +1927,8 @@ html {
     border-radius: 8px;
     color: var(--dark);
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    text-align: center;
+    min-width: 200px;
 }
 
 .date-range i {
@@ -1918,6 +2064,119 @@ html {
     background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
     color: #856404;
     border-color: #f7dc6f;
+}
+/* Table hover effects with time info */
+.data-table tbody tr:hover .event-time {
+    background: rgba(33, 150, 243, 0.2);
+    color: var(--dark);
+}
+
+.data-table tbody tr:hover .ongoing-badge {
+    transform: scale(1.05);
+    box-shadow: 0 4px 8px rgba(255, 152, 0, 0.4);
+}
+
+/* Registration View Time Display */
+.session-info-header .session-info-meta span {
+    display: inline-flex;
+    align-items: center;
+    margin-right: 1rem;
+    font-size: 0.9rem;
+    color: var(--gray);
+}
+
+.session-info-header .session-info-meta span i {
+    width: 16px;
+    text-align: center;
+    margin-right: 0.5rem;
+}
+
+/* Enhanced calendar integration */
+.calendar-day.has-ongoing-event {
+    border: 3px solid #ff9800;
+    background: linear-gradient(135deg, rgba(255, 152, 0, 0.1) 0%, rgba(255, 152, 0, 0.2) 100%);
+    animation: pulse-border 2s infinite;
+}
+
+@keyframes pulse-border {
+    0% { border-color: #ff9800; }
+    50% { border-color: #f57c00; }
+    100% { border-color: #ff9800; }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .date-range {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .date-range i {
+        transform: rotate(90deg);
+    }
+    
+    .start-date, .end-date {
+        min-width: 150px;
+        padding: 0.4rem 0.8rem;
+        font-size: 0.9rem;
+    }
+    
+    .event-datetime {
+        font-size: 0.8rem;
+    }
+    
+    .event-time {
+        font-size: 0.75rem;
+        padding: 0.1rem 0.2rem;
+    }
+    
+    .event-duration {
+        font-size: 0.7rem;
+        padding: 0.1rem 0.3rem;
+    }
+    
+    .ongoing-badge {
+        font-size: 0.65rem;
+        padding: 0.15rem 0.4rem;
+    }
+    
+    .session-info-meta {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    
+    .session-info-meta span {
+        margin-right: 0.5rem;
+        font-size: 0.8rem;
+    }
+}
+
+@media (max-width: 576px) {
+    .event-date-start,
+    .event-date-end {
+        font-size: 0.75rem;
+    }
+    
+    .event-time {
+        font-size: 0.7rem;
+    }
+    
+    .event-duration {
+        font-size: 0.65rem;
+    }
+    
+    .form-notice {
+        padding: 0.8rem;
+        font-size: 0.8rem;
+    }
+    
+    .date-preview {
+        padding: 0.8rem;
+    }
+    
+    .date-preview-header {
+        font-size: 0.9rem;
+    }
 }
 
 

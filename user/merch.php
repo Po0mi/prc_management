@@ -114,7 +114,8 @@ $categories = [
   <link rel="stylesheet" href="../assets/sidebar.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/styles.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/merch.css?v=<?php echo time(); ?>">
-     <link rel="stylesheet" href="../assets/header.css?v=<?php echo time(); ?>">
+  <link rel="stylesheet" href="../assets/dashboard.css?v=<?php echo time(); ?>">
+  <link rel="stylesheet" href="../assets/header.css?v=<?php echo time(); ?>">
 </head>
 <body>
   <?php 
@@ -131,10 +132,10 @@ $categories = [
   <div class="main-container">
     <!-- Page Header -->
     <div class="page-header">
-      <div class="header-content">
+      <div class="head-content">
         <h1>
           <i class="fas fa-store"></i> 
-          PRC Merchandise Store
+          PRC Iloilo Chapter
         </h1>
         <p>Support the Philippine Red Cross through official merchandise</p>
       </div>
@@ -158,8 +159,8 @@ $categories = [
         <p><strong>To purchase items:</strong></p>
         <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
           <li>Visit your nearest Philippine Red Cross chapter</li>
-          <li>Contact your local PRC office directly</li>
-          <li>Inquire about availability during Red Cross events</li>
+          <li>(033) 503-3393/09171170066. iloilo@redcross.org.ph Brgy. Danao, Bonifacio drive, 5000</li>
+          
         </ul>
         
         <p><strong>Stock levels shown are for reference only</strong> and may not reflect real-time availability. Please confirm product availability when visiting in person.</p>
@@ -314,7 +315,10 @@ $categories = [
       <?php endif; ?>
     </div>
   </div>
-
+  <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
+    <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
+    <script src="js/darkmode.js?v=<?php echo time(); ?>"></script>
+    <script src="js/header.js?v=<?php echo time(); ?>"></script>
   <script>
     // Merchandise store functionality
     document.addEventListener('DOMContentLoaded', function() {

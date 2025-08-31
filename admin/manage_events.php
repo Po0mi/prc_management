@@ -27,7 +27,7 @@ $events = [];
 $totalEvents = 0;
 $totalPages = 1;
 $stats = [];
-$totalStats = ['total' => 0, 'upcoming' => 0, 'past' => 0];
+$totalStats = ['total' => 0, 'upcoming' => 0, 'past' => 0, 'ongoing' => 0];
 
 date_default_timezone_set('Asia/Kuala_Lumpur');
 
@@ -73,60 +73,12 @@ function logDebug($message) {
 // Log current user role and permissions
 logDebug("User role: $user_role, User ID: $current_user_id, Allowed services: " . implode(', ', $allowedServices));
 
-// Function to check for event conflicts
-function checkEventConflicts($pdo, $startDate, $endDate, $eventId = null, $conflictMode = 'none') {
-    switch ($conflictMode) {
-        case 'none':
-            // No conflict checking - allow all events
-            return [];
-            
-        case 'same_time_only':
-            // Only conflict if events have exact same start AND end dates
-            $sql = "SELECT e.event_id, e.title, e.event_date as start_date, e.event_end_date as end_date
-                    FROM events e
-                    WHERE e.event_date = ? AND e.event_end_date = ?";
-            $params = [$startDate, $endDate];
-            break;
-            
-        case 'multi_day_only':
-            // Only conflict if one event spans multiple days and overlaps
-            $sql = "SELECT e.event_id, e.title, e.event_date as start_date, e.event_end_date as end_date
-                    FROM events e
-                    WHERE (e.event_date <= ? AND e.event_end_date >= ?) 
-                    AND (e.duration_days > 1 OR ? != ?)";
-            $params = [$endDate, $startDate, $startDate, $endDate];
-            break;
-            
-        case 'service_specific':
-            // Only conflict within the same service (requires additional parameter)
-            // This would need the service parameter passed in
-            return [];
-            
-        case 'overlap':
-        default:
-            // Original logic - any date overlap is a conflict
-            $sql = "SELECT e.event_id, e.title, e.event_date as start_date, e.event_end_date as end_date
-                    FROM events e
-                    WHERE e.event_date <= ? AND e.event_end_date >= ?";
-            $params = [$endDate, $startDate];
-            break;
-    }
-    
-    if ($eventId) {
-        $sql .= " AND e.event_id != ?";
-        $params[] = $eventId;
-    }
-    
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    return $stmt->fetchAll();
-}
-
 // Enhanced validation function with multi-day support
 function validateEventData($data, $allowedServices, $hasRestrictedAccess, $isCreate = false) {
     $errors = [];
     
-    $required = ['title', 'event_date', 'location', 'major_service'];
+    // Add start_time and end_time to required fields
+    $required = ['title', 'event_date', 'start_time', 'end_time', 'location', 'major_service'];
     foreach ($required as $field) {
         if (empty($data[$field])) {
             $errors[] = "Please fill all required fields";
@@ -134,16 +86,18 @@ function validateEventData($data, $allowedServices, $hasRestrictedAccess, $isCre
         }
     }
     
-    // Check service permission for CREATE operations
+     // Check service permission for CREATE operations
     if ($isCreate && $hasRestrictedAccess && !empty($allowedServices)) {
         if (!in_array($data['major_service'] ?? '', $allowedServices)) {
             $errors[] = "You don't have permission to create events for this service. You can only create events for: " . implode(', ', $allowedServices);
         }
     }
     
-    try {
+     try {
         $startDate = $data['event_date'] ?? '';
         $durationDays = isset($data['duration_days']) ? max(1, (int)$data['duration_days']) : 1;
+        $startTime = $data['start_time'] ?? '';
+        $endTime = $data['end_time'] ?? '';
         
         if (!DateTime::createFromFormat('Y-m-d', $startDate)) {
             $errors[] = "Invalid start date format. Please use YYYY-MM-DD.";
@@ -164,10 +118,30 @@ function validateEventData($data, $allowedServices, $hasRestrictedAccess, $isCre
             $errors[] = "Duration must be between 1 and 365 days.";
         }
         
+        // Validate time fields - NEW CODE
+        if (!empty($startTime) && !empty($endTime) && empty($errors)) {
+            $startTimestamp = strtotime($startDate . ' ' . $startTime);
+            $endTimestamp = strtotime($startDate . ' ' . $endTime);
+            
+            if ($startTimestamp === false) {
+                $errors[] = "Invalid start time format.";
+            } elseif ($endTimestamp === false) {
+                $errors[] = "Invalid end time format.";
+            } elseif ($endTimestamp <= $startTimestamp) {
+                $errors[] = "End time must be after start time.";
+            }
+            
+            // Minimum 1 hour duration
+            if ($endTimestamp - $startTimestamp < 3600) {
+                $errors[] = "Event must be at least 1 hour long.";
+            }
+        }
+        
     } catch (Exception $e) {
-        $errors[] = "Invalid date values: " . $e->getMessage();
+        $errors[] = "Invalid date/time values: " . $e->getMessage();
     }
     
+    // Rest of validation remains the same...
     global $majorServices;
     if (!in_array($data['major_service'], $majorServices)) {
         $errors[] = "Invalid major service selected.";
@@ -193,6 +167,8 @@ function validateEventData($data, $allowedServices, $hasRestrictedAccess, $isCre
             'event_date' => $startDate,
             'event_end_date' => $endDate ?? $startDate,
             'duration_days' => $durationDays,
+            'start_time' => trim($data['start_time'] ?? '09:00'), // NEW
+            'end_time' => trim($data['end_time'] ?? '17:00'),     // NEW
             'location' => trim($data['location'] ?? ''),
             'major_service' => trim($data['major_service'] ?? ''),
             'capacity' => $capacity,
@@ -236,6 +212,7 @@ function checkEventAccess($pdo, $eventId, $allowedServices, $hasRestrictedAccess
     }
 }
 
+// UPDATED: CREATE event handler - Remove conflict checking
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_event'])) {
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
         $errorMessage = "Security error: Invalid form submission. Please try again.";
@@ -247,51 +224,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_event'])) {
         
         if ($validation['valid']) {
             try {
-                // FIXED: Pass null instead of undefined $event_id
-                 $conflicts = [];
+                // DIRECTLY INSERT WITHOUT CONFLICT CHECK - UPDATED WITH TIME FIELDS
+                $stmt = $pdo->prepare("
+                    INSERT INTO events 
+                    (title, description, event_date, event_end_date, duration_days, start_time, end_time, location, major_service, capacity, fee, created_at, created_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
+                ");
                 
-               if (!empty($conflicts)) {
-            // This will never execute since $conflicts is always empty
-            $conflictMessages = array_map(function($conflict) {
-                return $conflict['title'] . ' (' . $conflict['start_date'] . ' - ' . $conflict['end_date'] . ')';
-            }, $conflicts);
-            $errorMessage = "Event dates conflict with existing events: " . implode(', ', $conflictMessages);
-        } else {
-            // Proceed directly to event creation
-            $stmt = $pdo->prepare("
-                INSERT INTO events 
-                (title, description, event_date, event_end_date, duration_days, location, major_service, capacity, fee, created_at, created_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
-            ");
-                    
                 $result = $stmt->execute([
-                $validation['data']['title'],
-                $validation['data']['description'],
-                $validation['data']['event_date'],
-                $validation['data']['event_end_date'],
-                $validation['data']['duration_days'],
-                $validation['data']['location'],
-                $validation['data']['major_service'],
-                $validation['data']['capacity'],
-                $validation['data']['fee'],
-                $current_user_id
-            ]);   
-                   if ($result) {
-                $newEventId = $pdo->lastInsertId();
-                logDebug("Successfully created event ID: $newEventId for service: " . $validation['data']['major_service'] . " by user: $current_user_id");
+                    $validation['data']['title'],
+                    $validation['data']['description'],
+                    $validation['data']['event_date'],
+                    $validation['data']['event_end_date'],
+                    $validation['data']['duration_days'],
+                    $validation['data']['start_time'],  // NEW
+                    $validation['data']['end_time'],    // NEW
+                    $validation['data']['location'],
+                    $validation['data']['major_service'],
+                    $validation['data']['capacity'],
+                    $validation['data']['fee'],
+                    $current_user_id
+                ]);
                 
-                $durationText = $validation['data']['duration_days'] > 1 ? 
-                    " ({$validation['data']['duration_days']} days)" : "";
-                $successMessage = "Event created successfully! Event ID: " . $newEventId . $durationText;
-                $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-            } else {
-                        $errorMessage = "Failed to create event. Please try again.";
-                logDebug("Failed to insert event into database");
-            }
-        }
-    } catch (PDOException $e) {
-        logDebug("Database error creating event: " . $e->getMessage());
-        $errorMessage = handleDatabaseError($e);
+                if ($result) {
+                    $newEventId = $pdo->lastInsertId();
+                    logDebug("Successfully created event ID: $newEventId for service: " . $validation['data']['major_service'] . " by user: $current_user_id");
+                    
+                    $durationText = $validation['data']['duration_days'] > 1 ? 
+                        " ({$validation['data']['duration_days']} days)" : "";
+                    $successMessage = "Event created successfully! Event ID: " . $newEventId . $durationText;
+                    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+                } else {
+                    $errorMessage = "Failed to create event. Please try again.";
+                    logDebug("Failed to insert event into database");
+                }
+                
+            } catch (PDOException $e) {
+                logDebug("Database error creating event: " . $e->getMessage());
+                $errorMessage = handleDatabaseError($e);
             }
         } else {
             logDebug("Event validation failed: " . implode(', ', $validation['errors']));
@@ -300,19 +270,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_event'])) {
     }
 }
 
-
-// Handle UPDATE event with conflict detection
+// UPDATED: UPDATE event handler - Remove conflict checking
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_event'])) {
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
         $errorMessage = "Security error: Invalid form submission. Please try again.";
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
     } else {
-         $event_id = (int)($_POST['event_id'] ?? 0);
+        $event_id = (int)($_POST['event_id'] ?? 0);
         
-        // Check access permission (creator or service permission)
-         if (!checkEventAccess($pdo, $event_id, $allowedServices, $hasRestrictedAccess, $current_user_id)) {
-        $errorMessage = "You don't have permission to edit this event.";
-    } else {
+        if (!checkEventAccess($pdo, $event_id, $allowedServices, $hasRestrictedAccess, $current_user_id)) {
+            $errorMessage = "You don't have permission to edit this event.";
+        } else {
             $validation = validateEventData($_POST, $allowedServices, $hasRestrictedAccess, false);
             
             if ($validation['valid'] && $event_id > 0) {
@@ -324,65 +292,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_event'])) {
                     if (!$eventData) {
                         $errorMessage = "Event not found.";
                     } else {
-                        // Check for conflicts (excluding current event)
-                        $conflicts = checkEventConflicts($pdo, $validation['data']['event_date'], $validation['data']['event_end_date'], $event_id);
+                        // Allow update if user has proper permissions
+                        $canUpdate = false;
+                        $newService = $_POST['major_service'];
                         
-                        if (!empty($conflicts)) {
-                            $conflictMessages = array_map(function($conflict) {
-                                return $conflict['title'] . ' (' . $conflict['start_date'] . ' - ' . $conflict['end_date'] . ')';
-                            }, $conflicts);
-                            $errorMessage = "Event dates conflict with existing events: " . implode(', ', $conflictMessages);
-                        } else {
-                            // Allow update if user has proper permissions
-                            $canUpdate = false;
-                            $newService = $_POST['major_service'];
-                            
-                            if ($eventData['created_by'] == $current_user_id) {
-                                // Creator can change to any service they have permission for
-                                $canUpdate = !$hasRestrictedAccess || in_array($newService, $allowedServices);
-                                if (!$canUpdate) {
-                                    $errorMessage = "You can only change the service to ones you have permission for.";
-                                }
-                            } else if (!$hasRestrictedAccess) {
-                                // Super admin can edit anything
-                                $canUpdate = true;
-                            } else {
-                                // Non-creator with restricted access: must have permission for both old and new service
-                                $canUpdate = in_array($eventData['major_service'], $allowedServices) && 
-                                            in_array($newService, $allowedServices);
-                                if (!$canUpdate) {
-                                    $errorMessage = "You don't have permission to edit this event or change it to the selected service.";
-                                }
+                        if ($eventData['created_by'] == $current_user_id) {
+                            $canUpdate = !$hasRestrictedAccess || in_array($newService, $allowedServices);
+                            if (!$canUpdate) {
+                                $errorMessage = "You can only change the service to ones you have permission for.";
                             }
+                        } else if (!$hasRestrictedAccess) {
+                            $canUpdate = true;
+                        } else {
+                            $canUpdate = in_array($eventData['major_service'], $allowedServices) && 
+                                        in_array($newService, $allowedServices);
+                            if (!$canUpdate) {
+                                $errorMessage = "You don't have permission to edit this event or change it to the selected service.";
+                            }
+                        }
+                        
+                        if ($canUpdate) {
+                            // DIRECTLY UPDATE WITHOUT CONFLICT CHECK - UPDATED WITH TIME FIELDS
+                            $stmt = $pdo->prepare("
+                                UPDATE events
+                                SET title = ?, description = ?, event_date = ?, event_end_date = ?, duration_days = ?,
+                                    start_time = ?, end_time = ?, location = ?, major_service = ?, capacity = ?, fee = ?
+                                WHERE event_id = ?
+                            ");
                             
-                            if ($canUpdate) {
-                                $stmt = $pdo->prepare("
-                                    UPDATE events
-                                    SET title = ?, description = ?, event_date = ?, event_end_date = ?, duration_days = ?,
-                                        location = ?, major_service = ?, capacity = ?, fee = ?
-                                    WHERE event_id = ?
-                                ");
-                                
-                                $result = $stmt->execute([
-                                    $validation['data']['title'],
-                                    $validation['data']['description'],
-                                    $validation['data']['event_date'],
-                                    $validation['data']['event_end_date'],
-                                    $validation['data']['duration_days'],
-                                    $validation['data']['location'],
-                                    $validation['data']['major_service'],
-                                    $validation['data']['capacity'],
-                                    $validation['data']['fee'],
-                                    $event_id
-                                ]);
-                                
-                                if ($result) {
-                                    logDebug("Event $event_id updated successfully by user $current_user_id");
-                                    $successMessage = "Event updated successfully!";
-                                    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-                                } else {
-                                    $errorMessage = "Failed to update event. Please try again.";
-                                }
+                            $result = $stmt->execute([
+                                $validation['data']['title'],
+                                $validation['data']['description'],
+                                $validation['data']['event_date'],
+                                $validation['data']['event_end_date'],
+                                $validation['data']['duration_days'],
+                                $validation['data']['start_time'],  // NEW
+                                $validation['data']['end_time'],    // NEW
+                                $validation['data']['location'],
+                                $validation['data']['major_service'],
+                                $validation['data']['capacity'],
+                                $validation['data']['fee'],
+                                $event_id
+                            ]);
+                            
+                            if ($result) {
+                                logDebug("Event $event_id updated successfully by user $current_user_id");
+                                $successMessage = "Event updated successfully!";
+                                $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+                            } else {
+                                $errorMessage = "Failed to update event. Please try again.";
                             }
                         }
                     }
@@ -573,17 +531,18 @@ try {
         }
     }
     
+    // UPDATED: Status filter conditions to use time-aware logic
     if ($statusFilter === 'upcoming') {
-        $whereConditions[] = "e.event_date >= CURDATE()";
+        $whereConditions[] = "CONCAT(e.event_date, ' ', e.start_time) > NOW()";
     } elseif ($statusFilter === 'past') {
-        $whereConditions[] = "e.event_end_date < CURDATE()";
+        $whereConditions[] = "CONCAT(COALESCE(e.event_end_date, e.event_date), ' ', e.end_time) < NOW()";
     } elseif ($statusFilter === 'ongoing') {
-        $whereConditions[] = "e.event_date <= CURDATE() AND e.event_end_date >= CURDATE()";
+        $whereConditions[] = "NOW() BETWEEN CONCAT(e.event_date, ' ', e.start_time) AND CONCAT(COALESCE(e.event_end_date, e.event_date), ' ', e.end_time)";
     }
     
     $whereClause = $whereConditions ? 'WHERE ' . implode(' AND ', $whereConditions) : '';
     
-    // Updated query to include end date and duration
+    // UPDATED: Main SELECT query with time fields and time-aware status
     $query = "
         SELECT SQL_CALC_FOUND_ROWS 
                e.event_id,
@@ -592,6 +551,8 @@ try {
                e.event_date,
                e.event_end_date,
                e.duration_days,
+               e.start_time,
+               e.end_time,
                e.location,
                e.major_service,
                e.capacity,
@@ -605,18 +566,18 @@ try {
                    ELSE 0 
                END as is_my_event,
                CASE 
-                   WHEN e.event_date > CURDATE() THEN 'upcoming'
-                   WHEN e.event_end_date < CURDATE() THEN 'past'
-                   WHEN e.event_date <= CURDATE() AND e.event_end_date >= CURDATE() THEN 'ongoing'
+                   WHEN NOW() < CONCAT(e.event_date, ' ', e.start_time) THEN 'upcoming'
+                   WHEN NOW() > CONCAT(COALESCE(e.event_end_date, e.event_date), ' ', e.end_time) THEN 'past'
+                   WHEN NOW() BETWEEN CONCAT(e.event_date, ' ', e.start_time) AND CONCAT(COALESCE(e.event_end_date, e.event_date), ' ', e.end_time) THEN 'ongoing'
                    ELSE 'upcoming'
                END as event_status
         FROM events e
         LEFT JOIN registrations r ON e.event_id = r.event_id
         LEFT JOIN users u ON e.created_by = u.user_id
         $whereClause
-        GROUP BY e.event_id, e.title, e.description, e.event_date, e.event_end_date, e.duration_days, e.location, 
-                 e.major_service, e.capacity, e.fee, e.created_at, e.created_by, u.email
-        ORDER BY e.event_date ASC
+        GROUP BY e.event_id, e.title, e.description, e.event_date, e.event_end_date, e.duration_days, 
+                 e.start_time, e.end_time, e.location, e.major_service, e.capacity, e.fee, e.created_at, e.created_by, u.email
+        ORDER BY e.event_date ASC, e.start_time ASC
         LIMIT ? OFFSET ?
     ";
     
@@ -653,9 +614,9 @@ try {
                 $stmt = $pdo->prepare("
                     SELECT 
                         COUNT(*) as total,
-                        SUM(CASE WHEN event_date >= CURDATE() THEN 1 ELSE 0 END) as upcoming,
-                        SUM(CASE WHEN event_end_date < CURDATE() THEN 1 ELSE 0 END) as past,
-                        SUM(CASE WHEN event_date <= CURDATE() AND event_end_date >= CURDATE() THEN 1 ELSE 0 END) as ongoing
+                        SUM(CASE WHEN CONCAT(event_date, ' ', start_time) > NOW() THEN 1 ELSE 0 END) as upcoming,
+                        SUM(CASE WHEN CONCAT(COALESCE(event_end_date, event_date), ' ', end_time) < NOW() THEN 1 ELSE 0 END) as past,
+                        SUM(CASE WHEN NOW() BETWEEN CONCAT(event_date, ' ', start_time) AND CONCAT(COALESCE(event_end_date, event_date), ' ', end_time) THEN 1 ELSE 0 END) as ongoing
                     FROM events
                     WHERE major_service = ? AND (major_service IN (" . str_repeat('?,', count($allowedServices) - 1) . "?) OR created_by = ?)
                 ");
@@ -669,9 +630,9 @@ try {
             $stmt = $pdo->prepare("
                 SELECT 
                     COUNT(*) as total,
-                    SUM(CASE WHEN event_date >= CURDATE() THEN 1 ELSE 0 END) as upcoming,
-                    SUM(CASE WHEN event_end_date < CURDATE() THEN 1 ELSE 0 END) as past,
-                    SUM(CASE WHEN event_date <= CURDATE() AND event_end_date >= CURDATE() THEN 1 ELSE 0 END) as ongoing
+                    SUM(CASE WHEN CONCAT(event_date, ' ', start_time) > NOW() THEN 1 ELSE 0 END) as upcoming,
+                    SUM(CASE WHEN CONCAT(COALESCE(event_end_date, event_date), ' ', end_time) < NOW() THEN 1 ELSE 0 END) as past,
+                    SUM(CASE WHEN NOW() BETWEEN CONCAT(event_date, ' ', start_time) AND CONCAT(COALESCE(event_end_date, event_date), ' ', end_time) THEN 1 ELSE 0 END) as ongoing
                 FROM events
                 WHERE major_service = ?
             ");
@@ -686,9 +647,9 @@ try {
         $stmt = $pdo->prepare("
             SELECT 
                 COUNT(*) as total,
-                SUM(CASE WHEN event_date >= CURDATE() THEN 1 ELSE 0 END) as upcoming,
-                SUM(CASE WHEN event_end_date < CURDATE() THEN 1 ELSE 0 END) as past,
-                SUM(CASE WHEN event_date <= CURDATE() AND event_end_date >= CURDATE() THEN 1 ELSE 0 END) as ongoing
+                SUM(CASE WHEN CONCAT(event_date, ' ', start_time) > NOW() THEN 1 ELSE 0 END) as upcoming,
+                SUM(CASE WHEN CONCAT(COALESCE(event_end_date, event_date), ' ', end_time) < NOW() THEN 1 ELSE 0 END) as past,
+                SUM(CASE WHEN NOW() BETWEEN CONCAT(event_date, ' ', start_time) AND CONCAT(COALESCE(event_end_date, event_date), ' ', end_time) THEN 1 ELSE 0 END) as ongoing
             FROM events
             WHERE major_service IN ($placeholders) OR created_by = ?
         ");
@@ -699,9 +660,9 @@ try {
         $stmt = $pdo->query("
             SELECT 
                 COUNT(*) as total,
-                SUM(CASE WHEN event_date >= CURDATE() THEN 1 ELSE 0 END) as upcoming,
-                SUM(CASE WHEN event_end_date < CURDATE() THEN 1 ELSE 0 END) as past,
-                SUM(CASE WHEN event_date <= CURDATE() AND event_end_date >= CURDATE() THEN 1 ELSE 0 END) as ongoing
+                SUM(CASE WHEN CONCAT(event_date, ' ', start_time) > NOW() THEN 1 ELSE 0 END) as upcoming,
+                SUM(CASE WHEN CONCAT(COALESCE(event_end_date, event_date), ' ', end_time) < NOW() THEN 1 ELSE 0 END) as past,
+                SUM(CASE WHEN NOW() BETWEEN CONCAT(event_date, ' ', start_time) AND CONCAT(COALESCE(event_end_date, event_date), ' ', end_time) THEN 1 ELSE 0 END) as ongoing
             FROM events
         ");
         $totalStats = $stmt->fetch(PDO::FETCH_ASSOC) ?: ['total' => 0, 'upcoming' => 0, 'past' => 0, 'ongoing' => 0];
@@ -713,9 +674,9 @@ try {
         if (checkEventAccess($pdo, $viewEvent, $allowedServices, $hasRestrictedAccess, $current_user_id)) {
             $stmt = $pdo->prepare("SELECT *, 
                 CASE 
-                    WHEN event_date > CURDATE() THEN 'upcoming'
-                    WHEN event_end_date < CURDATE() THEN 'past'
-                    WHEN event_date <= CURDATE() AND event_end_date >= CURDATE() THEN 'ongoing'
+                    WHEN NOW() < CONCAT(event_date, ' ', start_time) THEN 'upcoming'
+                    WHEN NOW() > CONCAT(COALESCE(event_end_date, event_date), ' ', end_time) THEN 'past'
+                    WHEN NOW() BETWEEN CONCAT(event_date, ' ', start_time) AND CONCAT(COALESCE(event_end_date, event_date), ' ', end_time) THEN 'ongoing'
                     ELSE 'upcoming'
                 END as event_status
                 FROM events WHERE event_id = ?");
@@ -1108,8 +1069,8 @@ if (!function_exists('get_role_color')) {
         </div>
       </div>
 
-      <!-- Events Table -->
-   <div class="events-table-wrapper">
+<!-- Events Table -->
+<div class="events-table-wrapper">
     <div class="table-header">
         <h2 class="table-title">
             <?php if ($serviceFilter): ?>
@@ -1122,7 +1083,7 @@ if (!function_exists('get_role_color')) {
         </h2>
     </div>
         
-         <?php if (empty($events)): ?>
+    <?php if (empty($events)): ?>
         <div class="empty-state">
             <i class="fas fa-inbox"></i>
             <h3>No events found</h3>
@@ -1134,7 +1095,7 @@ if (!function_exists('get_role_color')) {
             <?php endif; ?>
         </div>
     <?php else: ?>
-         <table class="data-table">
+        <table class="data-table">
             <thead>
                 <tr>
                     <th>Event Details</th>
@@ -1151,118 +1112,128 @@ if (!function_exists('get_role_color')) {
                 <?php foreach ($events as $event): 
                     $eventStartDate = strtotime($event['event_date']);
                     $eventEndDate = strtotime($event['event_end_date'] ?? $event['event_date']);
-                    $today = strtotime('today');
                     $durationDays = $event['duration_days'] ?? 1;
                     
-                    // Determine event status
+                    // NEW: Use time-aware status calculation
+                    $now = time();
+                    $eventStartDateTime = strtotime($event['event_date'] . ' ' . ($event['start_time'] ?? '09:00:00'));
+                    $eventEndDateTime = strtotime(($event['event_end_date'] ?? $event['event_date']) . ' ' . ($event['end_time'] ?? '17:00:00'));
+                    
+                    // Determine event status with time precision
                     $eventStatus = 'upcoming';
-                    if ($eventEndDate < $today) {
+                    if ($now > $eventEndDateTime) {
                         $eventStatus = 'past';
-                    } elseif ($eventStartDate <= $today && $eventEndDate >= $today) {
+                    } elseif ($now >= $eventStartDateTime && $now <= $eventEndDateTime) {
                         $eventStatus = 'ongoing';
                     }
                     
                     $isFull = $event['capacity'] > 0 && $event['registrations_count'] >= $event['capacity'];
                 ?>
-               <tr>
-                        <td>
-                            <div class="event-title"><?= htmlspecialchars($event['title']) ?></div>
-                            <div style="font-size: 0.75rem; color: var(--gray); margin-top: 0.2rem;">ID: #<?= $event['event_id'] ?></div>
-                            <?php if ($event['description']): ?>
-                                <div style="font-size: 0.85rem; color: var(--gray); margin-top: 0.2rem;">
-                                    <?= htmlspecialchars(substr($event['description'], 0, 80)) ?><?= strlen($event['description']) > 80 ? '...' : '' ?>
+                <tr>
+                    <td>
+                        <div class="event-title"><?= htmlspecialchars($event['title']) ?></div>
+                        <div style="font-size: 0.75rem; color: var(--gray); margin-top: 0.2rem;">ID: #<?= $event['event_id'] ?></div>
+                        <?php if ($event['description']): ?>
+                            <div style="font-size: 0.85rem; color: var(--gray); margin-top: 0.2rem;">
+                                <?= htmlspecialchars(substr($event['description'], 0, 80)) ?><?= strlen($event['description']) > 80 ? '...' : '' ?>
+                            </div>
+                        <?php endif; ?>
+                        <?php if ($eventStatus === 'ongoing'): ?>
+                            <span class="ongoing-badge">Ongoing</span>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <span class="event-service"><?= htmlspecialchars($event['major_service']) ?></span>
+                    </td>
+                    <td>
+                        <div class="event-datetime">
+                            <?php if ($durationDays == 1): ?>
+                                <div class="event-date-single">
+                                    <span class="event-date"><?= date('M d, Y', $eventStartDate) ?></span>
+                                    <span class="event-time">
+                                        <?= date('g:i A', strtotime($event['start_time'] ?? '09:00')) ?> - <?= date('g:i A', strtotime($event['end_time'] ?? '17:00')) ?>
+                                    </span>
+                                    <div class="event-duration">Single Day</div>
                                 </div>
+                            <?php else: ?>
+                                <div class="event-date-start"><?= date('M d, Y', $eventStartDate) ?></div>
+                                <div class="event-date-end">to <?= date('M d, Y', $eventEndDate) ?></div>
+                                <div class="event-duration"><?= $durationDays ?> days</div>
                             <?php endif; ?>
-                        </td>
-                   <td>
-                            <span class="event-service"><?= htmlspecialchars($event['major_service']) ?></span>
-                        </td>
-                        <td>
-                    <div class="event-datetime">
-                        <div class="event-date-range">
-                                <?php if ($durationDays == 1): ?>
-                                    <div class="event-date-single">
-                                        <span class="event-date-start"><?= date('M d, Y', $eventStartDate) ?></span>
-                                        <div class="event-duration">Single Day</div>
-                                    </div>
-                                <?php else: ?>
-                                    <div class="event-date-start"><?= date('M d, Y', $eventStartDate) ?></div>
-                                    <div class="event-date-end">to <?= date('M d, Y', $eventEndDate) ?></div>
-                                    <div class="event-duration"><?= $durationDays ?> days</div>
-                                <?php endif; ?>
-                            </div>
-                     </td>
-                        <td><?= htmlspecialchars($event['location']) ?></td>
-                        <td>
-                            <div class="fee-display">
-                                <?php if ($event['fee'] > 0): ?>
-                                    <span class="fee-amount">₱<?= number_format($event['fee'], 2) ?></span>
-                                <?php else: ?>
-                                    <span class="fee-free">FREE</span>
-                                <?php endif; ?>
-                            </div>
-                        </td>
-                        <td>
-                     <a href="?view_event=<?= $event['event_id'] ?>&<?= http_build_query(array_filter(['search' => $search, 'service' => $serviceFilter, 'status' => $statusFilter])) ?>" 
-                               class="registrations-badge <?= $isFull ? 'full' : '' ?>">
-                                <i class="fas fa-users"></i>
-                                <?= $event['registrations_count'] ?> / <?= $event['capacity'] ?: '∞' ?>
-                                <?php if ($isFull): ?>
-                                    <span style="font-size: 0.7rem; background: var(--prc-red); color: white; padding: 0.2rem 0.4rem; border-radius: 4px;">FULL</span>
-                                <?php endif; ?>
-                            </a>
-                        </td>
-                        <td>
-                    <span class="status-badge <?= $eventStatus ?>">
-                                <?php if ($eventStatus === 'upcoming'): ?>
-                                    <i class="fas fa-clock"></i> Upcoming
-                                <?php elseif ($eventStatus === 'ongoing'): ?>
-                                    <i class="fas fa-play-circle"></i> Ongoing
-                                <?php else: ?>
-                                    <i class="fas fa-check-circle"></i> Completed
-                                <?php endif; ?>
-                            </span>
-                        </td>
-                  <td class="actions">
-                            <a href="?view_event=<?= $event['event_id'] ?>&<?= http_build_query(array_filter(['search' => $search, 'service' => $serviceFilter, 'status' => $statusFilter])) ?>" 
-                               class="btn-action btn-view">
-                                <i class="fas fa-users"></i> View Registrations
-                            </a>
-                            <button class="btn-action btn-edit" onclick='openEditModal(<?= json_encode($event, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
-                                <i class="fas fa-edit"></i> Edit
+                        </div>
+                    </td>
+                    <td><?= htmlspecialchars($event['location']) ?></td>
+                    <td>
+                        <div class="fee-display">
+                            <?php if ($event['fee'] > 0): ?>
+                                <span class="fee-amount">₱<?= number_format($event['fee'], 2) ?></span>
+                            <?php else: ?>
+                                <span class="fee-free">FREE</span>
+                            <?php endif; ?>
+                        </div>
+                    </td>
+                    <td>
+                        <a href="?view_event=<?= $event['event_id'] ?>&<?= http_build_query(array_filter(['search' => $search, 'service' => $serviceFilter, 'status' => $statusFilter])) ?>" 
+                           class="registrations-badge <?= $isFull ? 'full' : '' ?>">
+                            <i class="fas fa-users"></i>
+                            <?= $event['registrations_count'] ?> / <?= $event['capacity'] ?: '∞' ?>
+                            <?php if ($isFull): ?>
+                                <span style="font-size: 0.7rem; background: var(--prc-red); color: white; padding: 0.2rem 0.4rem; border-radius: 4px;">FULL</span>
+                            <?php endif; ?>
+                        </a>
+                    </td>
+                    <td>
+                        <span class="status-badge <?= $eventStatus ?>">
+                            <?php if ($eventStatus === 'upcoming'): ?>
+                                <i class="fas fa-clock"></i> Upcoming
+                            <?php elseif ($eventStatus === 'ongoing'): ?>
+                                <i class="fas fa-play-circle"></i> Ongoing
+                            <?php else: ?>
+                                <i class="fas fa-check-circle"></i> Completed
+                            <?php endif; ?>
+                        </span>
+                    </td>
+                    <td class="actions">
+                        <a href="?view_event=<?= $event['event_id'] ?>&<?= http_build_query(array_filter(['search' => $search, 'service' => $serviceFilter, 'status' => $statusFilter])) ?>" 
+                           class="btn-action btn-view">
+                            <i class="fas fa-users"></i> View Registrations
+                        </a>
+                        <button class="btn-action btn-edit" onclick='openEditModal(<?= json_encode($event, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
+                            <i class="fas fa-edit"></i> Edit
+                        </button>
+                        <form method="POST" style="display: inline;" onsubmit="return confirmDelete('<?= htmlspecialchars($event['title'], ENT_QUOTES) ?>', <?= $event['registrations_count'] ?>);">
+                            <input type="hidden" name="delete_event" value="1">
+                            <input type="hidden" name="event_id" value="<?= $event['event_id'] ?>">
+                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                            <button type="submit" class="btn-action btn-delete">
+                                <i class="fas fa-trash"></i> Delete
                             </button>
-                            <form method="POST" style="display: inline;" onsubmit="return confirmDelete('<?= htmlspecialchars($event['title'], ENT_QUOTES) ?>', <?= $event['registrations_count'] ?>);">
-                                <input type="hidden" name="delete_event" value="1">
-                                <input type="hidden" name="event_id" value="<?= $event['event_id'] ?>">
-                                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-                                <button type="submit" class="btn-action btn-delete">
-                                    <i class="fas fa-trash"></i> Delete
-                     </form>
-                        </td>
-                    </tr>
+                        </form>
+                    </td>
+                </tr>
                 <?php endforeach; ?>
             </tbody>
         </table>
           
-          <?php if ($totalPages > 1): ?>
+        <?php if ($totalPages > 1): ?>
             <div class="pagination">
-              <?php if ($page > 1): ?>
-                <a href="?page=<?= $page-1 ?>&service=<?= urlencode($serviceFilter) ?>&status=<?= htmlspecialchars($statusFilter) ?>&search=<?= urlencode($search) ?>" class="page-link">
-                  <i class="fas fa-chevron-left"></i> Previous
-                </a>
-              <?php endif; ?>
+                <?php if ($page > 1): ?>
+                    <a href="?page=<?= $page-1 ?>&service=<?= urlencode($serviceFilter) ?>&status=<?= htmlspecialchars($statusFilter) ?>&search=<?= urlencode($search) ?>" class="page-link">
+                        <i class="fas fa-chevron-left"></i> Previous
+                    </a>
+                <?php endif; ?>
               
-              <span class="page-info">Page <?= $page ?> of <?= $totalPages ?> (<?= $totalEvents ?> total events)</span>
+                <span class="page-info">Page <?= $page ?> of <?= $totalPages ?> (<?= $totalEvents ?> total events)</span>
               
-              <?php if ($page < $totalPages): ?>
-                <a href="?page=<?= $page+1 ?>&service=<?= urlencode($serviceFilter) ?>&status=<?= htmlspecialchars($statusFilter) ?>&search=<?= urlencode($search) ?>" class="page-link">
-                  Next <i class="fas fa-chevron-right"></i>
-                </a>
-              <?php endif; ?>
+                <?php if ($page < $totalPages): ?>
+                    <a href="?page=<?= $page+1 ?>&service=<?= urlencode($serviceFilter) ?>&status=<?= htmlspecialchars($statusFilter) ?>&search=<?= urlencode($search) ?>" class="page-link">
+                        Next <i class="fas fa-chevron-right"></i>
+                    </a>
+                <?php endif; ?>
             </div>
-          <?php endif; ?>
         <?php endif; ?>
-      </div>
+    <?php endif; ?>
+</div>
     <?php endif; ?>
   </div>
 
@@ -1277,7 +1248,7 @@ if (!function_exists('get_role_color')) {
             </button>
         </div>
         
-        <form method="POST" id="eventForm">
+         <form method="POST" id="eventForm">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
             <input type="hidden" name="create_event" value="1" id="formAction">
             <input type="hidden" name="event_id" id="eventId">
@@ -1311,7 +1282,7 @@ if (!function_exists('get_role_color')) {
                 <?php endif; ?>
             </div>
             
-            <div class="form-row">
+             <div class="form-row">
                 <div class="form-group">
                     <label for="event_date">Start Date *</label>
                     <input type="date" id="event_date" name="event_date" required min="<?= date('Y-m-d') ?>">
@@ -1324,11 +1295,12 @@ if (!function_exists('get_role_color')) {
                 </div>
             </div>
 
+            <!-- SIMPLIFIED Date Preview - No Conflict Warnings -->
             <div class="date-preview-container" id="datePreviewContainer" style="display: none;">
                 <div class="date-preview">
                     <div class="date-preview-header">
                         <i class="fas fa-calendar-check"></i>
-                        <span>Event Date Range</span>
+                        <span>Event Schedule Preview</span>
                     </div>
                     <div class="date-preview-content">
                         <div class="date-range">
@@ -1351,9 +1323,22 @@ if (!function_exists('get_role_color')) {
                 </div>
             </div>
             
-            <div class="form-group">
+             <div class="form-group">
                 <label for="location">Location *</label>
                 <input type="text" id="location" name="location" required placeholder="Event location" maxlength="255">
+            </div>
+            
+            <!-- NEW: Time Fields Section -->
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="start_time">Start Time *</label>
+                    <input type="time" id="start_time" name="start_time" required value="09:00">
+                </div>
+                
+                <div class="form-group">
+                    <label for="end_time">End Time *</label>
+                    <input type="time" id="end_time" name="end_time" required value="17:00">
+                </div>
             </div>
             
             <div class="form-row">
@@ -1370,6 +1355,11 @@ if (!function_exists('get_role_color')) {
                 </div>
             </div>
             
+            <div class="form-notice">
+                <i class="fas fa-info-circle"></i>
+                <p>Events can be scheduled at any time without date restrictions. Multiple events can run simultaneously.</p>
+            </div>
+            
             <button type="submit" class="btn-submit" id="submitButton">
                 <i class="fas fa-save"></i> Save Event
             </button>
@@ -1380,350 +1370,28 @@ if (!function_exists('get_role_color')) {
   <!-- CRITICAL: JavaScript Variables from PHP -->
   <script>
  
-  // Define JavaScript variables from PHP
-  const userRole = '<?= $user_role ?>';
-  const hasRestrictedAccess = <?= $hasRestrictedAccess ? 'true' : 'false' ?>;
-  const allowedServices = <?= json_encode($allowedServices) ?>;
-  const currentUserId = <?= $current_user_id ?>;
+// Define JavaScript variables from PHP
+const userRole = '<?= $user_role ?>';
+const hasRestrictedAccess = <?= $hasRestrictedAccess ? 'true' : 'false' ?>;
+const allowedServices = <?= json_encode($allowedServices) ?>;
+const currentUserId = <?= $current_user_id ?>;
 
-  console.log('User Role:', userRole);
-  console.log('Has Restricted Access:', hasRestrictedAccess);
-  console.log('Allowed Services:', allowedServices);
-  console.log('Current User ID:', currentUserId);
+console.log('User Role:', userRole);
+console.log('Has Restricted Access:', hasRestrictedAccess);
+console.log('Allowed Services:', allowedServices);
+console.log('Current User ID:', currentUserId);
 
-  // Main JavaScript Functions
-  function openCreateModal() {
-      document.getElementById('modalTitle').textContent = 'Create New Event';
-      document.getElementById('formAction').name = 'create_event';
-      document.getElementById('eventForm').reset();
-      document.getElementById('event_date').min = new Date().toISOString().split('T')[0];
-      
-      // For create modal, filter services if restricted access
-      const serviceSelect = document.getElementById('major_service');
-      const serviceHint = document.getElementById('serviceHint');
-      
-      if (hasRestrictedAccess && allowedServices && allowedServices.length > 0) {
-          // Disable options not in allowedServices for creation
-          Array.from(serviceSelect.options).forEach(option => {
-              if (option.value === '') {
-                  option.disabled = false;
-                  option.style.display = 'block';
-              } else if (!allowedServices.includes(option.value)) {
-                  option.disabled = true;
-                  option.style.display = 'none';
-              } else {
-                  option.disabled = false;
-                  option.style.display = 'block';
-              }
-          });
-      } else {
-          // Show all options for super admin
-          Array.from(serviceSelect.options).forEach(option => {
-              option.disabled = false;
-              option.style.display = 'block';
-          });
-      }
-      
-      document.getElementById('eventModal').classList.add('active');
-  }
+// UPDATED JavaScript for events.php - Remove all conflict checking
 
-  function openEditModal(event) {
-      console.log('Opening edit modal for event:', event);
-      
-      document.getElementById('modalTitle').textContent = 'Edit Event';
-      document.getElementById('formAction').name = 'update_event';
-      document.getElementById('eventId').value = event.event_id;
-      document.getElementById('title').value = event.title;
-      document.getElementById('description').value = event.description || '';
-      document.getElementById('major_service').value = event.major_service;
-      document.getElementById('event_date').value = event.event_date;
-      document.getElementById('location').value = event.location;
-      document.getElementById('capacity').value = event.capacity || '';
-      document.getElementById('fee').value = event.fee || '';
-      
-      if (hasRestrictedAccess && allowedServices && allowedServices.length > 0) {
-          const isCreator = event.created_by == currentUserId;
-          
-          Array.from(serviceSelect.options).forEach(option => {
-              if (option.value === '') {
-                  option.disabled = false;
-                  option.style.display = 'block';
-              } else if (option.value === event.major_service) {
-                  // Always show current service
-                  option.disabled = false;
-                  option.style.display = 'block';
-              } else if (isCreator && allowedServices.includes(option.value)) {
-                  // Creator can change to services they have permission for
-                  option.disabled = false;
-                  option.style.display = 'block';
-              } else if (!isCreator && allowedServices.includes(option.value)) {
-                  // Non-creator can only change between allowed services
-                  option.disabled = false;
-                  option.style.display = 'block';
-              } else {
-                  option.disabled = true;
-                  option.style.display = 'none';
-              }
-          });
-          
-          if (serviceHint) {
-              if (isCreator) {
-                  serviceHint.textContent = 'You can change to services you have permission for';
-              } else {
-                  serviceHint.textContent = 'You can only change between services you have permission for';
-              }
-              serviceHint.style.display = 'block';
-          }
-      } else {
-          // Show all options for super admin
-          Array.from(serviceSelect.options).forEach(option => {
-              option.disabled = false;
-              option.style.display = 'block';
-          });
-          if (serviceHint) {
-              serviceHint.style.display = 'none';
-          }
-      }
-      
-      // Set proper date minimum
-      const eventDate = new Date(event.event_date);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      if (eventDate < today) {
-          document.getElementById('event_date').min = event.event_date;
-      } else {
-          document.getElementById('event_date').min = new Date().toISOString().split('T')[0];
-      }
-      
-      document.getElementById('eventModal').classList.add('active');
-  }
-
-  function closeModal() {
-      document.getElementById('eventModal').classList.remove('active');
-  }
-
-  function filterStatus(status) {
-      const urlParams = new URLSearchParams(window.location.search);
-      
-      // Preserve service filter when changing status
-      const currentService = urlParams.get('service');
-      
-      if (status === 'all') {
-          urlParams.delete('status');
-      } else {
-          urlParams.set('status', status);
-      }
-      
-      // Keep the service filter if it exists
-      if (currentService) {
-          urlParams.set('service', currentService);
-      }
-      
-      // Reset to page 1 when filtering
-      urlParams.delete('page');
-      
-      window.location.search = urlParams.toString();
-  }
-
-  function confirmDelete(title, registrationCount) {
-      if (registrationCount > 0) {
-          return confirm(`Are you sure you want to delete "${title}"?\n\nThis event has ${registrationCount} registration(s).\nYou should cancel all registrations first.`);
-      }
-      return confirm(`Are you sure you want to delete "${title}"?\n\nThis action cannot be undone.`);
-  }
-
-  function confirmDeleteRegistration() {
-      return confirm('Are you sure you want to delete this registration?\n\nThis action cannot be undone.');
-  }
-
-  // Close modal when clicking outside
-  document.addEventListener('DOMContentLoaded', function() {
-      const eventModal = document.getElementById('eventModal');
-      if (eventModal) {
-          eventModal.addEventListener('click', function(e) {
-              if (e.target === this) {
-                  closeModal();
-              }
-          });
-      }
-
-      // Form validation with role-based restrictions
-      const eventForm = document.getElementById('eventForm');
-      if (eventForm) {
-          eventForm.addEventListener('submit', function(e) {
-              const eventDate = document.getElementById('event_date').value;
-              const title = document.getElementById('title').value.trim();
-              const location = document.getElementById('location').value.trim();
-              const majorService = document.getElementById('major_service').value;
-              const isCreating = document.getElementById('formAction').name === 'create_event';
-              
-              console.log('Form submission - Service:', majorService, 'IsCreating:', isCreating, 'Allowed:', allowedServices);
-              
-              // Basic validation
-              if (!title) {
-                  e.preventDefault();
-                  alert('Please enter an event title.');
-                  return;
-              }
-              
-              if (!location) {
-                  e.preventDefault();
-                  alert('Please enter a location.');
-                  return;
-              }
-              
-              if (!majorService) {
-                  e.preventDefault();
-                  alert('Please select a major service.');
-                  return;
-              }
-              
-              // Only check service permission for CREATE operations
-              if (isCreating && hasRestrictedAccess && allowedServices && allowedServices.length > 0) {
-                  if (!allowedServices.includes(majorService)) {
-                      e.preventDefault();
-                      alert("You don't have permission to create events for " + majorService + 
-                            "\n\nYou can only create events for: " + allowedServices.join(', '));
-                      return;
-                  }
-              }
-              
-              const selectedDate = new Date(eventDate);
-              const today = new Date();
-              today.setHours(0, 0, 0, 0);
-              
-              if (selectedDate < today && isCreating) {
-                  e.preventDefault();
-                  alert('Event date cannot be in the past for new events');
-                  return;
-              }
-              
-              // Visual feedback
-              const submitBtn = this.querySelector('.btn-submit');
-              if (submitBtn) {
-                  const originalText = submitBtn.innerHTML;
-                  submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-                  submitBtn.disabled = true;
-              }
-          });
-      }
-
-      // Auto-dismiss alerts after 5 seconds
-      const alerts = document.querySelectorAll('.alert');
-      alerts.forEach(alert => {
-          setTimeout(() => {
-              alert.style.opacity = '0';
-              alert.style.transform = 'translateY(-20px)';
-              setTimeout(() => {
-                  alert.remove();
-              }, 300);
-          }, 5000);
-      });
-
-      // Clear form submission state from browser history
-      if (window.history.replaceState) {
-          window.history.replaceState(null, null, window.location.href);
-      }
-
-      // Debug: Log current permissions
-      console.log('=== Event Management Permissions ===');
-      console.log('User Role:', userRole);
-      console.log('Has Restricted Access:', hasRestrictedAccess);
-      console.log('Allowed Services:', allowedServices);
-      console.log('Current User ID:', currentUserId);
-      console.log('===================================');
-  });
-
-  // Keyboard shortcuts
-  document.addEventListener('keydown', function(e) {
-      // Escape key to close modal
-      if (e.key === 'Escape') {
-          const modal = document.getElementById('eventModal');
-          if (modal && modal.classList.contains('active')) {
-              closeModal();
-          }
-      }
-      
-      // Ctrl/Cmd + N to create new event
-      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
-          e.preventDefault();
-          openCreateModal();
-      }
-  });
-
-  // Search form enhancement
-  document.addEventListener('DOMContentLoaded', function() {
-      const searchForm = document.querySelector('.search-box');
-      if (searchForm) {
-          const searchInput = searchForm.querySelector('input[name="search"]');
-          if (searchInput) {
-              // Clear search functionality
-              searchInput.addEventListener('keyup', function(e) {
-                  if (e.key === 'Escape') {
-                      this.value = '';
-                      searchForm.submit();
-                  }
-              });
-          }
-      }
-  });
-
-  // Enhanced table interactions
-  document.addEventListener('DOMContentLoaded', function() {
-      // Add hover effects for table rows
-      const tableRows = document.querySelectorAll('.data-table tbody tr');
-      tableRows.forEach(row => {
-          row.addEventListener('mouseenter', function() {
-              this.style.backgroundColor = '#f8f9fa';
-          });
-          
-          row.addEventListener('mouseleave', function() {
-              this.style.backgroundColor = '';
-          });
-      });
-
-      // Enhanced registration table interactions
-      const regRows = document.querySelectorAll('.registrations-table tbody tr');
-      regRows.forEach(row => {
-          row.addEventListener('mouseenter', function() {
-              this.style.backgroundColor = '#f8f9fa';
-          });
-          
-          row.addEventListener('mouseleave', function() {
-              this.style.backgroundColor = '';
-          });
-      });
-  });
-
-  // Touch/mobile enhancements
-  if ('ontouchstart' in window) {
-      document.addEventListener('DOMContentLoaded', function() {
-          // Add touch-friendly classes
-          document.body.classList.add('touch-device');
-          
-          // Enhance button interactions for touch
-          const buttons = document.querySelectorAll('button, .btn-action');
-          buttons.forEach(button => {
-              button.addEventListener('touchstart', function() {
-                  this.classList.add('touch-active');
-              });
-              
-              button.addEventListener('touchend', function() {
-                  setTimeout(() => {
-                      this.classList.remove('touch-active');
-                  }, 150);
-              });
-          });
-      });
-  }
-  let conflictCheckTimeout;
+// Global variables
 let currentEventId = null;
 
-// Enhanced date preview and conflict checking
-function updateDatePreview() {
+// 1. SIMPLIFIED date preview function WITHOUT conflict checking
+function updateEventDatePreview() {
     const startDateInput = document.getElementById('event_date');
     const durationInput = document.getElementById('duration_days');
+    const startTimeInput = document.getElementById('start_time');
+    const endTimeInput = document.getElementById('end_time');
     const previewContainer = document.getElementById('datePreviewContainer');
     const previewStartDate = document.getElementById('previewStartDate');
     const previewEndDate = document.getElementById('previewEndDate');
@@ -1731,118 +1399,64 @@ function updateDatePreview() {
     
     const startDate = startDateInput.value;
     const duration = parseInt(durationInput.value) || 1;
+    const startTime = startTimeInput ? startTimeInput.value : '09:00';
+    const endTime = endTimeInput ? endTimeInput.value : '17:00';
     
     if (startDate) {
         const start = new Date(startDate + 'T00:00:00');
         const end = new Date(start);
         end.setDate(end.getDate() + duration - 1);
         
-        // Update preview display
-        previewStartDate.textContent = start.toLocaleDateString('en-US', {
+        // Format times for display
+        const formatTime = (timeStr) => {
+            if (!timeStr) return '';
+            const time = new Date(`2000-01-01T${timeStr}`);
+            return time.toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+            });
+        };
+        
+        // Update preview display with time information
+        const startDateStr = start.toLocaleDateString('en-US', {
             year: 'numeric',
             month: 'short',
             day: 'numeric'
         });
         
-        previewEndDate.textContent = end.toLocaleDateString('en-US', {
+        const endDateStr = end.toLocaleDateString('en-US', {
             year: 'numeric',
             month: 'short',
             day: 'numeric'
         });
+        
+        previewStartDate.textContent = `${startDateStr} at ${formatTime(startTime)}`;
+        previewEndDate.textContent = `${endDateStr} at ${formatTime(endTime)}`;
         
         const durationText = duration === 1 ? '1 day' : `${duration} days`;
         previewDuration.textContent = durationText;
         
         previewContainer.style.display = 'block';
-        
-        // Check for conflicts with debouncing
-        clearTimeout(conflictCheckTimeout);
-        conflictCheckTimeout = setTimeout(() => {
-            checkEventConflicts(startDate, end.toISOString().split('T')[0]);
-        }, 500);
     } else {
         previewContainer.style.display = 'none';
-        hideConflictWarning();
     }
 }
 
-// Function to check for event conflicts via AJAX
-function checkEventConflicts(startDate, endDate) {
-    const conflictWarning = document.getElementById('conflictWarning');
-    const conflictMessage = document.getElementById('conflictMessage');
-    const submitButton = document.getElementById('submitButton');
-    
-    // Prepare form data
-    const formData = new FormData();
-    formData.append('start_date', startDate);
-    formData.append('end_date', endDate);
-    if (currentEventId) {
-        formData.append('event_id', currentEventId);
-    }
-    
-    // Send AJAX request
-    fetch('check_conflicts.php', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.conflicts && data.conflicts.length > 0) {
-            // Show conflicts
-            const conflictList = data.conflicts.map(conflict => 
-                `<strong>${conflict.title}</strong> (${formatDateForDisplay(conflict.start_date)} - ${formatDateForDisplay(conflict.end_date)})`
-            ).join('<br>');
-            
-            conflictMessage.innerHTML = `The following events conflict with your selected dates:<br>${conflictList}`;
-            conflictWarning.style.display = 'block';
-            submitButton.classList.add('has-conflict');
-            submitButton.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Save Event (Has Conflicts)';
-        } else {
-            hideConflictWarning();
-        }
-    })
-    .catch(error => {
-        console.error('Error checking conflicts:', error);
-        hideConflictWarning();
-    });
-}
-
-function hideConflictWarning() {
-    const conflictWarning = document.getElementById('conflictWarning');
-    const submitButton = document.getElementById('submitButton');
-    
-    if (conflictWarning) conflictWarning.style.display = 'none';
-    if (submitButton) {
-        submitButton.classList.remove('has-conflict');
-        submitButton.innerHTML = '<i class="fas fa-save"></i> Save Event';
-    }
-}
-
-function formatDateForDisplay(dateString) {
-    const date = new Date(dateString + 'T00:00:00');
-    return date.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric'
-    });
-}
-
-// Enhanced modal functions
+// 2. SIMPLIFIED openCreateModal function
 function openCreateModal() {
     document.getElementById('modalTitle').textContent = 'Create New Event';
     document.getElementById('formAction').name = 'create_event';
     document.getElementById('eventForm').reset();
     document.getElementById('event_date').min = new Date().toISOString().split('T')[0];
     document.getElementById('duration_days').value = 1;
+    document.getElementById('start_time').value = '09:00';
+    document.getElementById('end_time').value = '17:00';
     
-    // Set currentEventId if it exists globally, otherwise use a local variable
-    if (typeof currentEventId !== 'undefined') {
-        currentEventId = null;
-    }
+    currentEventId = null;
     
-    // Hide preview and conflicts initially
+    // Hide preview initially (no conflict warnings needed)
     document.getElementById('datePreviewContainer').style.display = 'none';
-    hideConflictWarning();
     
     // Service selection logic
     const serviceSelect = document.getElementById('major_service');
@@ -1869,6 +1483,7 @@ function openCreateModal() {
     document.getElementById('eventModal').classList.add('active');
 }
 
+// 3. UPDATED openEditModal function with time fields
 function openEditModal(event) {
     console.log('Opening edit modal for event:', event);
     
@@ -1880,23 +1495,23 @@ function openEditModal(event) {
     document.getElementById('major_service').value = event.major_service;
     document.getElementById('event_date').value = event.event_date;
     document.getElementById('duration_days').value = event.duration_days || 1;
+    document.getElementById('start_time').value = event.start_time || '09:00';
+    document.getElementById('end_time').value = event.end_time || '17:00';
     document.getElementById('location').value = event.location;
     document.getElementById('capacity').value = event.capacity || '';
     document.getElementById('fee').value = event.fee || '';
     
-    // Set currentEventId if it exists globally, otherwise use a local variable
-    if (typeof currentEventId !== 'undefined') {
-        currentEventId = event.event_id;
-    }
+    currentEventId = event.event_id;
     
     // Update date preview immediately
-    setTimeout(updateDatePreview, 100);
+    setTimeout(updateEventDatePreview, 100);
     
     // Service selection logic for editing
     const serviceSelect = document.getElementById('major_service');
+    const serviceHint = document.getElementById('serviceHint');
+    const isCreator = event.created_by == currentUserId;
+    
     if (hasRestrictedAccess && allowedServices && allowedServices.length > 0) {
-        const isCreator = event.created_by == currentUserId;
-        
         Array.from(serviceSelect.options).forEach(option => {
             if (option.value === '') {
                 option.disabled = false;
@@ -1915,14 +1530,26 @@ function openEditModal(event) {
                 option.style.display = 'none';
             }
         });
+        
+        if (serviceHint) {
+            if (isCreator) {
+                serviceHint.textContent = 'You can change to services you have permission for';
+            } else {
+                serviceHint.textContent = 'You can only change between services you have permission for';
+            }
+            serviceHint.style.display = 'block';
+        }
     } else {
         Array.from(serviceSelect.options).forEach(option => {
             option.disabled = false;
             option.style.display = 'block';
         });
+        if (serviceHint) {
+            serviceHint.style.display = 'none';
+        }
     }
     
-        // Set proper date minimum for editing
+    // Set proper date minimum for editing
     const eventDate = new Date(event.event_date);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -1935,44 +1562,291 @@ function openEditModal(event) {
     
     document.getElementById('eventModal').classList.add('active');
 }
-// Event listeners initialization
+
+function closeModal() {
+    document.getElementById('eventModal').classList.remove('active');
+}
+
+function filterStatus(status) {
+    const urlParams = new URLSearchParams(window.location.search);
+    
+    // Preserve service filter when changing status
+    const currentService = urlParams.get('service');
+    
+    if (status === 'all') {
+        urlParams.delete('status');
+    } else {
+        urlParams.set('status', status);
+    }
+    
+    // Keep the service filter if it exists
+    if (currentService) {
+        urlParams.set('service', currentService);
+    }
+    
+    // Reset to page 1 when filtering
+    urlParams.delete('page');
+    
+    window.location.search = urlParams.toString();
+}
+
+function confirmDelete(title, registrationCount) {
+    if (registrationCount > 0) {
+        return confirm(`Are you sure you want to delete "${title}"?\n\nThis event has ${registrationCount} registration(s).\nYou should cancel all registrations first.`);
+    }
+    return confirm(`Are you sure you want to delete "${title}"?\n\nThis action cannot be undone.`);
+}
+
+function confirmDeleteRegistration() {
+    return confirm('Are you sure you want to delete this registration?\n\nThis action cannot be undone.');
+}
+
+// Close modal when clicking outside
 document.addEventListener('DOMContentLoaded', function() {
-    const eventDateInput = document.getElementById('event_date');
-    const durationInput = document.getElementById('duration_days');
-    
-    if (eventDateInput) {
-        eventDateInput.addEventListener('change', updateDatePreview);
+    const eventModal = document.getElementById('eventModal');
+    if (eventModal) {
+        eventModal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
     }
-    
-    if (durationInput) {
-        durationInput.addEventListener('input', updateDatePreview);
-        durationInput.addEventListener('change', updateDatePreview);
-    }
-    
-    // Enhanced form validation
+
+    // SIMPLIFIED form validation - NO conflict checking
     const eventForm = document.getElementById('eventForm');
     if (eventForm) {
         eventForm.addEventListener('submit', function(e) {
+            const eventDate = document.getElementById('event_date').value;
+            const startTime = document.getElementById('start_time').value;
+            const endTime = document.getElementById('end_time').value;
             const duration = parseInt(document.getElementById('duration_days').value) || 1;
+            const title = document.getElementById('title').value.trim();
+            const location = document.getElementById('location').value.trim();
+            const majorService = document.getElementById('major_service').value;
+            const isCreating = document.getElementById('formAction').name === 'create_event';
             
+            console.log('Form submission - Service:', majorService, 'IsCreating:', isCreating, 'Duration:', duration, 'Times:', startTime, '-', endTime);
+            
+            // Basic validation
+            if (!title) {
+                e.preventDefault();
+                alert('Please enter an event title.');
+                return;
+            }
+            
+            if (!location) {
+                e.preventDefault();
+                alert('Please enter a location.');
+                return;
+            }
+            
+            if (!majorService) {
+                e.preventDefault();
+                alert('Please select a major service.');
+                return;
+            }
+            
+            // Time validation
+            if (!startTime) {
+                e.preventDefault();
+                alert('Please select a start time.');
+                return;
+            }
+            
+            if (!endTime) {
+                e.preventDefault();
+                alert('Please select an end time.');
+                return;
+            }
+            
+            // Validate end time is after start time
+            if (endTime <= startTime) {
+                e.preventDefault();
+                alert('End time must be after start time.');
+                return;
+            }
+            
+            // Validate minimum duration (1 hour)
+            const start = new Date(`2000-01-01T${startTime}`);
+            const end = new Date(`2000-01-01T${endTime}`);
+            const timeDuration = (end - start) / (1000 * 60 * 60); // hours
+            
+            if (timeDuration < 1) {
+                e.preventDefault();
+                alert('Event must be at least 1 hour long.');
+                return;
+            }
+            
+            // Duration validation
             if (duration < 1 || duration > 365) {
                 e.preventDefault();
                 alert('Event duration must be between 1 and 365 days.');
                 return;
             }
             
-            // Check if there are conflicts and warn user
-            const hasConflicts = document.getElementById('submitButton').classList.contains('has-conflict');
-            if (hasConflicts) {
-                const confirmSubmit = confirm('This event has date conflicts with existing events. Do you want to proceed anyway?');
-                if (!confirmSubmit) {
+            // Only check service permission for CREATE operations
+            if (isCreating && hasRestrictedAccess && allowedServices && allowedServices.length > 0) {
+                if (!allowedServices.includes(majorService)) {
                     e.preventDefault();
+                    alert("You don't have permission to create events for " + majorService + 
+                          "\n\nYou can only create events for: " + allowedServices.join(', '));
                     return;
                 }
             }
+            
+            const selectedDate = new Date(eventDate);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            if (selectedDate < today && isCreating) {
+                e.preventDefault();
+                alert('Event date cannot be in the past for new events');
+                return;
+            }
+            
+            // REMOVED: Conflict checking - Events can overlap freely
+            
+            // Visual feedback
+            const submitBtn = this.querySelector('.btn-submit');
+            if (submitBtn) {
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+                submitBtn.disabled = true;
+            }
         });
     }
+
+    // Auto-dismiss alerts after 5 seconds
+    const alerts = document.querySelectorAll('.alert');
+    alerts.forEach(alert => {
+        setTimeout(() => {
+            alert.style.opacity = '0';
+            alert.style.transform = 'translateY(-20px)';
+            setTimeout(() => {
+                alert.remove();
+            }, 300);
+        }, 5000);
+    });
+
+    // Clear form submission state from browser history
+    if (window.history.replaceState) {
+        window.history.replaceState(null, null, window.location.href);
+    }
+
+    // Debug: Log current permissions
+    console.log('=== Event Management Permissions ===');
+    console.log('User Role:', userRole);
+    console.log('Has Restricted Access:', hasRestrictedAccess);
+    console.log('Allowed Services:', allowedServices);
+    console.log('Current User ID:', currentUserId);
+    console.log('===================================');
+    
+    // Add event listeners for preview updates
+    const eventDateInput = document.getElementById('event_date');
+    const durationInput = document.getElementById('duration_days');
+    const startTimeInput = document.getElementById('start_time');
+    const endTimeInput = document.getElementById('end_time');
+    
+    if (eventDateInput) {
+        eventDateInput.addEventListener('change', updateEventDatePreview);
+    }
+    
+    if (durationInput) {
+        durationInput.addEventListener('input', updateEventDatePreview);
+        durationInput.addEventListener('change', updateEventDatePreview);
+    }
+    
+    if (startTimeInput) {
+        startTimeInput.addEventListener('change', updateEventDatePreview);
+    }
+    
+    if (endTimeInput) {
+        endTimeInput.addEventListener('change', updateEventDatePreview);
+    }
 });
+
+// Keyboard shortcuts
+document.addEventListener('keydown', function(e) {
+    // Escape key to close modal
+    if (e.key === 'Escape') {
+        const modal = document.getElementById('eventModal');
+        if (modal && modal.classList.contains('active')) {
+            closeModal();
+        }
+    }
+    
+    // Ctrl/Cmd + N to create new event
+    if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+        e.preventDefault();
+        openCreateModal();
+    }
+});
+
+// Search form enhancement
+document.addEventListener('DOMContentLoaded', function() {
+    const searchForm = document.querySelector('.search-box');
+    if (searchForm) {
+        const searchInput = searchForm.querySelector('input[name="search"]');
+        if (searchInput) {
+            // Clear search functionality
+            searchInput.addEventListener('keyup', function(e) {
+                if (e.key === 'Escape') {
+                    this.value = '';
+                    searchForm.submit();
+                }
+            });
+        }
+    }
+});
+
+// Enhanced table interactions
+document.addEventListener('DOMContentLoaded', function() {
+    // Add hover effects for table rows
+    const tableRows = document.querySelectorAll('.data-table tbody tr');
+    tableRows.forEach(row => {
+        row.addEventListener('mouseenter', function() {
+            this.style.backgroundColor = '#f8f9fa';
+        });
+        
+        row.addEventListener('mouseleave', function() {
+            this.style.backgroundColor = '';
+        });
+    });
+
+    // Enhanced registration table interactions
+    const regRows = document.querySelectorAll('.registrations-table tbody tr');
+    regRows.forEach(row => {
+        row.addEventListener('mouseenter', function() {
+            this.style.backgroundColor = '#f8f9fa';
+        });
+        
+        row.addEventListener('mouseleave', function() {
+            this.style.backgroundColor = '';
+        });
+    });
+});
+
+// Touch/mobile enhancements
+if ('ontouchstart' in window) {
+    document.addEventListener('DOMContentLoaded', function() {
+        // Add touch-friendly classes
+        document.body.classList.add('touch-device');
+        
+        // Enhance button interactions for touch
+        const buttons = document.querySelectorAll('button, .btn-action');
+        buttons.forEach(button => {
+            button.addEventListener('touchstart', function() {
+                this.classList.add('touch-active');
+            });
+            
+            button.addEventListener('touchend', function() {
+                setTimeout(() => {
+                    this.classList.remove('touch-active');
+                }, 150);
+            });
+        });
+    });
+}
+
 // Enhanced status filtering with ongoing events
 function filterStatus(status) {
     const urlParams = new URLSearchParams(window.location.search);
@@ -1993,63 +1867,64 @@ function filterStatus(status) {
     
     window.location.search = urlParams.toString();
 }
-  </script>
-  
-  <!-- Role-based styling -->
-  <style>
-    :root {
-      --current-role-color: <?= get_role_color($user_role) ?>;
-    }
-    
-    .role-indicator {
-      background: linear-gradient(135deg, var(--current-role-color) 0%, <?= get_role_color($user_role) ?>dd 100%);
-      color: white;
-      padding: 0.5rem 1rem;
-      border-radius: 8px;
-      margin-top: 0.5rem;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      font-size: 0.85rem;
-    }
-    
-    .role-indicator small {
-      opacity: 0.9;
-      font-size: 0.75rem;
-    }
-    
-    .service-tab.active,
-    .btn-create {
-      color: var(--current-role-color) !important;
-    }
-    
-    .btn-create {
-      background: linear-gradient(135deg, var(--current-role-color) 0%, <?= get_role_color($user_role) ?>dd 100%) !important;
-      color: white !important;
-    }
-    
-    .service-tab.active {
-      border-bottom-color: var(--current-role-color) !important;
-      background: linear-gradient(135deg, var(--current-role-color)15 0%, <?= get_role_color($user_role) ?>10 100%) !important;
-    }
-    
-    .stat-card .stat-icon {
-      background: linear-gradient(135deg, var(--current-role-color) 0%, <?= get_role_color($user_role) ?>dd 100%) !important;
-    }
-    
-    .events-container {
-      --role-accent: var(--current-role-color);
-    }
-    
-    .event-service {
-      background: linear-gradient(135deg, var(--current-role-color)20 0%, <?= get_role_color($user_role) ?>15 100%);
-      color: var(--current-role-color);
-      padding: 0.2rem 0.6rem;
-      border-radius: 12px;
-      font-size: 0.8rem;
-      font-weight: 600;
-    }
-    /* Enhanced styles for multi-day event display */
+</script>
+
+<!-- Role-based styling -->
+<style>
+:root {
+  --current-role-color: <?= get_role_color($user_role) ?>;
+}
+
+.role-indicator {
+  background: linear-gradient(135deg, var(--current-role-color) 0%, <?= get_role_color($user_role) ?>dd 100%);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  margin-top: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.role-indicator small {
+  opacity: 0.9;
+  font-size: 0.75rem;
+}
+
+.service-tab.active,
+.btn-create {
+  color: var(--current-role-color) !important;
+}
+
+.btn-create {
+  background: linear-gradient(135deg, var(--current-role-color) 0%, <?= get_role_color($user_role) ?>dd 100%) !important;
+  color: white !important;
+}
+
+.service-tab.active {
+  border-bottom-color: var(--current-role-color) !important;
+  background: linear-gradient(135deg, var(--current-role-color)15 0%, <?= get_role_color($user_role) ?>10 100%) !important;
+}
+
+.stat-card .stat-icon {
+  background: linear-gradient(135deg, var(--current-role-color) 0%, <?= get_role_color($user_role) ?>dd 100%) !important;
+}
+
+.events-container {
+  --role-accent: var(--current-role-color);
+}
+
+.event-service {
+  background: linear-gradient(135deg, var(--current-role-color)20 0%, <?= get_role_color($user_role) ?>15 100%);
+  color: var(--current-role-color);
+  padding: 0.2rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* Enhanced styles for multi-day event display */
 .event-date-range {
     display: flex;
     flex-direction: column;
@@ -2155,75 +2030,6 @@ function filterStatus(status) {
     font-weight: 500;
 }
 
-/* Conflict Warning Styles */
-.conflict-warning {
-    margin: 1rem 0;
-    animation: slideDown 0.3s ease, shake 0.5s ease;
-}
-
-.conflict-alert {
-    background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
-    border: 2px solid #ef5350;
-    border-radius: 12px;
-    padding: 1rem;
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-}
-
-.conflict-alert i {
-    color: #d32f2f;
-    font-size: 1.2rem;
-    margin-top: 0.1rem;
-    flex-shrink: 0;
-}
-
-.conflict-content {
-    flex: 1;
-}
-
-.conflict-title {
-    font-weight: 600;
-    color: #d32f2f;
-    margin-bottom: 0.3rem;
-}
-
-.conflict-message {
-    color: #c62828;
-    font-size: 0.9rem;
-    line-height: 1.4;
-}
-
-/* Button states for conflict */
-.btn-submit.has-conflict {
-    background: linear-gradient(135deg, #ff5722 0%, #d32f2f 100%);
-    animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-    0% { box-shadow: 0 3px 10px rgba(211, 47, 47, 0.3); }
-    50% { box-shadow: 0 3px 20px rgba(211, 47, 47, 0.5); }
-    100% { box-shadow: 0 3px 10px rgba(211, 47, 47, 0.3); }
-}
-
-@keyframes slideDown {
-    from {
-        opacity: 0;
-        transform: translateY(-20px);
-        max-height: 0;
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-        max-height: 200px;
-    }
-}
-
-@keyframes shake {
-    0%, 20%, 40%, 60%, 80% { transform: translateX(0); }
-    10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
-}
-
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .date-range {
@@ -2233,11 +2039,6 @@ function filterStatus(status) {
     
     .date-range i {
         transform: rotate(90deg);
-    }
-    
-    .conflict-alert {
-        flex-direction: column;
-        text-align: center;
     }
     
     .event-date-range {
@@ -2260,7 +2061,20 @@ function filterStatus(status) {
         font-size: 0.65rem;
     }
 }
-  </style>
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+        max-height: 0;
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+        max-height: 200px;
+    }
+}
+</style>
   
   <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
 </body>
