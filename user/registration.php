@@ -4,6 +4,17 @@ header("Cache-Control: no-cache, no-store, must-revalidate, max-age=0");
 header("Pragma: no-cache");
 header("Expires: Thu, 01 Jan 1970 00:00:00 GMT");
 require_once __DIR__ . '/../config.php';
+function getServiceCssClass($service) {
+    $serviceClasses = [
+        'Health Service' => 'health-service',
+        'Safety Service' => 'safety-service', 
+        'Welfare Service' => 'welfare-service',
+        'Disaster Management Service' => 'disaster-management-service',
+        'Red Cross Youth' => 'red-cross-youth'
+    ];
+    
+    return $serviceClasses[$service] ?? 'default-service';
+}
 ensure_logged_in();
 // Add cache busting based on recent event changes
 $recent_event_check = $pdo->query("SELECT MAX(GREATEST(COALESCE(created_at, NOW()), COALESCE(updated_at, NOW()))) as last_change FROM events")->fetchColumn();
@@ -456,7 +467,9 @@ $userRegistrations = $userRegistrationsStmt->fetchAll();
             </div>
         </td>
         <td>
-            <span class="event-service"><?= htmlspecialchars($e['major_service']) ?></span>
+            <span class="event-service <?= getServiceCssClass($e['major_service']) ?>">
+        <?= htmlspecialchars($e['major_service']) ?>
+    </span>
         </td>
         <td>
                                             <div class="event-date-range">
@@ -557,7 +570,9 @@ $userRegistrations = $userRegistrationsStmt->fetchAll();
                                     <tr>
                                         <td><?= htmlspecialchars($r['title']) ?></td>
                                         <td>
-                                            <span class="event-service"><?= htmlspecialchars($r['major_service']) ?></span>
+                                         <span class="event-service <?= getServiceCssClass($r['major_service']) ?>">
+        <?= htmlspecialchars($r['major_service']) ?>
+    </span>
                                         </td>
                                         <td>
                                             <div class="event-date-range">
@@ -1098,7 +1113,26 @@ let currentCalendarYear = new Date().getFullYear();
 window.calendarEventsData = <?= json_encode($extendedCalendarEvents) ?>;
 window.userRegistrations = <?= json_encode($userRegistrations) ?>;
 
+// Helper function to get service emoji
+function getServiceEmoji(service) {
+    const serviceEmojis = {
+        'Health Service': '🏥',
+        'Safety Service': '🦺',
+        'Welfare Service': '🤝',
+        'Disaster Management Service': '🚨',
+        'Red Cross Youth': '👥'
+    };
+    return serviceEmojis[service] || '📋';
+}
 
+// Enhanced format date for tooltip with better formatting
+function formatDateForTooltip(date) {
+    return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
+}
 // Fixed date formatting function that handles timezone properly
 function formatDateToString(date) {
     if (typeof date === 'string') {
@@ -1479,7 +1513,7 @@ function truncateText(text, maxLength) {
     return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
 }
 
-// Enhanced event tooltip with multi-day event info
+// Enhanced event tooltip with emojis matching training schedule
 function showEventTooltip(event, dateStr) {
     const tooltip = document.getElementById('eventTooltip');
     if (!tooltip || typeof window.calendarEventsData === 'undefined') return;

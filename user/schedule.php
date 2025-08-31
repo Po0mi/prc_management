@@ -1,5 +1,5 @@
 <?php
-// /user/schedule.php
+// /user/schedule.php - Updated with Multi-Day Training Sessions
 
 require_once __DIR__ . '/../config.php';
 ensure_logged_in();
@@ -41,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_training']))
                COALESCE(COUNT(sr.registration_id), 0) as current_registrations
         FROM training_sessions ts 
         LEFT JOIN session_registrations sr ON ts.session_id = sr.session_id
-        WHERE ts.session_id = ? AND ts.session_date >= CURDATE()
+        WHERE ts.session_id = ? AND ts.session_end_date >= CURDATE()
         GROUP BY ts.session_id
     ");
     $sessionCheck->execute([$sessionId]);
@@ -248,12 +248,12 @@ $trainingColors = [
     'General' => 'general'
 ];
 
-// Build query with filters - NO CREATED_BY RESTRICTIONS
+// Build query with filters - UPDATED FOR MULTI-DAY SESSIONS
 $whereConditions = [];
 $params = [];
 
-// Only show upcoming sessions
-$whereConditions[] = "ts.session_date >= CURDATE()";
+// FIXED: Only show upcoming sessions - check session_end_date instead of session_date
+$whereConditions[] = "ts.session_end_date >= CURDATE()";
 
 if ($search) {
     $whereConditions[] = "(ts.title LIKE :search OR ts.venue LIKE :search OR ts.major_service LIKE :search)";
@@ -268,9 +268,11 @@ if ($serviceFilter && $serviceFilter !== 'all') {
 $whereClause = 'WHERE ' . implode(' AND ', $whereConditions);
 
 try {
-    // Main query to get all training sessions - NO CREATED_BY RESTRICTIONS
+    // Main query to get all training sessions - UPDATED WITH MULTI-DAY FIELDS
     $stmt = $pdo->prepare("
         SELECT ts.*, 
+               COALESCE(ts.session_end_date, ts.session_date) as session_end_date,
+               COALESCE(ts.duration_days, 1) as duration_days,
                COALESCE((
                    SELECT 1 FROM session_registrations 
                    WHERE session_id = ts.session_id 
@@ -302,9 +304,9 @@ try {
         $sessionsByService[$service][] = $session;
     }
 
-    // Get statistics - ALL sessions, no creator restrictions
-    $upcoming = $pdo->query("SELECT COUNT(*) FROM training_sessions WHERE session_date >= CURDATE()")->fetchColumn();
-    $past = $pdo->query("SELECT COUNT(*) FROM training_sessions WHERE session_date < CURDATE()")->fetchColumn();
+    // Get statistics - UPDATED FOR MULTI-DAY
+    $upcoming = $pdo->query("SELECT COUNT(*) FROM training_sessions WHERE session_end_date >= CURDATE()")->fetchColumn();
+    $past = $pdo->query("SELECT COUNT(*) FROM training_sessions WHERE session_end_date < CURDATE()")->fetchColumn();
     $total_sessions = $upcoming + $past;
 
     // Get user's registration count
@@ -312,9 +314,10 @@ try {
     $stmt->execute([$userId]);
     $registered = $stmt->fetchColumn();
 
-    // Get user's registrations with session details
+    // Get user's registrations with session details - UPDATED WITH MULTI-DAY FIELDS
     $userRegistrations = $pdo->prepare("
-        SELECT sr.*, ts.title, ts.session_date, ts.start_time, ts.end_time, ts.venue, ts.major_service
+        SELECT sr.*, ts.title, ts.session_date, ts.session_end_date, ts.duration_days,
+               ts.start_time, ts.end_time, ts.venue, ts.major_service
         FROM session_registrations sr
         JOIN training_sessions ts ON sr.session_id = ts.session_id
         WHERE sr.user_id = ?
@@ -327,15 +330,41 @@ try {
     $pending_registrations = count(array_filter($myRegistrations, function($reg) { return $reg['status'] === 'pending'; }));
     $approved_registrations = count(array_filter($myRegistrations, function($reg) { return $reg['status'] === 'approved'; }));
 
-    // Get ALL training sessions for calendar (next 3 months) - NO CREATED_BY FILTER
+    // Get ALL training sessions for calendar (next 6 months) - UPDATED WITH MULTI-DAY FIELDS
     $calendarTrainings = $pdo->query("
-        SELECT session_id, title, session_date, venue, major_service, start_time, end_time, fee
+        SELECT session_id, title, session_date, 
+               COALESCE(session_end_date, session_date) as session_end_date,
+               COALESCE(duration_days, 1) as duration_days,
+               venue, major_service, start_time, end_time, fee,
+               (SELECT COUNT(*) FROM session_registrations WHERE session_id = training_sessions.session_id) as registrations_count
         FROM training_sessions 
-        WHERE session_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 3 MONTH)
+        WHERE session_end_date BETWEEN DATE_SUB(CURDATE(), INTERVAL 1 MONTH) AND DATE_ADD(CURDATE(), INTERVAL 6 MONTH)
         ORDER BY session_date ASC, start_time ASC
     ")->fetchAll();
 
-    // Get training summary statistics for calendar - NO CREATED_BY FILTER
+    // Get extended training sessions for large calendar modal - SIMILAR TO EVENTS
+    $extendedCalendarTrainings = $pdo->query("
+        SELECT session_id, title, session_date,
+               COALESCE(session_end_date, session_date) as session_end_date,
+               COALESCE(duration_days, 1) as duration_days,
+               venue, major_service, start_time, end_time, fee, capacity,
+               (SELECT COUNT(*) FROM session_registrations WHERE session_id = training_sessions.session_id) as registrations_count
+        FROM training_sessions
+        WHERE session_end_date >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)
+        AND session_date <= DATE_ADD(CURDATE(), INTERVAL 6 MONTH)
+        ORDER BY session_date ASC
+    ")->fetchAll();
+
+    // Get user registrations for JavaScript - FOR CALENDAR INTEGRATION
+    $userRegistrationsStmt = $pdo->prepare("
+        SELECT session_id, registration_date 
+        FROM session_registrations 
+        WHERE user_id = ?
+    ");
+    $userRegistrationsStmt->execute([$userId]);
+    $userRegistrationsJS = $userRegistrationsStmt->fetchAll();
+
+    // Get training summary statistics for calendar - UPDATED FOR MULTI-DAY
     $trainingStats = [
         'total_upcoming' => $upcoming,
         'this_week' => $pdo->query("
@@ -349,11 +378,11 @@ try {
         'my_upcoming' => 0 // Will calculate below
     ];
     
-    // Calculate my upcoming registrations
+    // Calculate my upcoming registrations - UPDATED FOR MULTI-DAY
     $stmt = $pdo->prepare("
         SELECT COUNT(*) FROM session_registrations sr
         JOIN training_sessions ts ON sr.session_id = ts.session_id
-        WHERE sr.user_id = ? AND ts.session_date >= CURDATE()
+        WHERE sr.user_id = ? AND ts.session_end_date >= CURDATE()
     ");
     $stmt->execute([$userId]);
     $trainingStats['my_upcoming'] = $stmt->fetchColumn();
@@ -371,6 +400,8 @@ try {
     $pending_registrations = 0;
     $approved_registrations = 0;
     $calendarTrainings = [];
+    $extendedCalendarTrainings = [];
+    $userRegistrationsJS = [];
     $trainingStats = [
         'total_upcoming' => 0,
         'this_week' => 0,
@@ -497,7 +528,7 @@ try {
                 <thead>
                   <tr>
                     <th>Training Details</th>
-                    <th>Date & Time</th>
+                    <th>Date Range & Time</th>
                     <th>Venue</th>
                     <th>Service</th>
                     <th>Capacity</th>
@@ -508,9 +539,20 @@ try {
                 </thead>
                 <tbody>
                   <?php foreach ($allSessions as $s): 
-                    $sessionDate = strtotime($s['session_date']);
+                    $sessionStartDate = strtotime($s['session_date']);
+                    $sessionEndDate = strtotime($s['session_end_date'] ?? $s['session_date']);
+                    $durationDays = $s['duration_days'] ?? 1;
                     $isFull = $s['capacity'] > 0 && $s['registered_count'] >= $s['capacity'];
                     $isRegistered = $s['is_registered'];
+                    
+                    // Determine session status
+                    $today = strtotime('today');
+                    $sessionStatus = 'upcoming';
+                    if ($sessionEndDate < $today) {
+                        $sessionStatus = 'past';
+                    } elseif ($sessionStartDate <= $today && $sessionEndDate >= $today) {
+                        $sessionStatus = 'ongoing';
+                    }
                   ?>
                     <tr>
                       <td>
@@ -518,11 +560,26 @@ try {
                         <div style="font-size: 0.85rem; color: var(--gray); margin-top: 0.2rem;">
                           Session ID: #<?= $s['session_id'] ?>
                         </div>
+                        <?php if ($sessionStatus === 'ongoing'): ?>
+                          <span class="ongoing-badge">Ongoing</span>
+                        <?php endif; ?>
                       </td>
                       <td>
-                        <div class="event-date">
-                          <span><?= date('M d, Y', $sessionDate) ?></span><br>
-                          <small><?= date('g:i A', strtotime($s['start_time'])) ?> - <?= date('g:i A', strtotime($s['end_time'])) ?></small>
+                        <div class="session-datetime">
+                          <?php if ($durationDays == 1): ?>
+                            <div class="session-date-single">
+                              <span class="session-date"><?= date('M d, Y', $sessionStartDate) ?></span>
+                              <span class="session-time"><?= date('g:i A', strtotime($s['start_time'])) ?> - <?= date('g:i A', strtotime($s['end_time'])) ?></span>
+                              <div class="session-duration">Single Day</div>
+                            </div>
+                          <?php else: ?>
+                            <div class="session-date-range">
+                              <div class="session-date-start"><?= date('M d, Y', $sessionStartDate) ?></div>
+                              <div class="session-date-end">to <?= date('M d, Y', $sessionEndDate) ?></div>
+                              <span class="session-time"><?= date('g:i A', strtotime($s['start_time'])) ?> - <?= date('g:i A', strtotime($s['end_time'])) ?></span>
+                              <div class="session-duration"><?= $durationDays ?> days</div>
+                            </div>
+                          <?php endif; ?>
                         </div>
                       </td>
                       <td><?= htmlspecialchars($s['venue']) ?></td>
@@ -551,13 +608,19 @@ try {
                             <i class="fas fa-check-circle"></i> Registered
                           </span>
                         <?php else: ?>
-                          <span class="status-badge available">
-                            <i class="fas fa-clock"></i> Available
+                          <span class="status-badge <?= $sessionStatus ?>">
+                            <?php if ($sessionStatus === 'upcoming'): ?>
+                              <i class="fas fa-clock"></i> Available
+                            <?php elseif ($sessionStatus === 'ongoing'): ?>
+                              <i class="fas fa-play-circle"></i> Ongoing
+                            <?php else: ?>
+                              <i class="fas fa-history"></i> Past
+                            <?php endif; ?>
                           </span>
                         <?php endif; ?>
                       </td>
                       <td class="actions">
-                        <?php if (!$isRegistered && !$isFull): ?>
+                        <?php if (!$isRegistered && !$isFull && $sessionStatus === 'upcoming'): ?>
                           <button class="btn-action btn-register" onclick="openRegisterModal(<?= htmlspecialchars(json_encode($s)) ?>)">
                             <i class="fas fa-user-plus"></i> Register
                           </button>
@@ -565,9 +628,13 @@ try {
                           <button class="btn-action btn-registered" disabled>
                             <i class="fas fa-check"></i> Registered
                           </button>
-                        <?php else: ?>
+                        <?php elseif ($isFull): ?>
                           <button class="btn-action btn-full" disabled>
                             <i class="fas fa-times"></i> Full
+                          </button>
+                        <?php else: ?>
+                          <button class="btn-action btn-past" disabled>
+                            <i class="fas fa-history"></i> Past
                           </button>
                         <?php endif; ?>
                       </td>
@@ -597,7 +664,7 @@ try {
                     <tr>
                       <th>Training</th>
                       <th>Service</th>
-                      <th>Date & Time</th>
+                      <th>Date Range & Time</th>
                       <th>Venue</th>
                       <th>Type</th>
                       <th>Payment</th>
@@ -607,14 +674,30 @@ try {
                     </tr>
                   </thead>
                   <tbody>
-                    <?php foreach ($myRegistrations as $r): ?>
+                    <?php foreach ($myRegistrations as $r): 
+                      $regStartDate = strtotime($r['session_date']);
+                      $regEndDate = strtotime($r['session_end_date'] ?? $r['session_date']);
+                      $regDurationDays = $r['duration_days'] ?? 1;
+                    ?>
                     <tr>
                       <td><?= htmlspecialchars($r['title']) ?></td>
                       <td><?= htmlspecialchars($r['major_service']) ?></td>
                       <td>
-                        <div class="event-date">
-                          <span><?= date('M d, Y', strtotime($r['session_date'])) ?></span><br>
-                          <small><?= date('g:i A', strtotime($r['start_time'])) ?> - <?= date('g:i A', strtotime($r['end_time'])) ?></small>
+                        <div class="session-datetime">
+                          <?php if ($regDurationDays == 1): ?>
+                            <div class="session-date-single">
+                              <span class="session-date"><?= date('M d, Y', $regStartDate) ?></span>
+                              <span class="session-time"><?= date('g:i A', strtotime($r['start_time'])) ?> - <?= date('g:i A', strtotime($r['end_time'])) ?></span>
+                              <div class="session-duration">Single Day</div>
+                            </div>
+                          <?php else: ?>
+                            <div class="session-date-range">
+                              <div class="session-date-start"><?= date('M d, Y', $regStartDate) ?></div>
+                              <div class="session-date-end">to <?= date('M d, Y', $regEndDate) ?></div>
+                              <span class="session-time"><?= date('g:i A', strtotime($r['start_time'])) ?> - <?= date('g:i A', strtotime($r['end_time'])) ?></span>
+                              <div class="session-duration"><?= $regDurationDays ?> days</div>
+                            </div>
+                          <?php endif; ?>
                         </div>
                       </td>
                       <td><?= htmlspecialchars($r['venue']) ?></td>
@@ -677,6 +760,9 @@ try {
         <div class="calendar-sidebar">
           <div class="calendar-header">
             <h2><i class="fas fa-calendar-alt"></i> Training Calendar</h2>
+            <button class="btn-view-calendar" onclick="openCalendarModal()">
+              <i class="fas fa-expand"></i> View Full Calendar
+            </button>
           </div>
 
           <!-- Training Type Legend -->
@@ -742,6 +828,62 @@ try {
             <!-- Calendar will be generated by JavaScript -->
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Large Calendar Modal -->
+    <div class="modal calendar-modal" id="calendarModal">
+      <div class="modal-content calendar-modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title">
+            <i class="fas fa-calendar-alt"></i> Training Calendar
+          </h2>
+          <button class="close-modal" onclick="closeCalendarModal()">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        
+        <div class="calendar-nav">
+          <button class="nav-btn" onclick="changeMonth(-1)">
+            <i class="fas fa-chevron-left"></i>
+          </button>
+          <div class="current-month-year" id="currentMonthYear">
+            <!-- Will be populated by JavaScript -->
+          </div>
+          <button class="nav-btn" onclick="changeMonth(1)">
+            <i class="fas fa-chevron-right"></i>
+          </button>
+        </div>
+        
+        <div class="large-calendar-container" id="largeCalendarContainer">
+          <!-- Calendar will be generated by JavaScript -->
+        </div>
+        
+        <div class="calendar-legend">
+          <div class="legend-item">
+            <div class="legend-dot has-events"></div>
+            <span>Has Training</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot today"></div>
+            <span>Today</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot registered"></div>
+            <span>Registered</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot past"></div>
+            <span>Past Date</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Training Details Tooltip -->
+    <div class="event-tooltip" id="trainingTooltip">
+      <div class="tooltip-content">
+        <!-- Training details will be populated here -->
       </div>
     </div>
 
@@ -886,7 +1028,6 @@ try {
                       <div class="payment-name">Bank Transfer</div>
                       <div class="payment-description">Transfer to PRC official bank account</div>
                     </div>
-                    <div class="payment-status"></div>
                   </div>
                 </div>
 
@@ -900,7 +1041,6 @@ try {
                       <div class="payment-name">GCash</div>
                       <div class="payment-description">Send money via GCash</div>
                     </div>
-                    <div class="payment-status"></div>
                   </div>
                 </div>
 
@@ -914,7 +1054,6 @@ try {
                       <div class="payment-name">PayMaya</div>
                       <div class="payment-description">Send money via PayMaya</div>
                     </div>
-                    <div class="payment-status"></div>
                   </div>
                 </div>
 
@@ -928,7 +1067,6 @@ try {
                       <div class="payment-name">Cash Payment</div>
                       <div class="payment-description">Pay at PRC office</div>
                     </div>
-                    <div class="payment-status"></div>
                   </div>
                 </div>
               </div>
@@ -953,24 +1091,11 @@ try {
                       <label>Account Name</label>
                       <span>Philippine Red Cross - Tacloban Chapter</span>
                     </div>
-                    <div class="bank-field">
-                      <label>Branch</label>
-                      <span>Tacloban City Main Branch</span>
-                    </div>
                   </div>
                 </div>
                 <div class="form-group">
                   <label for="bank_reference">Reference Number *</label>
                   <input type="text" id="bank_reference" name="payment_reference" placeholder="Enter transfer reference number">
-                </div>
-                <div class="payment-instructions">
-                  <h6><i class="fas fa-info-circle"></i> Instructions</h6>
-                  <ol>
-                    <li>Transfer the exact amount to the bank account above</li>
-                    <li>Keep your bank receipt/confirmation</li>
-                    <li>Enter the reference number from your receipt</li>
-                    <li>Upload a clear photo of your receipt below</li>
-                  </ol>
                 </div>
               </div>
 
@@ -996,21 +1121,8 @@ try {
                   </div>
                   <div class="form-group">
                     <label for="gcash_sender">Your GCash Number *</label>
-                    <div class="phone-input-group">
-                      <span class="phone-prefix">+63</span>
-                      <input type="tel" id="gcash_sender" name="payment_account_number" placeholder="9XX XXX XXXX">
-                    </div>
+                    <input type="tel" id="gcash_sender" name="payment_account_number" placeholder="+63 9XX XXX XXXX">
                   </div>
-                </div>
-                <div class="payment-instructions">
-                  <h6><i class="fas fa-info-circle"></i> Instructions</h6>
-                  <ol>
-                    <li>Open your GCash app and select "Send Money"</li>
-                    <li>Send the exact amount to the number above</li>
-                    <li>Take a screenshot of the successful transaction</li>
-                    <li>Enter the reference number and your GCash number</li>
-                    <li>Upload the screenshot below</li>
-                  </ol>
                 </div>
               </div>
 
@@ -1036,21 +1148,8 @@ try {
                   </div>
                   <div class="form-group">
                     <label for="paymaya_sender">Your PayMaya Number *</label>
-                    <div class="phone-input-group">
-                      <span class="phone-prefix">+63</span>
-                      <input type="tel" id="paymaya_sender" name="payment_account_number" placeholder="9XX XXX XXXX">
-                    </div>
+                    <input type="tel" id="paymaya_sender" name="payment_account_number" placeholder="+63 9XX XXX XXXX">
                   </div>
-                </div>
-                <div class="payment-instructions">
-                  <h6><i class="fas fa-info-circle"></i> Instructions</h6>
-                  <ol>
-                    <li>Open your PayMaya app and select "Send Money"</li>
-                    <li>Send the exact amount to the number above</li>
-                    <li>Take a screenshot of the successful transaction</li>
-                    <li>Enter the reference number and your PayMaya number</li>
-                    <li>Upload the screenshot below</li>
-                  </ol>
                 </div>
               </div>
 
@@ -1061,7 +1160,7 @@ try {
                   <i class="fas fa-info-circle"></i>
                   <div class="payment-note-content">
                     <strong>Important Note:</strong>
-                    <p>You have selected cash payment. Please visit our office during business hours to complete your payment. Your registration will be marked as pending until payment is received.</p>
+                    <p>You have selected cash payment. Please visit our office during business hours to complete your payment.</p>
                   </div>
                 </div>
                 <div class="bank-details">
@@ -1152,194 +1251,489 @@ try {
     </div>
   </div>
 
-  <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
+ 
+   <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
   <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
   <script src="js/header.js?v=<?php echo time(); ?>"></script>
-<script>
-// Training calendar data
-const calendarTrainings = <?= json_encode($calendarTrainings) ?>;
-const trainingColors = <?= json_encode($trainingColors) ?>;
+  <script> 
+// Store training sessions and user registrations in global scope
+window.calendarTrainingsData = <?php echo json_encode($calendarTrainings); ?>;
+window.userTrainingRegistrations = <?php echo json_encode($userRegistrationsJS); ?>;
 
-let currentSession = null;
-
-// Initialize when DOM is loaded
-document.addEventListener('DOMContentLoaded', function() {
-  generateTrainingCalendar();
-  
-  // Initialize payment method listeners
-  const paymentMethods = document.querySelectorAll('input[name="payment_method"]');
-  paymentMethods.forEach(method => {
-    method.addEventListener('change', function() {
-      handlePaymentMethodChange(this.value);
-    });
-  });
-
-  // Initialize file upload handlers
-  initializeFileUploadHandlers();
-
-  // Initialize form submission handler
-  initializeFormSubmission();
-});
-
-function generateTrainingCalendar() {
-  const container = document.getElementById('trainingCalendarContainer');
-  if (!container) return;
-  
-  const today = new Date();
-  const currentMonth = today.getMonth();
-  const currentYear = today.getFullYear();
-  
-  let calendarHTML = '';
-  
-  // Generate 3 months starting from current month
-  for (let monthOffset = 0; monthOffset < 3; monthOffset++) {
-    const month = (currentMonth + monthOffset) % 12;
-    const year = currentYear + Math.floor((currentMonth + monthOffset) / 12);
-    
-    calendarHTML += generateMonthCalendar(year, month, today);
-  }
-  
-  container.innerHTML = calendarHTML;
-}
-
-function generateMonthCalendar(year, month, today) {
-  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'];
-  
-  const firstDay = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const todayStr = formatDateToString(today);
-  
-  let html = `
-    <div class="month-calendar">
-      <div class="month-header">
-        <h3>${monthNames[month]} ${year}</h3>
-      </div>
-      <div class="calendar-grid">
-        <div class="day-header">Sun</div>
-        <div class="day-header">Mon</div>
-        <div class="day-header">Tue</div>
-        <div class="day-header">Wed</div>
-        <div class="day-header">Thu</div>
-        <div class="day-header">Fri</div>
-        <div class="day-header">Sat</div>
-  `;
-  
-  // Empty cells for days before month starts
-  for (let i = 0; i < firstDay; i++) {
-    html += '<div class="day-cell empty"></div>';
-  }
-  
-  // Days of the month
-  for (let day = 1; day <= daysInMonth; day++) {
-    const date = new Date(year, month, day);
-    const dateStr = formatDateToString(date);
-    const dayTrainings = calendarTrainings.filter(training => training.session_date === dateStr);
-    
-    let dayClass = 'day-cell';
-    if (dayTrainings.length > 0) {
-      dayClass += ' has-events';
-    }
-    if (dateStr === todayStr) {
-      dayClass += ' today';
-    }
-    if (date < today && dateStr !== todayStr) {
-      dayClass += ' past';
-    }
-    
-    html += `<div class="${dayClass}" data-date="${dateStr}" title="${dayTrainings.length > 0 ? dayTrainings.map(e => e.title).join(', ') : ''}">
-      <span class="day-number">${day}</span>`;
-    
-    if (dayTrainings.length > 0) {
-      html += '<div class="event-indicators">';
-      dayTrainings.slice(0, 3).forEach(training => { // Limit to 3 indicators per day
-        const serviceColor = getTrainingServiceColor(training.major_service);
-        html += `<div class="event-indicator ${serviceColor}" title="${escapeHtml(training.title)} - ${escapeHtml(training.venue)}"></div>`;
-      });
-      if (dayTrainings.length > 3) {
-        html += `<div class="event-indicator more" title="+${dayTrainings.length - 3} more trainings">+${dayTrainings.length - 3}</div>`;
-      }
-      html += '</div>';
-    }
-    
-    html += '</div>';
-  }
-  
-  html += '</div></div>';
-  return html;
-}
-
-function getTrainingServiceColor(service) {
-  // Map service names to color classes that match your CSS
-  const colorMap = {
-    'Health Service': 'health',
-    'Safety Service': 'safety', 
-    'Welfare Service': 'welfare',
-    'Disaster Management Service': 'disaster',
-    'Red Cross Youth': 'rcy'
-  };
-  return colorMap[service] || 'general';
-}
-
-// Helper function to format date to YYYY-MM-DD string without timezone issues
+// Enhanced date formatting function that handles timezone properly
 function formatDateToString(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+    if (typeof date === 'string') {
+        if (date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            return date;
+        }
+        date = new Date(date + 'T12:00:00');
+    }
+    
+    if (!(date instanceof Date) || isNaN(date)) {
+        console.error('Invalid date passed to formatDateToString:', date);
+        return '';
+    }
+    
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
 }
 
-// Helper function to escape HTML to prevent XSS
+// Create dates in local timezone consistently
+function createLocalDate(dateString) {
+    if (typeof dateString === 'string' && dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        const [year, month, day] = dateString.split('-').map(Number);
+        return new Date(year, month - 1, day);
+    }
+    return new Date(dateString);
+}
+
+// Helper function to escape HTML
 function escapeHtml(text) {
-  if (!text) return '';
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
-    function openRegisterModal(session) {
-      currentSession = session;
-      document.getElementById('sessionId').value = session.session_id;
-      document.getElementById('modalTitle').textContent = 'Register for ' + session.title;
-      
-      const trainingInfo = document.getElementById('trainingInfo');
-      const sessionDate = new Date(session.session_date + 'T00:00:00'); // Force local time interpretation
-      
-      trainingInfo.innerHTML = `
-        <div class="event-details">
-          <h3>${escapeHtml(session.title)}</h3>
-          <p><i class="fas fa-calendar"></i> ${sessionDate.toLocaleDateString('en-US', {year: 'numeric', month: 'long', day: 'numeric'})}</p>
-          <p><i class="fas fa-clock"></i> ${formatTime(session.start_time)} - ${formatTime(session.end_time)}</p>
-          <p><i class="fas fa-map-marker-alt"></i> ${escapeHtml(session.venue)}</p>
-          <p><i class="fas fa-tag"></i> ${escapeHtml(session.major_service)}</p>
-          ${session.fee > 0 ? `<p><i class="fas fa-money-bill"></i> Fee: ₱${parseFloat(session.fee).toFixed(2)}</p>` : '<p><i class="fas fa-gift"></i> Free Training</p>'}
-          <p><i class="fas fa-users"></i> Available Slots: ${session.capacity > 0 ? (session.capacity - session.registered_count) : 'Unlimited'}</p>
-        </div>
-      `;
-      
-      // Auto-fill training type and date for both tabs
-      document.getElementById('training_type_individual').value = session.title;
-      document.getElementById('training_date_individual').value = session.session_date;
-      document.getElementById('training_type_org').value = session.title;
-      document.getElementById('training_date_org').value = session.session_date;
-      
-      // Handle payment section
-      updatePaymentSection(session.fee);
-      
-      // Reset form to individual tab
-      switchTab('individual');
-      
-      document.getElementById('registerModal').classList.add('active');
-      document.body.style.overflow = 'hidden'; // Prevent background scrolling
+// Function to check if user is registered for any training on a specific date
+function checkUserTrainingRegistrationForDate(dateStr) {
+    if (typeof window.userTrainingRegistrations === 'undefined') return false;
+    
+    const targetDate = createLocalDate(dateStr);
+    
+    return window.userTrainingRegistrations.some(reg => {
+        const training = window.calendarTrainingsData.find(t => t.session_id === reg.session_id);
+        if (training) {
+            const trainingStart = createLocalDate(training.session_date);
+            const trainingEnd = createLocalDate(training.session_end_date || training.session_date);
+            
+            const targetTime = targetDate.getTime();
+            const startTime = trainingStart.getTime();
+            const endTime = trainingEnd.getTime();
+            
+            return targetTime >= startTime && targetTime <= endTime;
+        }
+        return false;
+    });
+}
+
+// Function to check if user is registered for a specific training
+function checkUserTrainingRegistrationForSession(sessionId) {
+    if (typeof window.userTrainingRegistrations === 'undefined') return false;
+    return window.userTrainingRegistrations.some(reg => reg.session_id === parseInt(sessionId));
+}
+
+// Get trainings for a specific date
+function getTrainingsForDate(dateStr) {
+    if (typeof window.calendarTrainingsData === 'undefined') return [];
+    
+    const targetDate = createLocalDate(dateStr);
+    
+    return window.calendarTrainingsData.filter(training => {
+        const trainingStart = createLocalDate(training.session_date);
+        const trainingEnd = createLocalDate(training.session_end_date || training.session_date);
+        
+        const targetTime = targetDate.getTime();
+        const startTime = trainingStart.getTime();
+        const endTime = trainingEnd.getTime();
+        
+        return targetTime >= startTime && targetTime <= endTime;
+    });
+}
+
+// Get training service color
+function getTrainingServiceColor(service) {
+    const serviceColors = {
+        'Health Service': '#4CAF50',
+        'Safety Service': '#FF5722',
+        'Welfare Service': '#2196F3',
+        'Disaster Management Service': '#FF9800',
+        'Red Cross Youth': '#9C27B0'
+    };
+    return serviceColors[service] || '#607D8B';
+}
+
+// Enhanced training calendar generation with multi-day support
+function generateTrainingCalendar() {
+    const container = document.getElementById('trainingCalendarContainer');
+    if (!container) return;
+    
+    const today = new Date();
+    const currentMonth = today.getMonth();
+    const currentYear = today.getFullYear();
+    
+    let calendarHTML = '';
+    
+    for (let monthOffset = 0; monthOffset < 3; monthOffset++) {
+        const month = (currentMonth + monthOffset) % 12;
+        const year = currentYear + Math.floor((currentMonth + monthOffset) / 12);
+        
+        calendarHTML += generateMonthCalendar(year, month, today);
+    }
+    
+    container.innerHTML = calendarHTML;
+}
+
+// Enhanced month calendar generation with multi-day training spans
+function generateMonthCalendar(year, month, today) {
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'];
+    
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const todayStr = formatDateToString(today);
+    
+    let html = `
+        <div class="month-calendar">
+            <div class="month-header">
+                <h3>${monthNames[month]} ${year}</h3>
+            </div>
+            <div class="calendar-grid">
+                <div class="day-header">Sun</div>
+                <div class="day-header">Mon</div>
+                <div class="day-header">Tue</div>
+                <div class="day-header">Wed</div>
+                <div class="day-header">Thu</div>
+                <div class="day-header">Fri</div>
+                <div class="day-header">Sat</div>
+    `;
+    
+    // Fill in the days
+    for (let i = 0; i < firstDay; i++) {
+        html += '<div class="day-cell empty"></div>';
+    }
+    
+    for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = formatDateToString(new Date(year, month, day));
+        const dateTrainings = getTrainingsForDate(dateStr);
+        const isRegistered = checkUserTrainingRegistrationForDate(dateStr);
+        const isToday = dateStr === todayStr;
+        
+        let dayClass = 'day-cell';
+        let dayContent = `<span class="day-number">${day}</span>`;
+        
+        if (isToday) dayClass += ' today';
+        if (dateTrainings.length > 0) {
+            dayClass += ' has-events';
+            if (isRegistered) dayClass += ' has-registered-event';
+            
+            dayContent += '<div class="event-indicators">';
+            dateTrainings.slice(0, 3).forEach(training => {
+                const isUserRegistered = window.userTrainingRegistrations.some(reg => reg.session_id === training.session_id);
+                dayContent += `<div class="event-indicator ${isUserRegistered ? 'registered' : ''}" 
+                                  style="background-color: ${getTrainingServiceColor(training.major_service)}"
+                                  title="${training.title}"></div>`;
+            });
+            if (dateTrainings.length > 3) {
+                dayContent += `<div class="event-count">+${dateTrainings.length - 3}</div>`;
+            }
+            dayContent += '</div>';
+        }
+        
+        html += `<div class="${dayClass}" data-date="${dateStr}" 
+                     onmouseover="showTrainingTooltip(event, '${dateStr}')"
+                     onmouseout="hideTrainingTooltip()">
+                     ${dayContent}
+                 </div>`;
+    }
+    
+    // Fill remaining cells
+    const totalCells = Math.ceil((daysInMonth + firstDay) / 7) * 7;
+    const remainingCells = totalCells - (daysInMonth + firstDay);
+    for (let i = 0; i < remainingCells; i++) {
+        html += '<div class="day-cell empty"></div>';
+    }
+    
+    html += '</div></div>';
+    return html;
+}
+
+// Large calendar modal functions
+function openCalendarModal() {
+    const modal = document.getElementById('calendarModal');
+    if (modal) {
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        
+        currentCalendarMonth = new Date().getMonth();
+        currentCalendarYear = new Date().getFullYear();
+        updateLargeCalendar();
+    }
+}
+
+function closeCalendarModal() {
+    const modal = document.getElementById('calendarModal');
+    if (modal) {
+        modal.classList.remove('active');
+        document.body.style.overflow = '';
+    }
+}
+
+function changeMonth(direction) {
+    currentCalendarMonth += direction;
+    
+    if (currentCalendarMonth > 11) {
+        currentCalendarMonth = 0;
+        currentCalendarYear++;
+    } else if (currentCalendarMonth < 0) {
+        currentCalendarMonth = 11;
+        currentCalendarYear--;
+    }
+    
+    updateLargeCalendar();
+}
+
+function updateLargeCalendar() {
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'];
+    
+    const currentMonthYear = document.getElementById('currentMonthYear');
+    if (currentMonthYear) {
+        currentMonthYear.textContent = `${monthNames[currentCalendarMonth]} ${currentCalendarYear}`;
+    }
+    
+    const calendarContainer = document.getElementById('largeCalendarContainer');
+    if (calendarContainer) {
+        calendarContainer.innerHTML = generateLargeCalendarGrid(currentCalendarYear, currentCalendarMonth);
+    }
+}
+
+// Enhanced large calendar generation for modal with multi-day support
+function generateLargeCalendarGrid(year, month) {
+    const today = new Date();
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const todayStr = formatDateToString(today);
+    
+    let html = `
+        <div class="large-calendar-grid">
+            <div class="calendar-weekdays">
+                <div class="weekday">Sun</div>
+                <div class="weekday">Mon</div>
+                <div class="weekday">Tue</div>
+                <div class="weekday">Wed</div>
+                <div class="weekday">Thu</div>
+                <div class="weekday">Fri</div>
+                <div class="weekday">Sat</div>
+            </div>
+            <div class="calendar-days">
+    `;
+    
+    // Fill in the days
+    for (let i = 0; i < firstDay; i++) {
+        html += '<div class="calendar-day empty"></div>';
+    }
+    
+    for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = formatDateToString(new Date(year, month, day));
+        const dateTrainings = getTrainingsForDate(dateStr);
+        const isRegistered = checkUserTrainingRegistrationForDate(dateStr);
+        const isToday = dateStr === todayStr;
+        const cellDate = new Date(dateStr + 'T00:00:00');
+        const isPast = cellDate < today && !isToday;
+        
+        let dayClass = 'calendar-day';
+        
+        if (dateTrainings.length > 0) {
+            dayClass += ' has-events';
+            if (isRegistered) dayClass += ' has-registered-event';
+        }
+        
+        if (isToday) dayClass += ' today';
+        if (isPast) dayClass += ' past';
+        
+        html += `<div class="${dayClass}" data-date="${dateStr}" 
+                    onmouseover="showTrainingTooltip(event, '${dateStr}')"
+                    onmouseout="hideTrainingTooltip()">
+            <div class="day-number">${day}</div>`;
+        
+        if (dateTrainings.length > 0) {
+            html += '<div class="event-display">';
+            
+            dateTrainings.slice(0, 2).forEach(training => {
+                const isUserRegistered = window.userTrainingRegistrations.some(reg => reg.session_id === training.session_id);
+                const trainingClass = `event-bar ${isUserRegistered ? 'registered' : ''}`;
+                
+                html += `<div class="${trainingClass}" 
+                           style="--event-color: ${getTrainingServiceColor(training.major_service)};"
+                           title="${escapeHtml(training.title)}${isUserRegistered ? ' (Registered)' : ''}">
+                           ${truncateText(training.title, 12)}
+                         </div>`;
+            });
+            
+            if (dateTrainings.length > 2) {
+                html += '<div class="event-dots">';
+                dateTrainings.slice(2, 5).forEach(training => {
+                    const isUserRegistered = window.userTrainingRegistrations.some(reg => reg.session_id === training.session_id);
+                    const dotClass = `event-dot ${isUserRegistered ? 'registered' : ''}`;
+                    html += `<div class="${dotClass}" 
+                               style="background-color: ${getTrainingServiceColor(training.major_service)};"
+                               title="${escapeHtml(training.title)}${isUserRegistered ? ' (Registered)' : ''}"></div>`;
+                });
+                
+                if (dateTrainings.length > 5) {
+                    html += `<div class="event-count">+${dateTrainings.length - 5}</div>`;
+                }
+                html += '</div>';
+            }
+            
+            html += '</div>';
+            
+            if (isRegistered) {
+                html += '<div class="registration-indicator">✓</div>';
+            }
+        }
+        
+        html += '</div>';
     }
 
-    function updatePaymentSection(fee) {
-      const paymentSection = document.getElementById('paymentSection');
-      const trainingFeeAmount = document.getElementById('trainingFeeAmount');
-      const totalAmountDisplay = document.getElementById('totalAmountDisplay');
-      const hiddenPaymentAmount = document.getElementById('hiddenPaymentAmount');
+    // Fill remaining cells
+    const totalCells = Math.ceil((daysInMonth + firstDay) / 7) * 7;
+    const remainingCells = totalCells - (daysInMonth + firstDay);
+    for (let i = 0; i < remainingCells; i++) {
+        html += '<div class="calendar-day empty"></div>';
+    }
+    
+    html += '</div></div>';
+    return html;
+}
 
-      if (fee > 0) {
+function truncateText(text, maxLength) {
+    if (!text) return '';
+    return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+}
+
+// Enhanced training tooltip with multi-day training info
+function showTrainingTooltip(event, dateStr) {
+    const tooltip = document.getElementById('trainingTooltip');
+    if (!tooltip || typeof window.calendarTrainingsData === 'undefined') return;
+    
+    const dayTrainings = getTrainingsForDate(dateStr);
+    if (dayTrainings.length === 0) return;
+    
+    let tooltipContent = '';
+    dayTrainings.forEach(trainingData => {
+        const isRegistered = checkUserTrainingRegistrationForSession(trainingData.session_id);
+        const registrationStatus = isRegistered ? 
+            '<div class="tooltip-event-status registered">✓ Registered</div>' : 
+            '<div class="tooltip-event-status available">Available</div>';
+        
+        const startDate = new Date(trainingData.session_date);
+        const endDate = new Date(trainingData.session_end_date || trainingData.session_date);
+        const durationDays = trainingData.duration_days || 1;
+        
+        const durationText = durationDays > 1 ? 
+            `📅 ${durationDays} days (${formatDateForTooltip(startDate)} - ${formatDateForTooltip(endDate)})` :
+            `📅 ${formatDateForTooltip(startDate)}`;
+        
+        const timeText = `🕐 ${formatTime(trainingData.start_time)} - ${formatTime(trainingData.end_time)}`;
+        
+        tooltipContent += `
+            <div class="tooltip-event ${isRegistered ? 'registered' : ''}">
+                <div class="tooltip-event-title">${escapeHtml(trainingData.title)}</div>
+                <div class="tooltip-event-duration">${durationText}</div>
+                <div class="tooltip-event-time">${timeText}</div>
+                <div class="tooltip-event-location">📍 ${escapeHtml(trainingData.venue)}</div>
+                <div class="tooltip-event-capacity">👥 ${trainingData.registrations_count || 0}/${trainingData.capacity || '∞'}</div>
+                ${trainingData.fee > 0 ? `<div class="tooltip-event-fee">💰 ₱${parseFloat(trainingData.fee).toFixed(2)}</div>` : '<div class="tooltip-event-fee">🆓 Free</div>'}
+                <div class="tooltip-event-service">🏥 ${escapeHtml(trainingData.major_service)}</div>
+                ${registrationStatus}
+            </div>
+        `;
+    });
+    
+    tooltip.querySelector('.tooltip-content').innerHTML = tooltipContent;
+    tooltip.style.display = 'block';
+    
+    const rect = event.target.getBoundingClientRect();
+    tooltip.style.position = 'fixed';
+    tooltip.style.left = (rect.left + window.scrollX) + 'px';
+    tooltip.style.top = (rect.bottom + window.scrollY + 5) + 'px';
+}
+
+function hideTrainingTooltip() {
+    const tooltip = document.getElementById('trainingTooltip');
+    if (tooltip) {
+        tooltip.style.display = 'none';
+    }
+}
+
+function formatDateForTooltip(date) {
+    return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
+}
+
+function formatTime(timeString) {
+    if (!timeString) return '';
+    const time = new Date('1970-01-01T' + timeString + 'Z');
+    return time.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+    });
+}
+
+// Enhanced openRegisterModal function with multi-day support
+function openRegisterModal(session) {
+    currentSession = session;
+    document.getElementById('sessionId').value = session.session_id;
+    document.getElementById('modalTitle').textContent = 'Register for ' + session.title;
+    
+    const trainingInfo = document.getElementById('trainingInfo');
+    const sessionStartDate = createLocalDate(session.session_date);
+    const sessionEndDate = createLocalDate(session.session_end_date || session.session_date);
+    const durationDays = session.duration_days || 1;
+    
+    // Format date display based on duration
+    let dateDisplay;
+    if (durationDays === 1) {
+        dateDisplay = sessionStartDate.toLocaleDateString('en-US', {year: 'numeric', month: 'long', day: 'numeric'});
+    } else {
+        const startStr = sessionStartDate.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+        const endStr = sessionEndDate.toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
+        dateDisplay = `${startStr} - ${endStr} (${durationDays} days)`;
+    }
+    
+    trainingInfo.innerHTML = `
+        <div class="event-details">
+            <h3>${escapeHtml(session.title)}</h3>
+            <p><i class="fas fa-calendar"></i> ${dateDisplay}</p>
+            <p><i class="fas fa-clock"></i> ${formatTime(session.start_time)} - ${formatTime(session.end_time)}</p>
+            <p><i class="fas fa-map-marker-alt"></i> ${escapeHtml(session.venue)}</p>
+            <p><i class="fas fa-tag"></i> ${escapeHtml(session.major_service)}</p>
+            ${session.fee > 0 ? `<p><i class="fas fa-money-bill"></i> Fee: ₱${parseFloat(session.fee).toFixed(2)}</p>` : '<p><i class="fas fa-gift"></i> Free Training</p>'}
+            <p><i class="fas fa-users"></i> Available Slots: ${session.capacity > 0 ? (session.capacity - session.registered_count) : 'Unlimited'}</p>
+        </div>
+    `;
+    
+    // Auto-fill training type and date for both tabs
+    document.getElementById('training_type_individual').value = session.title;
+    document.getElementById('training_date_individual').value = session.session_date;
+    document.getElementById('training_type_org').value = session.title;
+    document.getElementById('training_date_org').value = session.session_date;
+    
+    // Handle payment section
+    updatePaymentSection(session.fee);
+    
+    // Reset form to individual tab
+    switchTab('individual');
+    
+    document.getElementById('registerModal').classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function updatePaymentSection(fee) {
+    const paymentSection = document.getElementById('paymentSection');
+    const trainingFeeAmount = document.getElementById('trainingFeeAmount');
+    const totalAmountDisplay = document.getElementById('totalAmountDisplay');
+    const hiddenPaymentAmount = document.getElementById('hiddenPaymentAmount');
+
+    if (fee > 0) {
         paymentSection.style.display = 'block';
         const formattedFee = '₱' + parseFloat(fee).toFixed(2);
         trainingFeeAmount.textContent = formattedFee;
@@ -1353,500 +1747,730 @@ function escapeHtml(text) {
         // Make payment method required
         const paymentModeInputs = document.querySelectorAll('input[name="payment_method"]');
         paymentModeInputs.forEach(input => input.required = true);
-      } else {
+    } else {
         paymentSection.style.display = 'none';
         hiddenPaymentAmount.value = '0';
         
         // Make payment method not required for free training
         const paymentModeInputs = document.querySelectorAll('input[name="payment_method"]');
         paymentModeInputs.forEach(input => input.required = false);
-      }
     }
+}
+
+function closeRegisterModal() {
+    document.getElementById('registerModal').classList.remove('active');
+    document.body.style.overflow = '';
     
-    function closeRegisterModal() {
-      document.getElementById('registerModal').classList.remove('active');
-      document.body.style.overflow = ''; // Restore scrolling
-      
-      // Reset current session
-      currentSession = null;
-      
-      // Reset form
-      const form = document.getElementById('registerForm');
-      if (form) {
+    currentSession = null;
+    
+    const form = document.getElementById('registerForm');
+    if (form) {
         form.reset();
-        
-        // Reset to individual tab
         switchTab('individual');
-        
-        // Reset file upload containers
         resetFileUploads();
-        
-        // Reset payment forms
         resetPaymentForms();
         
-        // Reset submit button
         const submitBtn = form.querySelector('.btn-submit');
         if (submitBtn) {
-          submitBtn.innerHTML = '<i class="fas fa-user-plus"></i> Register for Training';
-          submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-user-plus"></i> Register for Training';
+            submitBtn.disabled = false;
         }
-      }
     }
+}
 
-    function resetPaymentForms() {
-      // Hide all payment forms
-      document.querySelectorAll('.payment-form').forEach(form => {
-        form.style.display = 'none';
-        form.classList.remove('active');
-      });
-      
-      // Hide receipt upload and payment summary
-      const receiptUpload = document.getElementById('receiptUpload');
-      const paymentSummary = document.getElementById('paymentSummary');
-      if (receiptUpload) receiptUpload.style.display = 'none';
-      if (paymentSummary) paymentSummary.style.display = 'none';
-      
-      // Reset payment method selection
-      document.querySelectorAll('input[name="payment_method"]').forEach(input => {
-        input.checked = false;
-      });
-      
-      // Clear payment form fields
-      document.querySelectorAll('.payment-form input').forEach(input => {
-        input.value = '';
-        input.removeAttribute('required');
-      });
-    }
+function switchTab(tabName) {
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelector(`[onclick="switchTab('${tabName}')"]`).classList.add('active');
     
-    function switchTab(tabName) {
-      // Update tab buttons
-      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-      document.querySelector(`[onclick="switchTab('${tabName}')"]`).classList.add('active');
-      
-      // Update tab content
-      document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-      document.getElementById(`${tabName}-tab`).classList.add('active');
-      
-      // Update the active registration type input
-      if (tabName === 'individual') {
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+    document.getElementById(`${tabName}-tab`).classList.add('active');
+    
+    if (tabName === 'individual') {
         document.getElementById('registration_type_individual').disabled = false;
         document.getElementById('registration_type_organization').disabled = true;
-        
-        // Set required fields for individual
         setRequiredFields(true, false);
         
-        // Clear organization fields
         document.getElementById('organization_name').value = '';
         document.getElementById('pax_count').value = '';
         
-        // Re-populate training type and date if we have current session
         if (currentSession) {
-          document.getElementById('training_type_individual').value = currentSession.title;
-          document.getElementById('training_date_individual').value = currentSession.session_date;
+            document.getElementById('training_type_individual').value = currentSession.title;
+            document.getElementById('training_date_individual').value = currentSession.session_date;
         }
-      } else {
+    } else {
         document.getElementById('registration_type_individual').disabled = true;
         document.getElementById('registration_type_organization').disabled = false;
-        
-        // Set required fields for organization
         setRequiredFields(false, true);
         
-        // Clear individual fields
         document.getElementById('full_name').value = '';
         document.getElementById('location').value = '';
         document.getElementById('age').value = '';
         document.getElementById('rcy_status').value = '';
         
-        // Re-populate training type and date if we have current session
         if (currentSession) {
-          document.getElementById('training_type_org').value = currentSession.title;
-          document.getElementById('training_date_org').value = currentSession.session_date;
+            document.getElementById('training_type_org').value = currentSession.title;
+            document.getElementById('training_date_org').value = currentSession.session_date;
         }
-      }
+    }
+}
+
+function setRequiredFields(individual, organization) {
+    document.getElementById('full_name').required = individual;
+    document.getElementById('location').required = individual;
+    document.getElementById('age').required = individual;
+    document.getElementById('rcy_status').required = individual;
+    
+    document.getElementById('organization_name').required = organization;
+    document.getElementById('pax_count').required = organization;
+}
+
+function filterService(service) {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (service === 'all') {
+        urlParams.delete('service');
+    } else {
+        urlParams.set('service', service);
     }
     
-    function setRequiredFields(individual, organization) {
-      // Individual fields
-      document.getElementById('full_name').required = individual;
-      document.getElementById('location').required = individual;
-      document.getElementById('age').required = individual;
-      document.getElementById('rcy_status').required = individual;
-      document.getElementById('training_type_individual').required = individual;
-      document.getElementById('training_date_individual').required = individual;
-      
-      // Organization fields
-      document.getElementById('organization_name').required = organization;
-      document.getElementById('training_type_org').required = organization;
-      document.getElementById('training_date_org').required = organization;
-      document.getElementById('pax_count').required = organization;
+    const currentSearch = urlParams.get('search');
+    if (currentSearch) {
+        urlParams.set('search', currentSearch);
     }
+    
+    window.location.search = urlParams.toString();
+}
 
-    function handlePaymentMethodChange(selectedMethod) {
-      // Hide all payment forms
-      document.querySelectorAll('.payment-form').forEach(form => {
+// Payment handling functions
+function handlePaymentMethodChange(selectedMethod) {
+    document.querySelectorAll('.payment-form').forEach(form => {
         form.classList.remove('active');
         form.style.display = 'none';
-      });
-      
-      // Show selected payment form
-      const selectedForm = document.getElementById(selectedMethod + '_form');
-      if (selectedForm) {
+    });
+    
+    const selectedForm = document.getElementById(selectedMethod + '_form');
+    if (selectedForm) {
         selectedForm.style.display = 'block';
         selectedForm.classList.add('active');
-      }
-      
-      // Show/hide receipt upload based on payment method
-      const receiptUpload = document.getElementById('receiptUpload');
-      const paymentSummary = document.getElementById('paymentSummary');
-      
-      if (selectedMethod === 'cash') {
+    }
+    
+    const receiptUpload = document.getElementById('receiptUpload');
+    const paymentSummary = document.getElementById('paymentSummary');
+    
+    if (selectedMethod === 'cash') {
         if (receiptUpload) receiptUpload.style.display = 'none';
         const receiptInput = document.getElementById('payment_receipt');
         if (receiptInput) receiptInput.required = false;
-      } else {
+    } else {
         if (receiptUpload) receiptUpload.style.display = 'block';
         const receiptInput = document.getElementById('payment_receipt');
         if (receiptInput) receiptInput.required = true;
-      }
-      
-      // Show payment summary
-      if (paymentSummary) paymentSummary.style.display = 'block';
-      const selectedMethodSpan = document.getElementById('selectedPaymentMethod');
-      if (selectedMethodSpan) selectedMethodSpan.textContent = getPaymentMethodName(selectedMethod);
-      
-      // Set required fields for selected payment method
-      setPaymentRequiredFields(selectedMethod);
     }
+    
+    if (paymentSummary) paymentSummary.style.display = 'block';
+    const selectedMethodSpan = document.getElementById('selectedPaymentMethod');
+    if (selectedMethodSpan) selectedMethodSpan.textContent = getPaymentMethodName(selectedMethod);
+}
 
-    function getPaymentMethodName(method) {
-      const names = {
+function getPaymentMethodName(method) {
+    const names = {
         'bank_transfer': 'Bank Transfer',
         'gcash': 'GCash',
         'paymaya': 'PayMaya',
         'cash': 'Cash Payment'
-      };
-      return names[method] || method;
-    }
+    };
+    return names[method] || method;
+}
 
-    function setPaymentRequiredFields(method) {
-      // Clear all payment required fields first
-      document.querySelectorAll('.payment-form input').forEach(input => {
+function resetPaymentForms() {
+    document.querySelectorAll('.payment-form').forEach(form => {
+        form.style.display = 'none';
+        form.classList.remove('active');
+    });
+    
+    const receiptUpload = document.getElementById('receiptUpload');
+    const paymentSummary = document.getElementById('paymentSummary');
+    if (receiptUpload) receiptUpload.style.display = 'none';
+    if (paymentSummary) paymentSummary.style.display = 'none';
+    
+    document.querySelectorAll('input[name="payment_method"]').forEach(input => {
+        input.checked = false;
+    });
+    
+    document.querySelectorAll('.payment-form input').forEach(input => {
+        input.value = '';
         input.removeAttribute('required');
-      });
-      
-      // Set required fields based on selected method
-      switch(method) {
-        case 'bank_transfer':
-          const bankRef = document.getElementById('bank_reference');
-          if (bankRef) bankRef.setAttribute('required', 'required');
-          break;
-        case 'gcash':
-          const gcashRef = document.getElementById('gcash_reference');
-          const gcashSender = document.getElementById('gcash_sender');
-          if (gcashRef) gcashRef.setAttribute('required', 'required');
-          if (gcashSender) gcashSender.setAttribute('required', 'required');
-          break;
-        case 'paymaya':
-          const paymayaRef = document.getElementById('paymaya_reference');
-          const paymayaSender = document.getElementById('paymaya_sender');
-          if (paymayaRef) paymayaRef.setAttribute('required', 'required');
-          if (paymayaSender) paymayaSender.setAttribute('required', 'required');
-          break;
-        case 'cash':
-          const cashName = document.getElementById('cash_name');
-          if (cashName) cashName.setAttribute('required', 'required');
-          break;
-      }
-    }
-    
-    function filterService(service) {
-      const urlParams = new URLSearchParams(window.location.search);
-      if (service === 'all') {
-        urlParams.delete('service');
-      } else {
-        urlParams.set('service', service);
-      }
-      
-      // Preserve search parameter if it exists
-      const currentSearch = urlParams.get('search');
-      if (currentSearch) {
-        urlParams.set('search', currentSearch);
-      }
-      
-      window.location.search = urlParams.toString();
-    }
-    
-    function formatTime(timeString) {
-      if (!timeString) return '';
-      const time = new Date('1970-01-01T' + timeString + 'Z');
-      return time.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true
-      });
-    }
+    });
+}
 
-    // Helper function to format date to YYYY-MM-DD string without timezone issues
-    function formatDateToString(date) {
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    }
+function resetFileUploads() {
+    document.querySelectorAll('.file-upload-container, .receipt-upload').forEach(container => {
+        container.classList.remove('has-file');
+    });
+}
+
+function handleFileUpload(inputElement) {
+    const container = inputElement.closest('.file-upload-container') || inputElement.closest('.receipt-upload');
+    const info = container.querySelector('.file-upload-info span') || container.querySelector('.upload-text');
     
-    // Helper function to escape HTML to prevent XSS
-    function escapeHtml(text) {
-      if (!text) return '';
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    }
-    
-    // File upload handling
-    function handleFileUpload(inputElement) {
-      const container = inputElement.closest('.file-upload-container') || inputElement.closest('.receipt-upload');
-      const info = container.querySelector('.file-upload-info span') || container.querySelector('.upload-text');
-      
-      if (inputElement.files && inputElement.files[0]) {
+    if (inputElement.files && inputElement.files[0]) {
         const file = inputElement.files[0];
-        let maxSize;
+        let maxSize = inputElement.name === 'valid_id' || inputElement.name === 'payment_receipt' ? 5 * 1024 * 1024 : 10 * 1024 * 1024;
         
-        if (inputElement.name === 'valid_id' || inputElement.name === 'payment_receipt') {
-          maxSize = 5 * 1024 * 1024; // 5MB
-        } else {
-          maxSize = 10 * 1024 * 1024; // 10MB
-        }
-        
-        // Check file size
         if (file.size > maxSize) {
-          alert(`File size too large. Maximum allowed: ${maxSize / (1024 * 1024)}MB`);
-          inputElement.value = '';
-          resetFileUpload(container, inputElement.name);
-          return;
+            alert(`File size too large. Maximum allowed: ${maxSize / (1024 * 1024)}MB`);
+            inputElement.value = '';
+            return;
         }
         
-        // Check file type
         const allowedTypes = inputElement.name === 'valid_id' || inputElement.name === 'payment_receipt' ? 
-          ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'] :
-          ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+            ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'] :
+            ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
         
         if (!allowedTypes.includes(file.type)) {
-          alert('Invalid file type. Please upload a supported file format.');
-          inputElement.value = '';
-          resetFileUpload(container, inputElement.name);
-          return;
+            alert('Invalid file type. Please upload a supported file format.');
+            inputElement.value = '';
+            return;
         }
         
         container.classList.add('has-file');
         info.textContent = `Selected: ${file.name}`;
-      } else {
-        resetFileUpload(container, inputElement.name);
-      }
-    }
-
-    function resetFileUpload(container, inputName) {
-      container.classList.remove('has-file');
-      const info = container.querySelector('.file-upload-info span') || container.querySelector('.upload-text');
-      
-      if (inputName === 'valid_id') {
-        info.textContent = 'Upload a clear photo of your valid ID';
-      } else if (inputName === 'payment_receipt') {
-        info.textContent = 'Upload Payment Receipt';
-      } else {
-        info.textContent = 'Upload requirements/supporting documents';
-      }
-    }
-
-    function resetFileUploads() {
-      document.querySelectorAll('.file-upload-container, .receipt-upload').forEach(container => {
+    } else {
         container.classList.remove('has-file');
-      });
-      
-      // Reset individual upload messages
-      const validIdContainer = document.querySelector('#valid_id').closest('.file-upload-container');
-      const reqContainer = document.querySelector('#requirements').closest('.file-upload-container');
-      const receiptContainer = document.querySelector('#payment_receipt').closest('.receipt-upload');
-      
-      if (validIdContainer) {
-        const validIdInfo = validIdContainer.querySelector('.file-upload-info span');
-        if (validIdInfo) validIdInfo.textContent = 'Upload a clear photo of your valid ID';
-      }
-      
-      if (reqContainer) {
-        const reqInfo = reqContainer.querySelector('.file-upload-info span');
-        if (reqInfo) reqInfo.textContent = 'Upload requirements/supporting documents';
-      }
-      
-      if (receiptContainer) {
-        const receiptInfo = receiptContainer.querySelector('.upload-text');
-        if (receiptInfo) receiptInfo.textContent = 'Upload Payment Receipt';
-      }
+        if (inputElement.name === 'valid_id') {
+            info.textContent = 'Upload a clear photo of your valid ID';
+        } else if (inputElement.name === 'payment_receipt') {
+            info.textContent = 'Upload Payment Receipt';
+        } else {
+            info.textContent = 'Upload requirements/supporting documents';
+        }
     }
+}
 
-    function initializeFileUploadHandlers() {
-      // Add event listeners for file inputs
-      const validIdInput = document.getElementById('valid_id');
-      const requirementsInput = document.getElementById('requirements');
-      const receiptInput = document.getElementById('payment_receipt');
-      
-      if (validIdInput) {
-        validIdInput.addEventListener('change', function() {
-          handleFileUpload(this);
-        });
-      }
-
-      if (requirementsInput) {
-        requirementsInput.addEventListener('change', function() {
-          handleFileUpload(this);
-        });
-      }
-
-      if (receiptInput) {
-        receiptInput.addEventListener('change', function() {
-          handleFileUpload(this);
-        });
-      }
-    }
-
-    function initializeFormSubmission() {
-      // Form validation and submission
-      const registerForm = document.getElementById('registerForm');
-      if (registerForm) {
-        registerForm.addEventListener('submit', function(e) {
-          if (!validateForm(this)) {
-            e.preventDefault();
-            return;
-          }
-
-          // Show loading state
-          const submitBtn = this.querySelector('.btn-submit');
-          if (submitBtn) {
-            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing Registration...';
-            submitBtn.disabled = true;
-          }
-        });
-      }
-    }
-
-    function validateForm(form) {
-      const activeTab = document.querySelector('.tab-content.active');
-      const isIndividual = activeTab && activeTab.id === 'individual-tab';
-      
-      if (isIndividual) {
+function validateForm(form) {
+    const activeTab = document.querySelector('.tab-content.active');
+    const isIndividual = activeTab && activeTab.id === 'individual-tab';
+    
+    if (isIndividual) {
         const fullName = form.querySelector('#full_name');
         const location = form.querySelector('#location');
         const age = form.querySelector('#age');
         const rcyStatus = form.querySelector('#rcy_status');
         
         if (!fullName || !fullName.value.trim()) {
-          alert('Please enter your full name.');
-          if (fullName) fullName.focus();
-          return false;
+            alert('Please enter your full name.');
+            if (fullName) fullName.focus();
+            return false;
         }
         
         if (!location || !location.value.trim()) {
-          alert('Please enter your location.');
-          if (location) location.focus();
-          return false;
+            alert('Please enter your location.');
+            if (location) location.focus();
+            return false;
         }
         
         if (!age || !age.value || age.value < 1 || age.value > 120) {
-          alert('Please enter a valid age (1-120).');
-          if (age) age.focus();
-          return false;
+            alert('Please enter a valid age (1-120).');
+            if (age) age.focus();
+            return false;
         }
         
         if (!rcyStatus || !rcyStatus.value) {
-          alert('Please select your RCY status.');
-          if (rcyStatus) rcyStatus.focus();
-          return false;
+            alert('Please select your RCY status.');
+            if (rcyStatus) rcyStatus.focus();
+            return false;
         }
-      } else {
-        // Organization validation
+    } else {
         const orgName = form.querySelector('#organization_name');
         const paxCount = form.querySelector('#pax_count');
         
         if (!orgName || !orgName.value.trim()) {
-          alert('Please enter the organization/company name.');
-          if (orgName) orgName.focus();
-          return false;
+            alert('Please enter the organization/company name.');
+            if (orgName) orgName.focus();
+            return false;
         }
         
         if (!paxCount || !paxCount.value || paxCount.value < 1) {
-          alert('Please enter the number of participants.');
-          if (paxCount) paxCount.focus();
-          return false;
+            alert('Please enter the number of participants.');
+            if (paxCount) paxCount.focus();
+            return false;
         }
-      }
-      
-      // Check payment method for paid sessions
-      if (currentSession && parseFloat(currentSession.fee) > 0) {
+    }
+    
+    // Check payment method for paid sessions
+    if (currentSession && parseFloat(currentSession.fee) > 0) {
         const paymentMode = form.querySelector('input[name="payment_method"]:checked');
         if (!paymentMode) {
-          alert('Please select a payment method.');
-          return false;
+            alert('Please select a payment method.');
+            return false;
         }
         
         // Check receipt upload for non-cash payments
         if (paymentMode.value !== 'cash') {
-          const receiptInput = form.querySelector('#payment_receipt');
-          if (!receiptInput || !receiptInput.files || !receiptInput.files[0]) {
-            alert('Please upload your payment receipt.');
-            if (receiptInput) receiptInput.focus();
-            return false;
-          }
+            const receiptInput = form.querySelector('#payment_receipt');
+            if (!receiptInput || !receiptInput.files || !receiptInput.files[0]) {
+                alert('Please upload your payment receipt.');
+                if (receiptInput) receiptInput.focus();
+                return false;
+            }
         }
-      }
-      
-      // Check valid ID upload
-      const validId = form.querySelector('#valid_id');
-      if (!validId || !validId.files || !validId.files[0]) {
+    }
+    
+    // Check valid ID upload
+    const validId = form.querySelector('#valid_id');
+    if (!validId || !validId.files || !validId.files[0]) {
         alert('Please upload a valid ID.');
         if (validId) validId.focus();
         return false;
-      }
-      
-      return true;
+    }
+    
+    return true;
+}
+
+// Initialize when DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    generateTrainingCalendar();
+    
+    // Initialize payment method listeners
+    const paymentMethods = document.querySelectorAll('input[name="payment_method"]');
+    paymentMethods.forEach(method => {
+        method.addEventListener('change', function() {
+            handlePaymentMethodChange(this.value);
+        });
+    });
+
+    // Initialize file upload handlers
+    const validIdInput = document.getElementById('valid_id');
+    const requirementsInput = document.getElementById('requirements');
+    const receiptInput = document.getElementById('payment_receipt');
+    
+    if (validIdInput) {
+        validIdInput.addEventListener('change', function() {
+            handleFileUpload(this);
+        });
+    }
+
+    if (requirementsInput) {
+        requirementsInput.addEventListener('change', function() {
+            handleFileUpload(this);
+        });
+    }
+
+    if (receiptInput) {
+        receiptInput.addEventListener('change', function() {
+            handleFileUpload(this);
+        });
+    }
+
+    // Form submission handler
+    const registerForm = document.getElementById('registerForm');
+    if (registerForm) {
+        registerForm.addEventListener('submit', function(e) {
+            if (!validateForm(this)) {
+                e.preventDefault();
+                return;
+            }
+
+            const submitBtn = this.querySelector('.btn-submit');
+            if (submitBtn) {
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing Registration...';
+                submitBtn.disabled = true;
+            }
+        });
     }
 
     // Close modal when clicking outside
-    document.addEventListener('click', function(e) {
-      const modal = document.getElementById('registerModal');
-      if (modal && e.target === modal) {
-        closeRegisterModal();
-      }
-    });
+    const modal = document.getElementById('registerModal');
+    if (modal) {
+        modal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeRegisterModal();
+            }
+        });
+    }
 
-    // Keyboard navigation for modals
+    // Close calendar modal when clicking outside
+    const calendarModal = document.getElementById('calendarModal');
+    if (calendarModal) {
+        calendarModal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeCalendarModal();
+            }
+        });
+    }
+
+    // Keyboard navigation
     document.addEventListener('keydown', function(e) {
-      const modal = document.getElementById('registerModal');
-      if (modal && modal.classList.contains('active') && e.key === 'Escape') {
-        closeRegisterModal();
-      }
+        if (e.key === 'Escape') {
+            if (calendarModal && calendarModal.classList.contains('active')) {
+                closeCalendarModal();
+            } else if (modal && modal.classList.contains('active')) {
+                closeRegisterModal();
+            }
+        }
+        
+        if (calendarModal && calendarModal.classList.contains('active')) {
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                changeMonth(-1);
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                changeMonth(1);
+            }
+        }
     });
 
-    // Auto-dismiss alerts after 5 seconds
+    // Auto-dismiss alerts
     setTimeout(() => {
-      const alerts = document.querySelectorAll('.alert');
-      alerts.forEach(alert => {
-        setTimeout(() => {
-          if (alert.parentNode) {
-            alert.style.opacity = '0';
-            alert.style.transform = 'translateY(-20px)';
+        const alerts = document.querySelectorAll('.alert');
+        alerts.forEach(alert => {
             setTimeout(() => {
-              if (alert.parentNode) {
-                alert.remove();
-              }
-            }, 300);
-          }
-        }, 5000);
-      });
+                if (alert.parentNode) {
+                    alert.style.opacity = '0';
+                    alert.style.transform = 'translateY(-20px)';
+                    setTimeout(() => {
+                        if (alert.parentNode) {
+                            alert.remove();
+                        }
+                    }, 300);
+                }
+            }, 5000);
+        });
     }, 100);
 
-    // Prevent form resubmission on page refresh
-    if (window.history.replaceState) {
-      window.history.replaceState(null, null, window.location.href);
+    // Calendar day click handling
+    document.addEventListener('click', function(e) {
+        const dayCell = e.target.closest('.day-cell.has-events');
+        if (dayCell) {
+            const date = dayCell.getAttribute('data-date');
+            if (date) {
+                let dayTrainings = getTrainingsForDate(date);
+                if (dayTrainings.length > 0) {
+                    showDayTrainings(date, dayTrainings);
+                }
+            }
+        }
+    });
+
+    // Initialize calendar styles
+    injectMultiDayTrainingStyles();
+
+    // Debug logs
+    console.log('Training Calendar Data:', typeof window.calendarTrainingsData !== 'undefined' ? window.calendarTrainingsData : 'Not available');
+    console.log('User Training Registrations:', typeof window.userTrainingRegistrations !== 'undefined' ? window.userTrainingRegistrations : 'Not available');
+});
+
+function showDayTrainings(date, trainings) {
+    const trainingDate = new Date(date + 'T00:00:00');
+    const formattedDate = trainingDate.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
+
+    alert(`Training Sessions on ${formattedDate}:\n${trainings.map(t => {
+        const startDate = new Date(t.session_date);
+        const endDate = new Date(t.session_end_date || t.session_date);
+        const durationDays = t.duration_days || 1;
+        const durationText = durationDays > 1 ? ` (${durationDays} days)` : '';
+        return `• ${t.title}${durationText} - ${t.venue}`;
+    }).join('\n')}`);
+}
+
+// Function to inject multi-day training styles
+function injectMultiDayTrainingStyles() {
+    const multiDayTrainingStyles = `
+/* Multi-day training span styles */
+.session-datetime {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.session-date-single .session-date {
+    font-weight: 600;
+    color: var(--dark);
+}
+
+.session-date-start {
+    font-weight: 600;
+    color: var(--dark);
+    font-size: 0.9rem;
+}
+
+.session-date-end {
+    font-size: 0.85rem;
+    color: var(--gray);
+    font-style: italic;
+}
+
+.session-time {
+    font-size: 0.8rem;
+    color: var(--gray);
+    margin-top: 0.2rem;
+}
+
+.session-duration {
+    font-size: 0.75rem;
+    background: linear-gradient(135deg, var(--light) 0%, #e3f2fd 100%);
+    color: var(--blue);
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    display: inline-block;
+    margin-top: 0.2rem;
+    font-weight: 500;
+    border: 1px solid rgba(33, 150, 243, 0.2);
+}
+
+.status-badge.ongoing {
+    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+    color: #856404;
+    border: 1px solid #f7dc6f;
+}
+
+.status-badge.ongoing i {
+    color: #ff9800;
+}
+
+.ongoing-badge {
+    background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+    color: white;
+    padding: 0.2rem 0.5rem;
+    border-radius: 12px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    margin-top: 0.3rem;
+    display: inline-block;
+    animation: pulse 2s infinite;
+}
+
+/* Enhanced calendar styles for multi-day training */
+.event-indicators {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1px;
+    margin-top: 2px;
+    position: relative;
+    z-index: 1;
+}
+
+.event-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 1px solid white;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    transition: transform 0.2s ease;
+}
+
+.event-indicator.registered {
+    border: 2px solid #4CAF50;
+    box-shadow: 0 0 4px rgba(76, 175, 80, 0.4);
+}
+
+.event-count {
+    font-size: 7px;
+    background: rgba(0,0,0,0.6);
+    color: white;
+    padding: 1px 3px;
+    border-radius: 3px;
+    margin-top: 1px;
+}
+
+/* Large calendar event bars */
+.event-display {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 4px;
+}
+
+.event-bar {
+    height: 16px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    color: white;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    padding: 2px 4px;
+    position: relative;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: var(--event-color, #607D8B);
+    border: 1px solid rgba(255,255,255,0.2);
+    line-height: 12px;
+    transition: transform 0.2s ease;
+}
+
+.event-bar.registered {
+    background: linear-gradient(45deg, var(--event-color, #607D8B) 0%, #4CAF50 100%);
+    box-shadow: 0 0 6px rgba(76, 175, 80, 0.4);
+}
+
+/* Enhanced event dots */
+.event-dots {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    margin-top: 2px;
+}
+
+.event-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 1px solid white;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    transition: transform 0.2s ease;
+}
+
+.event-dot.registered {
+    border: 2px solid #4CAF50;
+    box-shadow: 0 0 4px rgba(76, 175, 80, 0.4);
+}
+
+/* Registration indicator */
+.registration-indicator {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 12px;
+    height: 12px;
+    background: #4CAF50;
+    color: white;
+    border-radius: 50%;
+    font-size: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    z-index: 2;
+}
+
+/* Enhanced calendar day cells */
+.day-cell.has-events {
+    border: 2px solid rgba(33, 150, 243, 0.3);
+}
+
+.day-cell.has-registered-event {
+    border: 2px solid rgba(76, 175, 80, 0.5);
+    background: linear-gradient(135deg, rgba(76, 175, 80, 0.05) 0%, rgba(76, 175, 80, 0.1) 100%);
+}
+
+.calendar-day.has-registered-event {
+    border: 2px solid rgba(76, 175, 80, 0.5);
+    background: linear-gradient(135deg, rgba(76, 175, 80, 0.05) 0%, rgba(76, 175, 80, 0.1) 100%);
+}
+
+/* Tooltip styles for multi-day training */
+.tooltip-event-duration {
+    color: #666;
+    font-size: 0.85rem;
+    margin: 2px 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+/* Tooltip styles for multi-day training */
+.tooltip-event-duration {
+    color: #666;
+    font-size: 0.85rem;
+    margin: 2px 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.tooltip-event-time {
+    color: #666;
+    font-size: 0.8rem;
+    margin: 2px 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.tooltip-event-service {
+    color: #666;
+    font-size: 0.8rem;
+    margin: 2px 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Animation for spans */
+.event-indicator, .event-bar {
+    animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-3px);
     }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.7; }
+    100% { opacity: 1; }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .event-indicator {
+        width: 5px;
+        height: 5px;
+    }
+    
+    .event-bar {
+        height: 14px;
+        font-size: 9px;
+    }
+    
+    .event-dot {
+        width: 6px;
+        height: 6px;
+    }
+    
+    .session-datetime {
+        font-size: 0.8rem;
+    }
+    
+    .session-duration {
+        font-size: 0.7rem;
+        padding: 0.1rem 0.3rem;
+    }
+}
+
+@media (max-width: 576px) {
+    .session-date-start,
+    .session-date-end {
+        font-size: 0.75rem;
+    }
+    
+    .session-duration {
+        font-size: 0.65rem;
+    }
+    
+    .session-time {
+        font-size: 0.75rem;
+    }
+}
+    `;
+    
+    // Create and append style element
+    const styleElement = document.createElement('style');
+    styleElement.innerHTML = multiDayTrainingStyles;
+    document.head.appendChild(styleElement);
+}
 </script>
+
 </body>
 </html>

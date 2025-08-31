@@ -3273,3 +3273,203 @@ select:focus-visible {
     min-width: 100%;
   }
 }
+.event-date-range {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 140px;
+}
+
+.event-date-single {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.event-date-start {
+  font-weight: 600;
+  color: var(--dark);
+  font-size: 0.9rem;
+}
+
+.event-date-end {
+  font-size: 0.85rem;
+  color: var(--gray);
+  font-style: italic;
+}
+
+.event-duration {
+  font-size: 0.75rem;
+  background: linear-gradient(135deg, var(--light) 0%, #e3f2fd 100%);
+  color: var(--blue);
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  display: inline-block;
+  margin-top: 0.2rem;
+  font-weight: 500;
+  border: 1px solid rgba(33, 150, 243, 0.2);
+  align-self: flex-start;
+}
+/* Enhanced Service Badge - Matching Training Schedule */
+.event-service {
+  display: inline-block;
+  padding: 0.3rem 0.8rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: white;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  border: 1px solid transparent;
+}
+
+.event-service.health-service {
+  background: linear-gradient(135deg, #4CAF50 0%, #388e3c 100%);
+  border-color: #2e7d32;
+}
+
+.event-service.safety-service {
+  background: linear-gradient(135deg, #FF9800 0%, #f57c00 100%);
+  border-color: #e65100;
+}
+
+.event-service.welfare-service {
+  background: linear-gradient(135deg, #2196F3 0%, #1976d2 100%);
+  border-color: #1565c0;
+}
+
+.event-service.disaster-management-service {
+  background: linear-gradient(135deg, #F44336 0%, #d32f2f 100%);
+  border-color: #c62828;
+}
+
+.event-service.red-cross-youth {
+  background: linear-gradient(135deg, #9C27B0 0%, #7b1fa2 100%);
+  border-color: #6a1b9a;
+}
+
+/* Enhanced Ongoing Badge - Matching Training Schedule */
+.ongoing-badge {
+  background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+  color: #856404;
+  padding: 0.2rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  margin-top: 0.3rem;
+  display: inline-block;
+  animation: pulse 2s infinite;
+  border: 1px solid #f7dc6f;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.7; }
+  100% { opacity: 1; }
+}
+/* Enhanced Status Badge */
+.status-badge {
+  padding: 0.5rem 0.9rem;
+  border-radius: 50px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 2px solid transparent;
+  letter-spacing: 0.5px;
+}
+
+.status-badge.available {
+  background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+  color: #155724;
+  border-color: #b1dfbb;
+}
+
+.status-badge.registered {
+  background: linear-gradient(135deg, #d1edff 0%, #b8daff 100%);
+  color: #0c5460;
+  border-color: #9ed4ff;
+}
+
+.status-badge.pending {
+  background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+  color: #856404;
+  border-color: #f7dc6f;
+}
+
+.status-badge.approved {
+  background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+  color: #155724;
+  border-color: #b1dfbb;
+}
+
+.status-badge.rejected {
+  background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+  color: #721c24;
+  border-color: #f1b0b7;
+}
+
+.type-badge {
+  padding: 0.3rem 0.6rem;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  border: 2px solid transparent;
+}
+
+.type-badge.individual {
+  background: linear-gradient(135deg, #e8f5e9 0%, #d4edda 100%);
+  color: var(--green);
+  border-color: #c8e6c9;
+}
+
+.type-badge.organization {
+  background: linear-gradient(135deg, #e3f2fd 0%, #d1edff 100%);
+  color: var(--blue);
+  border-color: #bbdefb;
+}
+
+
+/* Enhanced Tooltip Styling - Matching Training Schedule */
+.tooltip-event-duration {
+  color: #666;
+  font-size: 0.85rem;
+  margin: 2px 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tooltip-event-time {
+  color: #666;
+  font-size: 0.8rem;
+  margin: 2px 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tooltip-event-service {
+  color: #666;
+  font-size: 0.8rem;
+  margin: 2px 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tooltip-event.registered {
+  background: linear-gradient(
+    135deg,
+    rgba(76, 175, 80, 0.2) 0%,
+    rgba(76, 175, 80, 0.1) 100%
+  );
+  border-left: 3px solid #4caf50;
+  padding-left: 0.75rem;
+}
