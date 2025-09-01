@@ -520,6 +520,7 @@ body.sidebar-collapsed .events-container {
     border-radius: 4px;
     display: inline-block;
     margin: 0.2rem 0;
+    width: 130px;
 }
 
 .event-duration {
@@ -532,6 +533,7 @@ body.sidebar-collapsed .events-container {
     margin-top: 0.2rem;
     font-weight: 500;
     border: 1px solid rgba(33, 150, 243, 0.2);
+    width: 100px;
 }
 .ongoing-badge {
     background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
@@ -1991,7 +1993,210 @@ html {
     border-color: var(--blue);
     box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
 }
+.location-display {
+    max-width: 200px;
+}
 
+.location-address {
+    font-size: 0.9rem;
+    line-height: 1.4;
+    margin-bottom: 0.25rem;
+    word-break: break-word;
+}
+
+.btn-expand-location {
+    background: linear-gradient(135deg, var(--blue) 0%, #2196F3 100%);
+    color: white;
+    border: none;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.btn-expand-location:hover {
+    background: linear-gradient(135deg, #1976D2 0%, #1565C0 100%);
+    transform: translateY(-1px);
+}
+
+.btn-expand-location i {
+    font-size: 0.6rem;
+}
+.location-group {
+    margin-bottom: 1.5rem;
+}
+
+.location-group label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-bottom: 0.5rem;
+}
+
+.field-hint {
+    font-size: 0.8rem;
+    color: var(--gray);
+    font-weight: normal;
+    font-style: italic;
+}
+
+.location-group textarea {
+    font-family: inherit;
+    line-height: 1.5;
+    padding: 0.75rem;
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    background: white;
+}
+
+.location-group textarea:focus {
+    outline: none;
+    border-color: var(--prc-red);
+    box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.1);
+}
+
+.field-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-top: 0.5rem;
+    gap: 1rem;
+}
+
+.char-counter {
+    font-size: 0.75rem;
+    color: var(--gray);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.char-counter.warning {
+    color: #ff9800;
+}
+
+.char-counter.danger {
+    color: var(--prc-red);
+}
+
+.location-tips {
+    flex: 1;
+}
+
+.location-tips small {
+    font-size: 0.75rem;
+    color: var(--gray);
+    display: flex;
+    align-items: flex-start;
+    gap: 0.25rem;
+    line-height: 1.4;
+}
+
+.location-tips i {
+    margin-top: 0.1rem;
+    color: var(--blue);
+    flex-shrink: 0;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .field-info {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .location-tips small {
+        font-size: 0.7rem;
+    }
+}
+
+/* Enhanced textarea for better UX */
+.location-group textarea::placeholder {
+    color: #999;
+    font-style: italic;
+    line-height: 1.4;
+}
+
+.location-group textarea:invalid {
+    border-color: #dc3545;
+}
+
+.location-group textarea:valid {
+    border-color: #28a745;
+}
+/* Modal for full location display */
+.location-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10001;
+    padding: 1rem;
+}
+
+.location-modal-content {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    max-width: 600px;
+    width: 100%;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+}
+
+.location-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--border);
+}
+
+.location-modal-header h3 {
+    margin: 0;
+    color: var(--dark);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.location-modal-header i {
+    color: var(--prc-red);
+}
+
+.location-modal-close {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    color: var(--gray);
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.location-modal-close:hover {
+    background: var(--light);
+    color: var(--dark);
+}
+
+.location-modal-body {
+    line-height: 1.6;
+    color: var(--dark);
+    white-space: pre-line;
+    font-size: 0.95rem;
+}
 /* Animation keyframes */
 @keyframes slideDown {
     from {

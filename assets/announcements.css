@@ -293,13 +293,16 @@
   max-height: 400px;
   text-align: center;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  display: flex; /* Added for proper centering */
+  align-items: center; /* Center vertically */
+  justify-content: center; /* Center horizontally */
 }
 
 .announcement-image img {
   width: 100%;
   height: auto;
   max-height: 400px;
-  object-fit: cover;
+  object-fit: contain; /* Changed from 'cover' to 'contain' to show full image */
   display: block;
   border-radius: 12px;
   transition: transform 0.3s ease;

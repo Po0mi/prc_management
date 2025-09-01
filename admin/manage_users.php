@@ -7,6 +7,26 @@ $pdo = $GLOBALS['pdo'];
 $errorMessage = '';
 $successMessage = '';
 
+// Get filter parameter
+$roleFilter = $_GET['role'] ?? 'all';
+if (isset($_GET['view_documents'])) {
+    $userId = (int)$_GET['user_id'];
+    if ($userId) {
+        $stmt = $pdo->prepare("
+            SELECT * FROM user_documents 
+            WHERE user_id = ? 
+            ORDER BY uploaded_at DESC
+        ");
+        $stmt->execute([$userId]);
+        $documents = $stmt->fetchAll();
+        
+        // Return JSON response for AJAX request
+        header('Content-Type: application/json');
+        echo json_encode($documents);
+        exit;
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['create_user'])) {
         $username = trim($_POST['username']);
@@ -49,6 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errorMessage = "Username, password, full name, and valid role are required.";
         }
     }
+    
     elseif (isset($_POST['update_user'])) {
         $user_id = (int)$_POST['user_id'];
         $full_name = trim($_POST['full_name']);
@@ -106,17 +127,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Get all users with their services
-$stmt = $pdo->query("
+// Build query with role filter
+$whereClause = '';
+$params = [];
+
+if ($roleFilter !== 'all') {
+    $whereClause = 'WHERE u.role = ?';
+    $params[] = $roleFilter;
+}
+// Get filtered users with their services
+$stmt = $pdo->prepare("
     SELECT u.user_id, u.username, u.full_name, u.first_name, u.last_name, u.role, u.user_type, u.email, u.phone, u.gender, u.services,
            GROUP_CONCAT(us.service_type) as user_services
     FROM users u
     LEFT JOIN user_services us ON u.user_id = us.user_id
+    $whereClause
     GROUP BY u.user_id
     ORDER BY u.username
 ");
+$stmt->execute($params);
 $users = $stmt->fetchAll();
-
 // Get statistics
 $admin_count = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'admin'")->fetchColumn();
 $user_count = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'user'")->fetchColumn();
@@ -249,10 +279,105 @@ $serviceNames = [
       font-size: 0.85rem;
       user-select: none;
     }
+
+    /* Enhanced role filter styles */
+    .role-filter {
+      display: flex;
+      gap: 0.5rem;
+      background: white;
+      padding: 0.4rem;
+      border-radius: 50px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      border: 1px solid #e0e0e0;
+    }
+    
+    .role-filter button {
+      padding: 0.6rem 1.2rem;
+      border: none;
+      background: transparent;
+      border-radius: 50px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--gray);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      position: relative;
+    }
+    
+    .role-filter button:hover {
+      background: rgba(160, 0, 0, 0.08);
+      color: var(--prc-red);
+      transform: translateY(-1px);
+    }
+    
+    .role-filter button.active {
+      background: linear-gradient(135deg, var(--prc-red) 0%, var(--prc-red-dark) 100%);
+      color: white;
+      box-shadow: 0 3px 10px rgba(160, 0, 0, 0.3);
+      transform: translateY(-2px);
+    }
+    
+    .role-filter button.active:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 5px 15px rgba(160, 0, 0, 0.4);
+    }
+
+    /* Count badges in filter buttons */
+    .filter-count {
+      background: rgba(255, 255, 255, 0.3);
+      color: inherit;
+      padding: 0.15rem 0.4rem;
+      border-radius: 12px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      margin-left: 0.3rem;
+    }
+    
+    .role-filter button.active .filter-count {
+      background: rgba(255, 255, 255, 0.25);
+      color: white;
+    }
+    
+    .role-filter button:not(.active) .filter-count {
+      background: rgba(160, 0, 0, 0.1);
+      color: var(--prc-red);
+    }
+
+    /* Section headers for filtered views */
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      padding: 1rem 0;
+      border-bottom: 2px solid #f0f0f0;
+    }
+    
+    .section-title {
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: var(--dark);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .section-count {
+      background: var(--prc-red);
+      color: white;
+      padding: 0.3rem 0.8rem;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
-  <?php include 'sidebar.php'; ?>
+   <?php include 'sidebar.php'; ?>
   
   <div class="users-container">
     <div class="page-header">
@@ -274,12 +399,31 @@ $serviceNames = [
       </div>
     <?php endif; ?>
 
-    <!-- Action Bar -->
+    <!-- Action Bar with Enhanced Role Filter -->
     <div class="action-bar">
       <div class="action-bar-left">
         <div class="search-box">
           <i class="fas fa-search"></i>
           <input type="text" id="userSearch" placeholder="Search users...">
+        </div>
+        
+        <!-- Enhanced Role Filter -->
+        <div class="role-filter">
+          <a href="?role=all" class="<?= $roleFilter === 'all' ? 'active' : '' ?>">
+            <i class="fas fa-users"></i>
+            All Users
+            <span class="filter-count"><?= $total_users ?></span>
+          </a>
+          <a href="?role=admin" class="<?= $roleFilter === 'admin' ? 'active' : '' ?>">
+            <i class="fas fa-user-shield"></i>
+            Administrators
+            <span class="filter-count"><?= $admin_count ?></span>
+          </a>
+          <a href="?role=user" class="<?= $roleFilter === 'user' ? 'active' : '' ?>">
+            <i class="fas fa-user"></i>
+            Regular Users
+            <span class="filter-count"><?= $user_count ?></span>
+          </a>
         </div>
       </div>
       
@@ -291,57 +435,85 @@ $serviceNames = [
     <!-- Statistics Overview -->
     <div class="stats-overview">
       <div class="stat-card">
-        <div class="stat-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+        <div class="stat-icon">
           <i class="fas fa-users"></i>
         </div>
         <div>
-          <div style="font-size: 1.5rem; font-weight: 700;"><?= $total_users ?></div>
-          <div style="color: var(--gray); font-size: 0.9rem;">Total Users</div>
+          <div><?= $total_users ?></div>
+          <div>Total Users</div>
         </div>
       </div>
       
       <div class="stat-card">
-        <div class="stat-icon" style="background: linear-gradient(135deg, #00c853 0%, #64dd17 100%);">
+        <div class="stat-icon">
           <i class="fas fa-user-shield"></i>
         </div>
         <div>
-          <div style="font-size: 1.5rem; font-weight: 700;"><?= $admin_count ?></div>
-          <div style="color: var(--gray); font-size: 0.9rem;">Administrators</div>
+          <div><?= $admin_count ?></div>
+          <div>Administrators</div>
         </div>
       </div>
       
       <div class="stat-card">
-        <div class="stat-icon" style="background: linear-gradient(135deg, #ff6b6b 0%, #ff8e53 100%);">
+        <div class="stat-icon">
           <i class="fas fa-user"></i>
         </div>
         <div>
-          <div style="font-size: 1.5rem; font-weight: 700;"><?= $user_count ?></div>
-          <div style="color: var(--gray); font-size: 0.9rem;">Regular Users</div>
+          <div><?= $user_count ?></div>
+          <div>Regular Users</div>
         </div>
       </div>
       
       <div class="stat-card">
-        <div class="stat-icon" style="background: linear-gradient(135deg, #9c27b0 0%, #e91e63 100%);">
+        <div class="stat-icon">
           <i class="fas fa-hands-helping"></i>
         </div>
         <div>
-          <div style="font-size: 1.5rem; font-weight: 700;"><?= $rcy_member_count ?></div>
-          <div style="color: var(--gray); font-size: 0.9rem;">RCY Members</div>
+          <div><?= $rcy_member_count ?></div>
+          <div>RCY Members</div>
         </div>
       </div>
     </div>
 
-    <!-- Users Table -->
+    <!-- Users Table with Section Header -->
     <div class="users-table-wrapper">
-      <div class="table-header">
-        <h2 class="table-title">All Users</h2>
+      <div class="section-header">
+        <?php if ($roleFilter === 'all'): ?>
+          <h2 class="section-title">
+            <i class="fas fa-users"></i>
+            All Users
+          </h2>
+          <span class="section-count"><?= count($users) ?> users</span>
+        <?php elseif ($roleFilter === 'admin'): ?>
+          <h2 class="section-title">
+            <i class="fas fa-user-shield"></i>
+            Administrators
+          </h2>
+          <span class="section-count"><?= count($users) ?> admins</span>
+        <?php elseif ($roleFilter === 'user'): ?>
+          <h2 class="section-title">
+            <i class="fas fa-user"></i>
+            Regular Users
+          </h2>
+          <span class="section-count"><?= count($users) ?> users</span>
+        <?php endif; ?>
       </div>
       
       <?php if (empty($users)): ?>
         <div class="empty-state">
-          <i class="fas fa-user-slash"></i>
-          <h3>No users found</h3>
-          <p>Click "Create New User" to get started</p>
+          <?php if ($roleFilter === 'all'): ?>
+            <i class="fas fa-user-slash"></i>
+            <h3>No users found</h3>
+            <p>Click "Create New User" to get started</p>
+          <?php elseif ($roleFilter === 'admin'): ?>
+            <i class="fas fa-user-shield"></i>
+            <h3>No administrators found</h3>
+            <p>Create users with admin role to see them here</p>
+          <?php elseif ($roleFilter === 'user'): ?>
+            <i class="fas fa-user"></i>
+            <h3>No regular users found</h3>
+            <p>Create users with user role to see them here</p>
+          <?php endif; ?>
         </div>
       <?php else: ?>
         <table class="data-table" id="usersTable">
@@ -394,7 +566,7 @@ $serviceNames = [
                       <?php endforeach; ?>
                     </div>
                   <?php else: ?>
-                    <span style="color: #6c757d; font-style: italic;">N/A</span>
+                    <span>N/A</span>
                   <?php endif; ?>
                 </td>
                 <td><?= htmlspecialchars($u['email']) ?></td>
@@ -402,6 +574,9 @@ $serviceNames = [
                 <td class="actions">
                   <button class="btn-action btn-edit" onclick="openEditModal(<?= htmlspecialchars(json_encode($u)) ?>)">
                     <i class="fas fa-edit"></i> Edit
+                  </button>
+                  <button class="btn-action btn-view-docs" onclick="viewDocuments(<?= $u['user_id'] ?>, '<?= htmlspecialchars($u['username']) ?>')">
+                    <i class="fas fa-file"></i> Docs
                   </button>
                   <form method="POST" style="display: inline;" onsubmit="return confirmDelete('<?= htmlspecialchars($u['username']) ?>')">
                     <input type="hidden" name="delete_user" value="1">
@@ -419,9 +594,35 @@ $serviceNames = [
     </div>
   </div>
 
+  <!-- Documents Modal -->
+  <div class="documents-modal" id="documentsModal">
+    <div class="documents-content">
+      <div class="documents-header">
+        <h2 id="documentsTitle">User Documents</h2>
+        <button class="close-documents" onclick="closeDocumentsModal()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="documents-body">
+        <div class="loading-documents" id="documentsLoading">
+          <div class="loading-spinner"></div>
+          <p>Loading documents...</p>
+        </div>
+        <div class="documents-list" id="documentsList" style="display: none;">
+          <!-- Documents will be inserted here -->
+        </div>
+        <div class="no-documents" id="noDocuments" style="display: none;">
+          <i class="fas fa-folder-open"></i>
+          <h3>No Documents Found</h3>
+          <p>This user hasn't uploaded any documents yet.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Create/Edit Modal -->
   <div class="modal" id="userModal">
-    <div class="modal-content" style="max-width: 600px;">
+    <div class="modal-content">
       <div class="modal-header">
         <h2 class="modal-title" id="modalTitle">Create New User</h2>
         <button class="close-modal" onclick="closeModal()">
@@ -508,7 +709,7 @@ $serviceNames = [
         <!-- RCY Services Section -->
         <div class="services-section" id="servicesSection">
           <h4><i class="fas fa-hands-helping"></i> RCY Member Services</h4>
-          <p style="margin: 0.5rem 0; color: #666; font-size: 0.9rem;">Select the services this RCY member will participate in:</p>
+          <p>Select the services this RCY member will participate in:</p>
           
           <div class="services-grid">
             <label class="service-checkbox" for="service_health">
@@ -546,15 +747,122 @@ $serviceNames = [
   </div>
 
   <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
-  <script>
+  <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
+<script>
+  // Document viewing functionality
+    function viewDocuments(userId, username) {
+      // Show modal with loading state
+      const modal = document.getElementById('documentsModal');
+      const title = document.getElementById('documentsTitle');
+      const loading = document.getElementById('documentsLoading');
+      const list = document.getElementById('documentsList');
+      const noDocs = document.getElementById('noDocuments');
+      
+      title.textContent = `Documents - ${username}`;
+      loading.style.display = 'block';
+      list.style.display = 'none';
+      noDocs.style.display = 'none';
+      modal.style.display = 'flex';
+      
+      // Fetch documents via AJAX
+      fetch(`?view_documents=1&user_id=${userId}`)
+        .then(response => response.json())
+        .then(documents => {
+          loading.style.display = 'none';
+          
+          if (documents.length > 0) {
+            list.style.display = 'grid';
+            renderDocumentsList(documents);
+          } else {
+            noDocs.style.display = 'block';
+          }
+        })
+        .catch(error => {
+          console.error('Error fetching documents:', error);
+          loading.style.display = 'none';
+          noDocs.innerHTML = `
+            <i class="fas fa-exclamation-triangle"></i>
+            <h3>Error Loading Documents</h3>
+            <p>There was a problem loading the documents. Please try again.</p>
+          `;
+          noDocs.style.display = 'block';
+        });
+    }
+    
+    function renderDocumentsList(documents) {
+      const list = document.getElementById('documentsList');
+      list.innerHTML = '';
+      
+      documents.forEach(doc => {
+        // Determine icon based on file type
+        let icon = 'fa-file';
+        if (doc.file_type === 'pdf') icon = 'fa-file-pdf';
+        else if (['doc', 'docx'].includes(doc.file_type)) icon = 'fa-file-word';
+        else if (['jpg', 'jpeg', 'png', 'gif'].includes(doc.file_type)) icon = 'fa-file-image';
+        else if (doc.file_type === 'txt') icon = 'fa-file-text';
+        
+        // Format file size
+        const fileSize = formatFileSize(doc.file_size);
+        
+        // Format upload date
+        const uploadDate = new Date(doc.uploaded_at).toLocaleDateString();
+        
+        const docElement = document.createElement('div');
+        docElement.className = 'document-item';
+        docElement.innerHTML = `
+          <div class="document-info">
+            <div class="document-icon">
+              <i class="fas ${icon}"></i>
+            </div>
+            <div class="document-details">
+              <h4>${doc.original_name}</h4>
+              <div class="document-meta">
+                ${fileSize} • ${doc.file_type.toUpperCase()} • Uploaded: ${uploadDate}
+              </div>
+            </div>
+          </div>
+          <div class="document-actions">
+            <a href="../${doc.file_path}" target="_blank" class="btn-view">
+              <i class="fas fa-eye"></i> View
+            </a>
+            <a href="../${doc.file_path}" download="${doc.original_name}" class="btn-download">
+              <i class="fas fa-download"></i> Download
+            </a>
+          </div>
+        `;
+        
+        list.appendChild(docElement);
+      });
+    }
+    
+    function formatFileSize(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+    
+    function closeDocumentsModal() {
+      document.getElementById('documentsModal').style.display = 'none';
+    }
+    
+    // Close modal when clicking outside
+    document.getElementById('documentsModal').addEventListener('click', function(e) {
+      if (e.target === this) {
+        closeDocumentsModal();
+      }
+    });
+    
+    // Existing functions
     function toggleServicesSection() {
       const userType = document.getElementById('user_type').value;
       const servicesSection = document.getElementById('servicesSection');
       
       if (userType === 'rcy_member') {
-        servicesSection.classList.add('show');
+        servicesSection.style.display = 'block';
       } else {
-        servicesSection.classList.remove('show');
+        servicesSection.style.display = 'none';
         // Clear all checkboxes when not RCY member
         const checkboxes = servicesSection.querySelectorAll('input[type="checkbox"]');
         checkboxes.forEach(cb => cb.checked = false);
@@ -570,7 +878,7 @@ $serviceNames = [
       document.getElementById('passwordField').placeholder = "Enter password";
       document.getElementById('user_type').value = 'non_rcy_member';
       toggleServicesSection();
-      document.getElementById('userModal').classList.add('active');
+      document.getElementById('userModal').style.display = 'flex';
     }
     
     function openEditModal(user) {
@@ -607,11 +915,11 @@ $serviceNames = [
       }
       
       toggleServicesSection();
-      document.getElementById('userModal').classList.add('active');
+      document.getElementById('userModal').style.display = 'flex';
     }
     
     function closeModal() {
-      document.getElementById('userModal').classList.remove('active');
+      document.getElementById('userModal').style.display = 'none';
     }
     
     function confirmDelete(username) {
@@ -640,6 +948,5 @@ $serviceNames = [
     document.addEventListener('DOMContentLoaded', function() {
       toggleServicesSection();
     });
-  </script>
-</body>
-</html>
+  
+</script>

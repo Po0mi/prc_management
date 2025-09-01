@@ -510,7 +510,20 @@ $userRegistrations = $userRegistrationsStmt->fetchAll();
         <?php endif; ?>
     </div>
 </td>
-                                        <td><?= htmlspecialchars($e['location']) ?></td>
+                                        <td>
+    <div class="location-display">
+        <div class="location-preview">
+            <?= htmlspecialchars(strlen($e['location']) > 60 ? 
+                substr($e['location'], 0, 60) . '...' : 
+                $e['location']) ?>
+        </div>
+        <?php if (strlen($e['location']) > 60): ?>
+            <button type="button" class="btn-view-location" onclick="showLocationModal('<?= htmlspecialchars($e['title'], ENT_QUOTES) ?>', <?= htmlspecialchars(json_encode($e['location']), ENT_QUOTES) ?>)">
+                <i class="fas fa-map-marker-alt"></i> View Full
+            </button>
+        <?php endif; ?>
+    </div>
+</td>
                                         <td>
                                             <div class="registrations-badge <?= $isFull ? 'full' : '' ?>">
                                                 <i class="fas fa-users"></i>
@@ -621,7 +634,20 @@ $userRegistrations = $userRegistrationsStmt->fetchAll();
         <?php endif; ?>
     </div>
                                         </td>
-                                        <td><?= htmlspecialchars($r['event_location']) ?></td>
+                                        <td>
+    <div class="location-display">
+        <div class="location-preview">
+            <?= htmlspecialchars(strlen($r['event_location']) > 60 ? 
+                substr($r['event_location'], 0, 60) . '...' : 
+                $r['event_location']) ?>
+        </div>
+        <?php if (strlen($r['event_location']) > 60): ?>
+            <button type="button" class="btn-view-location" onclick="showLocationModal('<?= htmlspecialchars($r['title'], ENT_QUOTES) ?>', <?= htmlspecialchars(json_encode($r['event_location']), ENT_QUOTES) ?>)">
+                <i class="fas fa-map-marker-alt"></i> View Full
+            </button>
+        <?php endif; ?>
+    </div>
+</td>
                                         <td><?= htmlspecialchars($r['full_name']) ?></td>
                                         <td><?= htmlspecialchars($r['age']) ?></td>
                                         <td><?= htmlspecialchars($r['email']) ?></td>
@@ -1399,6 +1425,65 @@ function generateMonthCalendar(year, month, today) {
     
     html += '</div></div>';
     return html;
+}
+function showLocationModal(eventTitle, locationText) {
+    // Remove any existing location modal
+    const existingModal = document.querySelector('.location-modal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+    
+    // Create modal
+    const modal = document.createElement('div');
+    modal.className = 'location-modal';
+    modal.innerHTML = `
+        <div class="location-modal-content">
+            <div class="location-modal-header">
+                <h3>
+                    <i class="fas fa-map-marker-alt"></i>
+                    ${escapeHtml(eventTitle)} - Location
+                </h3>
+                <button class="location-modal-close" onclick="closeLocationModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="location-modal-body">
+                ${escapeHtml(locationText).replace(/\n/g, '<br>')}
+            </div>
+        </div>
+    `;
+    
+    // Add to body
+    document.body.appendChild(modal);
+    
+    // Show modal
+    setTimeout(() => {
+        modal.classList.add('active');
+    }, 10);
+    
+    // Add click outside to close
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) {
+            closeLocationModal();
+        }
+    });
+    
+    // Store reference
+    window.currentLocationModal = modal;
+    
+    // Prevent body scroll
+    document.body.style.overflow = 'hidden';
+}
+function closeLocationModal() {
+    const modal = window.currentLocationModal || document.querySelector('.location-modal');
+    if (modal) {
+        modal.classList.remove('active');
+        setTimeout(() => {
+            modal.remove();
+            window.currentLocationModal = null;
+            document.body.style.overflow = '';
+        }, 300);
+    }
 }
 
 // Enhanced large calendar generation for modal with multi-day support
@@ -2299,6 +2384,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+    
 
     // Close calendar modal when clicking outside
     const calendarModal = document.getElementById('calendarModal');

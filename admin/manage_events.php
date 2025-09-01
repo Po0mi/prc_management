@@ -77,8 +77,9 @@ logDebug("User role: $user_role, User ID: $current_user_id, Allowed services: " 
 function validateEventData($data, $allowedServices, $hasRestrictedAccess, $isCreate = false) {
     $errors = [];
     
+    
     // Add start_time and end_time to required fields
-    $required = ['title', 'event_date', 'start_time', 'end_time', 'location', 'major_service'];
+     $required = ['title', 'event_date', 'start_time', 'end_time', 'location', 'major_service'];
     foreach ($required as $field) {
         if (empty($data[$field])) {
             $errors[] = "Please fill all required fields";
@@ -87,7 +88,7 @@ function validateEventData($data, $allowedServices, $hasRestrictedAccess, $isCre
     }
     
      // Check service permission for CREATE operations
-    if ($isCreate && $hasRestrictedAccess && !empty($allowedServices)) {
+      if ($isCreate && $hasRestrictedAccess && !empty($allowedServices)) {
         if (!in_array($data['major_service'] ?? '', $allowedServices)) {
             $errors[] = "You don't have permission to create events for this service. You can only create events for: " . implode(', ', $allowedServices);
         }
@@ -118,7 +119,7 @@ function validateEventData($data, $allowedServices, $hasRestrictedAccess, $isCre
             $errors[] = "Duration must be between 1 and 365 days.";
         }
         
-        // Validate time fields - NEW CODE
+        // Validate time fields
         if (!empty($startTime) && !empty($endTime) && empty($errors)) {
             $startTimestamp = strtotime($startDate . ' ' . $startTime);
             $endTimestamp = strtotime($startDate . ' ' . $endTime);
@@ -142,7 +143,7 @@ function validateEventData($data, $allowedServices, $hasRestrictedAccess, $isCre
     }
     
     // Rest of validation remains the same...
-    global $majorServices;
+     global $majorServices;
     if (!in_array($data['major_service'], $majorServices)) {
         $errors[] = "Invalid major service selected.";
     }
@@ -158,6 +159,15 @@ function validateEventData($data, $allowedServices, $hasRestrictedAccess, $isCre
         $errors[] = "Fee cannot be negative.";
     }
     
+    // UPDATED: Location validation - allow longer text, check for reasonable limits
+    $location = trim($data['location'] ?? '');
+    if (strlen($location) > 2000) {
+        $errors[] = "Location description is too long. Please keep it under 2000 characters.";
+    }
+    if (strlen($location) < 5) {
+        $errors[] = "Please provide a more detailed location.";
+    }
+    
     return [
         'valid' => empty($errors),
         'errors' => $errors,
@@ -167,9 +177,9 @@ function validateEventData($data, $allowedServices, $hasRestrictedAccess, $isCre
             'event_date' => $startDate,
             'event_end_date' => $endDate ?? $startDate,
             'duration_days' => $durationDays,
-            'start_time' => trim($data['start_time'] ?? '09:00'), // NEW
-            'end_time' => trim($data['end_time'] ?? '17:00'),     // NEW
-            'location' => trim($data['location'] ?? ''),
+            'start_time' => trim($data['start_time'] ?? '09:00'),
+            'end_time' => trim($data['end_time'] ?? '17:00'),
+            'location' => $location, // Updated to handle longer text
             'major_service' => trim($data['major_service'] ?? ''),
             'capacity' => $capacity,
             'fee' => $fee
@@ -1155,14 +1165,30 @@ if (!function_exists('get_role_color')) {
                                     </span>
                                     <div class="event-duration">Single Day</div>
                                 </div>
-                            <?php else: ?>
-                                <div class="event-date-start"><?= date('M d, Y', $eventStartDate) ?></div>
-                                <div class="event-date-end">to <?= date('M d, Y', $eventEndDate) ?></div>
-                                <div class="event-duration"><?= $durationDays ?> days</div>
-                            <?php endif; ?>
+<?php else: ?>
+    <div class="event-date-start"><?= date('M d, Y', $eventStartDate) ?></div>
+    <div class="event-date-end">to <?= date('M d, Y', $eventEndDate) ?></div>
+    <div class="event-time">
+        <?= date('g:i A', strtotime($event['start_time'] ?? '09:00')) ?> - <?= date('g:i A', strtotime($event['end_time'] ?? '17:00')) ?>
+    </div>
+    <div class="event-duration"><?= $durationDays ?> days</div>
+<?php endif; ?>
                         </div>
                     </td>
-                    <td><?= htmlspecialchars($event['location']) ?></td>
+                    <td>
+    <div class="location-display">
+        <div class="location-address">
+            <?= htmlspecialchars(strlen($event['location']) > 80 ? 
+                substr($event['location'], 0, 80) . '...' : 
+                $event['location']) ?>
+        </div>
+        <?php if (strlen($event['location']) > 80): ?>
+            <button type="button" class="btn-expand-location" onclick="showFullLocation(<?= htmlspecialchars(json_encode($event['location']), ENT_QUOTES) ?>)">
+                <i class="fas fa-expand-alt"></i> View Full
+            </button>
+        <?php endif; ?>
+    </div>
+</td>
                     <td>
                         <div class="fee-display">
                             <?php if ($event['fee'] > 0): ?>
@@ -1248,11 +1274,13 @@ if (!function_exists('get_role_color')) {
             </button>
         </div>
         
-         <form method="POST" id="eventForm">
+           <form method="POST" id="eventForm">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
             <input type="hidden" name="create_event" value="1" id="formAction">
             <input type="hidden" name="event_id" id="eventId">
-            
+            <!-- Hidden field to maintain backend compatibility -->
+            <input type="hidden" name="duration_days" id="duration_days" value="1">
+
             <div class="form-group">
                 <label for="title">Event Title *</label>
                 <input type="text" id="title" name="title" required placeholder="Enter event title" maxlength="255">
@@ -1282,21 +1310,22 @@ if (!function_exists('get_role_color')) {
                 <?php endif; ?>
             </div>
             
-             <div class="form-row">
+            <!-- Updated Date Section with End Date -->
+            <div class="form-row">
                 <div class="form-group">
                     <label for="event_date">Start Date *</label>
                     <input type="date" id="event_date" name="event_date" required min="<?= date('Y-m-d') ?>">
                 </div>
                 
                 <div class="form-group">
-                    <label for="duration_days">Duration (Days) *</label>
-                    <input type="number" id="duration_days" name="duration_days" min="1" max="365" value="1" required>
-                    <small style="color: var(--gray);">How many days will this event run?</small>
+                    <label for="event_end_date_input">End Date *</label>
+                    <input type="date" id="event_end_date_input" name="event_end_date_input" required min="<?= date('Y-m-d') ?>">
+                    <small style="color: var(--gray);">End date must be same or after start date</small>
                 </div>
             </div>
 
             <!-- SIMPLIFIED Date Preview - No Conflict Warnings -->
-            <div class="date-preview-container" id="datePreviewContainer" style="display: none;">
+             <div class="date-preview-container" id="datePreviewContainer" style="display: none;">
                 <div class="date-preview">
                     <div class="date-preview-header">
                         <i class="fas fa-calendar-check"></i>
@@ -1323,12 +1352,34 @@ if (!function_exists('get_role_color')) {
                 </div>
             </div>
             
-             <div class="form-group">
-                <label for="location">Location *</label>
-                <input type="text" id="location" name="location" required placeholder="Event location" maxlength="255">
-            </div>
+             <div class="form-group location-group">
+    <label for="location">
+        Event Location & Directions *
+        <span class="field-hint">Include full address and travel instructions</span>
+    </label>
+    <textarea 
+        id="location" 
+        name="location" 
+        required 
+        rows="4"
+        maxlength="2000"
+        placeholder="Example:&#10;Philippine Red Cross - Cebu Chapter&#10;Real Street, Guadalupe, Cebu City, 6000 Cebu&#10;&#10;Travel Instructions:&#10;- From Ayala Center: Take jeepney to Guadalupe, alight at Real Street&#10;- Parking available at the rear entrance&#10;- GPS Coordinates: 10.3157° N, 123.8854° E"
+        style="resize: vertical; min-height: 100px;"
+    ></textarea>
+    <div class="field-info">
+        <span class="char-counter">
+            <span id="location-char-count">0</span>/2000 characters
+        </span>
+        <div class="location-tips">
+            <small>
+                <i class="fas fa-info-circle"></i>
+                Tips: Include landmark references, public transport options, parking info, and GPS coordinates if available
+            </small>
+        </div>
+    </div>
+</div>
             
-            <!-- NEW: Time Fields Section -->
+            <!-- Time Fields Section -->
             <div class="form-row">
                 <div class="form-group">
                     <label for="start_time">Start Time *</label>
@@ -1367,6 +1418,7 @@ if (!function_exists('get_role_color')) {
     </div>
 </div>
 
+
   <!-- CRITICAL: JavaScript Variables from PHP -->
   <script>
  
@@ -1386,10 +1438,38 @@ console.log('Current User ID:', currentUserId);
 // Global variables
 let currentEventId = null;
 
+// Updated JavaScript functions for end date handling
+function calculateDurationDays() {
+    const startDateInput = document.getElementById('event_date');
+    const endDateInput = document.getElementById('event_end_date_input');
+    const hiddenDurationInput = document.getElementById('duration_days');
+    
+    const startDate = startDateInput.value;
+    const endDate = endDateInput.value;
+    
+    if (startDate && endDate) {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        
+        // Calculate difference in days
+        const timeDiff = end.getTime() - start.getTime();
+        const dayDiff = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1; // +1 because same day = 1 day
+        
+        if (dayDiff >= 1) {
+            hiddenDurationInput.value = dayDiff;
+            return dayDiff;
+        } else {
+            hiddenDurationInput.value = 1;
+            return 1;
+        }
+    }
+    return 1;
+}
+
 // 1. SIMPLIFIED date preview function WITHOUT conflict checking
 function updateEventDatePreview() {
     const startDateInput = document.getElementById('event_date');
-    const durationInput = document.getElementById('duration_days');
+    const endDateInput = document.getElementById('event_end_date_input');
     const startTimeInput = document.getElementById('start_time');
     const endTimeInput = document.getElementById('end_time');
     const previewContainer = document.getElementById('datePreviewContainer');
@@ -1398,14 +1478,16 @@ function updateEventDatePreview() {
     const previewDuration = document.getElementById('previewDuration');
     
     const startDate = startDateInput.value;
-    const duration = parseInt(durationInput.value) || 1;
+    const endDate = endDateInput.value;
     const startTime = startTimeInput ? startTimeInput.value : '09:00';
     const endTime = endTimeInput ? endTimeInput.value : '17:00';
     
-    if (startDate) {
+    if (startDate && endDate) {
         const start = new Date(startDate + 'T00:00:00');
-        const end = new Date(start);
-        end.setDate(end.getDate() + duration - 1);
+        const end = new Date(endDate + 'T00:00:00');
+        
+        // Calculate and update hidden duration field
+        const duration = calculateDurationDays();
         
         // Format times for display
         const formatTime = (timeStr) => {
@@ -1448,7 +1530,12 @@ function openCreateModal() {
     document.getElementById('modalTitle').textContent = 'Create New Event';
     document.getElementById('formAction').name = 'create_event';
     document.getElementById('eventForm').reset();
-    document.getElementById('event_date').min = new Date().toISOString().split('T')[0];
+    
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('event_date').min = today;
+    document.getElementById('event_date').value = today;
+    document.getElementById('event_end_date_input').min = today;
+    document.getElementById('event_end_date_input').value = today;
     document.getElementById('duration_days').value = 1;
     document.getElementById('start_time').value = '09:00';
     document.getElementById('end_time').value = '17:00';
@@ -1494,7 +1581,15 @@ function openEditModal(event) {
     document.getElementById('description').value = event.description || '';
     document.getElementById('major_service').value = event.major_service;
     document.getElementById('event_date').value = event.event_date;
-    document.getElementById('duration_days').value = event.duration_days || 1;
+    
+    // Calculate end date from duration for editing
+    const startDate = new Date(event.event_date);
+    const duration = event.duration_days || 1;
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + duration - 1);
+    document.getElementById('event_end_date_input').value = endDate.toISOString().split('T')[0];
+    
+    document.getElementById('duration_days').value = duration;
     document.getElementById('start_time').value = event.start_time || '09:00';
     document.getElementById('end_time').value = event.end_time || '17:00';
     document.getElementById('location').value = event.location;
@@ -1510,6 +1605,7 @@ function openEditModal(event) {
     const serviceSelect = document.getElementById('major_service');
     const serviceHint = document.getElementById('serviceHint');
     const isCreator = event.created_by == currentUserId;
+    
     
     if (hasRestrictedAccess && allowedServices && allowedServices.length > 0) {
         Array.from(serviceSelect.options).forEach(option => {
@@ -1556,8 +1652,11 @@ function openEditModal(event) {
     
     if (eventDate < today) {
         document.getElementById('event_date').min = event.event_date;
+        document.getElementById('event_end_date_input').min = event.event_date;
     } else {
-        document.getElementById('event_date').min = new Date().toISOString().split('T')[0];
+        const todayStr = new Date().toISOString().split('T')[0];
+        document.getElementById('event_date').min = todayStr;
+        document.getElementById('event_end_date_input').min = todayStr;
     }
     
     document.getElementById('eventModal').classList.add('active');
@@ -1616,16 +1715,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const eventForm = document.getElementById('eventForm');
     if (eventForm) {
         eventForm.addEventListener('submit', function(e) {
-            const eventDate = document.getElementById('event_date').value;
+            const startDate = document.getElementById('event_date').value;
+            const endDate = document.getElementById('event_end_date_input').value;
             const startTime = document.getElementById('start_time').value;
             const endTime = document.getElementById('end_time').value;
-            const duration = parseInt(document.getElementById('duration_days').value) || 1;
             const title = document.getElementById('title').value.trim();
             const location = document.getElementById('location').value.trim();
             const majorService = document.getElementById('major_service').value;
             const isCreating = document.getElementById('formAction').name === 'create_event';
-            
-            console.log('Form submission - Service:', majorService, 'IsCreating:', isCreating, 'Duration:', duration, 'Times:', startTime, '-', endTime);
             
             // Basic validation
             if (!title) {
@@ -1646,6 +1743,36 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             
+            if (!startDate) {
+                e.preventDefault();
+                alert('Please select a start date.');
+                return;
+            }
+            
+            if (!endDate) {
+                e.preventDefault();
+                alert('Please select an end date.');
+                return;
+            }
+            
+            // Date validation
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            
+            if (end < start) {
+                e.preventDefault();
+                alert('End date cannot be before start date.');
+                return;
+            }
+            
+            // Calculate final duration for submission
+            const finalDuration = calculateDurationDays();
+            if (finalDuration > 365) {
+                e.preventDefault();
+                alert('Event duration cannot exceed 365 days.');
+                return;
+            }
+            
             // Time validation
             if (!startTime) {
                 e.preventDefault();
@@ -1659,32 +1786,27 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             
-            // Validate end time is after start time
-            if (endTime <= startTime) {
+            // Validate end time is after start time (for single day events)
+            if (finalDuration === 1 && endTime <= startTime) {
                 e.preventDefault();
-                alert('End time must be after start time.');
+                alert('End time must be after start time for single-day events.');
                 return;
             }
             
-            // Validate minimum duration (1 hour)
-            const start = new Date(`2000-01-01T${startTime}`);
-            const end = new Date(`2000-01-01T${endTime}`);
-            const timeDuration = (end - start) / (1000 * 60 * 60); // hours
-            
-            if (timeDuration < 1) {
-                e.preventDefault();
-                alert('Event must be at least 1 hour long.');
-                return;
+            // Validate minimum duration (1 hour for single-day events)
+            if (finalDuration === 1) {
+                const startDateTime = new Date(`2000-01-01T${startTime}`);
+                const endDateTime = new Date(`2000-01-01T${endTime}`);
+                const timeDuration = (endDateTime - startDateTime) / (1000 * 60 * 60); // hours
+                
+                if (timeDuration < 1) {
+                    e.preventDefault();
+                    alert('Single-day events must be at least 1 hour long.');
+                    return;
+                }
             }
             
-            // Duration validation
-            if (duration < 1 || duration > 365) {
-                e.preventDefault();
-                alert('Event duration must be between 1 and 365 days.');
-                return;
-            }
-            
-            // Only check service permission for CREATE operations
+            // Service permission check for CREATE operations
             if (isCreating && hasRestrictedAccess && allowedServices && allowedServices.length > 0) {
                 if (!allowedServices.includes(majorService)) {
                     e.preventDefault();
@@ -1694,17 +1816,30 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
             
-            const selectedDate = new Date(eventDate);
+            // Date validation for new events
             const today = new Date();
             today.setHours(0, 0, 0, 0);
             
-            if (selectedDate < today && isCreating) {
+            if (start < today && isCreating) {
                 e.preventDefault();
-                alert('Event date cannot be in the past for new events');
+                alert('Event start date cannot be in the past for new events');
                 return;
             }
             
-            // REMOVED: Conflict checking - Events can overlap freely
+            // Location validation
+            if (location.length < 5) {
+                e.preventDefault();
+                alert('Please provide a more detailed location with address and directions.');
+                document.getElementById('location').focus();
+                return;
+            }
+            
+            if (location.length > 2000) {
+                e.preventDefault();
+                alert('Location description is too long. Please keep it under 2000 characters.');
+                document.getElementById('location').focus();
+                return;
+            }
             
             // Visual feedback
             const submitBtn = this.querySelector('.btn-submit');
@@ -1742,17 +1877,34 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Add event listeners for preview updates
     const eventDateInput = document.getElementById('event_date');
-    const durationInput = document.getElementById('duration_days');
+    const endDateInput = document.getElementById('event_end_date_input');
     const startTimeInput = document.getElementById('start_time');
     const endTimeInput = document.getElementById('end_time');
     
-    if (eventDateInput) {
-        eventDateInput.addEventListener('change', updateEventDatePreview);
-    }
-    
-    if (durationInput) {
-        durationInput.addEventListener('input', updateEventDatePreview);
-        durationInput.addEventListener('change', updateEventDatePreview);
+    // Auto-update end date minimum when start date changes
+    if (eventDateInput && endDateInput) {
+        eventDateInput.addEventListener('change', function() {
+            const startDate = this.value;
+            endDateInput.min = startDate;
+            
+            // If end date is before start date, update it
+            if (endDateInput.value && endDateInput.value < startDate) {
+                endDateInput.value = startDate;
+            }
+            
+            // If no end date set, default to start date
+            if (!endDateInput.value) {
+                endDateInput.value = startDate;
+            }
+            
+            calculateDurationDays();
+            updateEventDatePreview();
+        });
+        
+        endDateInput.addEventListener('change', function() {
+            calculateDurationDays();
+            updateEventDatePreview();
+        });
     }
     
     if (startTimeInput) {
@@ -1761,6 +1913,41 @@ document.addEventListener('DOMContentLoaded', function() {
     
     if (endTimeInput) {
         endTimeInput.addEventListener('change', updateEventDatePreview);
+    }
+    
+    // Character counter for location field
+    const locationField = document.getElementById('location');
+    const charCounter = document.getElementById('location-char-count');
+    
+    if (locationField && charCounter) {
+        function updateCharCount() {
+            const currentLength = locationField.value.length;
+            const maxLength = 2000;
+            
+            charCounter.textContent = currentLength;
+            
+            // Update counter color based on usage
+            const counterElement = charCounter.parentElement;
+            counterElement.classList.remove('warning', 'danger');
+            
+            if (currentLength > maxLength * 0.9) {
+                counterElement.classList.add('danger');
+            } else if (currentLength > maxLength * 0.75) {
+                counterElement.classList.add('warning');
+            }
+        }
+        
+        // Update on input
+        locationField.addEventListener('input', updateCharCount);
+        
+        // Initialize counter
+        updateCharCount();
+        
+        // Auto-resize textarea based on content
+        locationField.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.max(100, this.scrollHeight) + 'px';
+        });
     }
 });
 

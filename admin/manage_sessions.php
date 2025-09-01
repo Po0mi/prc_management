@@ -75,14 +75,20 @@ logDebug("User role: $user_role, User ID: $current_user_id, Allowed services: " 
 function validateSessionData($data, $allowedServices, $hasRestrictedAccess, $isCreate = false) {
     $errors = [];
     
-    $required = ['title', 'session_date', 'start_time', 'end_time', 'venue', 'major_service'];
+     $required = ['title', 'session_date', 'start_time', 'end_time', 'venue', 'major_service'];
     foreach ($required as $field) {
         if (empty($data[$field])) {
             $errors[] = "Please fill all required fields";
             break;
         }
     }
-    
+    $venue = trim($data['venue'] ?? '');
+    if (strlen($venue) > 2000) {
+        $errors[] = "Venue description is too long. Please keep it under 2000 characters.";
+    }
+    if (strlen($venue) < 5) {
+        $errors[] = "Please provide a more detailed venue location.";
+    }
     // Check service permission for CREATE operations
       if ($isCreate && $hasRestrictedAccess && !empty($allowedServices)) {
         if (!in_array($data['major_service'] ?? '', $allowedServices)) {
@@ -150,7 +156,7 @@ function validateSessionData($data, $allowedServices, $hasRestrictedAccess, $isC
         $errors[] = "Fee cannot be negative.";
     }
     
-      return [
+       return [
         'valid' => empty($errors),
         'errors' => $errors,
         'data' => [
@@ -161,7 +167,7 @@ function validateSessionData($data, $allowedServices, $hasRestrictedAccess, $isC
             'duration_days' => $durationDays,
             'start_time' => trim($data['start_time'] ?? ''),
             'end_time' => trim($data['end_time'] ?? ''),
-            'venue' => trim($data['venue'] ?? ''),
+            'venue' => $venue, // Updated to handle longer text
             'capacity' => $capacity,
             'fee' => $fee
         ]
@@ -711,7 +717,164 @@ if (!function_exists('get_role_color')) {
         return $colors[$role] ?? '#607D8B';
     }
 }
+// Handle training request actions
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_request_status'])) {
+    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        $errorMessage = "Security error: Invalid form submission.";
+    } else {
+        $requestId = (int)($_POST['request_id'] ?? 0);
+        $newStatus = $_POST['new_status'] ?? '';
+        $adminNotes = trim($_POST['admin_notes'] ?? '');
+        
+        if ($requestId > 0 && in_array($newStatus, ['pending', 'under_review', 'approved', 'scheduled', 'completed', 'rejected'])) {
+            try {
+                $stmt = $pdo->prepare("
+                    UPDATE training_requests 
+                    SET status = ?, admin_notes = ?, reviewed_by = ?, reviewed_date = NOW() 
+                    WHERE request_id = ?
+                ");
+                $result = $stmt->execute([$newStatus, $adminNotes, $current_user_id, $requestId]);
+                
+                if ($result) {
+                    $successMessage = "Training request status updated successfully!";
+                    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+                } else {
+                    $errorMessage = "Failed to update request status.";
+                }
+            } catch (PDOException $e) {
+                $errorMessage = "Database error occurred.";
+            }
+        } else {
+            $errorMessage = "Invalid request data.";
+        }
+    }
+}
 
+// Handle create training session from request
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_from_request'])) {
+    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        $errorMessage = "Security error: Invalid form submission.";
+    } else {
+        $requestId = (int)($_POST['request_id'] ?? 0);
+        $sessionTitle = trim($_POST['session_title'] ?? '');
+        $sessionDate = $_POST['session_date'] ?? '';
+        $sessionEndDate = $_POST['session_end_date'] ?? '';
+        $startTime = $_POST['start_time'] ?? '09:00';
+        $endTime = $_POST['end_time'] ?? '17:00';
+        $venue = trim($_POST['venue'] ?? '');
+        $capacity = (int)($_POST['capacity'] ?? 0);
+        $fee = (float)($_POST['fee'] ?? 0);
+        
+        if ($requestId > 0 && !empty($sessionTitle) && !empty($sessionDate) && !empty($venue)) {
+            try {
+                // Get request details
+                $requestStmt = $pdo->prepare("SELECT * FROM training_requests WHERE request_id = ?");
+                $requestStmt->execute([$requestId]);
+                $request = $requestStmt->fetch();
+                
+                if ($request) {
+                    // Calculate duration days
+                    $startDate = new DateTime($sessionDate);
+                    $endDate = new DateTime($sessionEndDate ?: $sessionDate);
+                    $durationDays = $startDate->diff($endDate)->days + 1;
+                    
+                    // Create training session
+                    $sessionStmt = $pdo->prepare("
+                        INSERT INTO training_sessions (
+                            title, major_service, session_date, session_end_date, duration_days,
+                            start_time, end_time, venue, capacity, fee, created_by, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                    ");
+                    
+                    $result = $sessionStmt->execute([
+                        $sessionTitle, $request['service_type'], $sessionDate, 
+                        $sessionEndDate ?: $sessionDate, $durationDays,
+                        $startTime, $endTime, $venue, $capacity, $fee, $current_user_id
+                    ]);
+                    
+                    if ($result) {
+                        $sessionId = $pdo->lastInsertId();
+                        
+                        // Update request with created session ID
+                        $updateStmt = $pdo->prepare("
+                            UPDATE training_requests 
+                            SET created_session_id = ?, status = 'scheduled', reviewed_by = ?, reviewed_date = NOW()
+                            WHERE request_id = ?
+                        ");
+                        $updateStmt->execute([$sessionId, $current_user_id, $requestId]);
+                        
+                        $successMessage = "Training session created successfully from request! Session ID: #" . $sessionId;
+                        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+                    } else {
+                        $errorMessage = "Failed to create training session.";
+                    }
+                } else {
+                    $errorMessage = "Training request not found.";
+                }
+            } catch (PDOException $e) {
+                error_log("Create session from request error: " . $e->getMessage());
+                $errorMessage = "Database error occurred.";
+            }
+        } else {
+            $errorMessage = "Please fill in all required fields.";
+        }
+    }
+}
+
+// Get training requests based on admin permissions
+try {
+    $requestWhereConditions = [];
+    $requestParams = [];
+    
+    // Apply service restrictions for non-super admins
+    if ($hasRestrictedAccess && !empty($allowedServices)) {
+        $placeholders = str_repeat('?,', count($allowedServices) - 1) . '?';
+        $requestWhereConditions[] = "tr.service_type IN ($placeholders)";
+        $requestParams = array_merge($requestParams, $allowedServices);
+    }
+    
+    $requestWhereClause = $requestWhereConditions ? 'WHERE ' . implode(' AND ', $requestWhereConditions) : '';
+    
+    $requestQuery = "
+        SELECT tr.*, tp.program_name, tp.program_description, tp.typical_duration_hours,
+               u.full_name as user_full_name, u.email as user_email,
+               admin_u.full_name as reviewed_by_name
+        FROM training_requests tr
+        LEFT JOIN training_programs tp ON tr.training_program = tp.program_code 
+            AND tr.service_type = tp.service_type
+        LEFT JOIN users u ON tr.user_id = u.user_id
+        LEFT JOIN users admin_u ON tr.reviewed_by = admin_u.user_id
+        $requestWhereClause
+        ORDER BY 
+            CASE tr.status 
+                WHEN 'pending' THEN 1 
+                WHEN 'under_review' THEN 2 
+                WHEN 'approved' THEN 3 
+                ELSE 4 
+            END,
+            tr.created_at DESC
+    ";
+    
+    $requestStmt = $pdo->prepare($requestQuery);
+    $requestStmt->execute($requestParams);
+    $trainingRequests = $requestStmt->fetchAll();
+    
+    // Get request statistics
+    $requestStats = [
+        'total' => count($trainingRequests),
+        'pending' => count(array_filter($trainingRequests, function($r) { return $r['status'] === 'pending'; })),
+        'under_review' => count(array_filter($trainingRequests, function($r) { return $r['status'] === 'under_review'; })),
+        'approved' => count(array_filter($trainingRequests, function($r) { return $r['status'] === 'approved'; })),
+        'scheduled' => count(array_filter($trainingRequests, function($r) { return $r['status'] === 'scheduled'; })),
+        'completed' => count(array_filter($trainingRequests, function($r) { return $r['status'] === 'completed'; })),
+        'rejected' => count(array_filter($trainingRequests, function($r) { return $r['status'] === 'rejected'; }))
+    ];
+    
+} catch (PDOException $e) {
+    error_log("Error fetching training requests: " . $e->getMessage());
+    $trainingRequests = [];
+    $requestStats = ['total' => 0, 'pending' => 0, 'under_review' => 0, 'approved' => 0, 'scheduled' => 0, 'completed' => 0, 'rejected' => 0];
+}
 ?>
 
 <!DOCTYPE html>
@@ -780,28 +943,28 @@ if (!function_exists('get_role_color')) {
           <i class="fas fa-arrow-left"></i> Back to Sessions
         </a>
         
-       <div class="session-info-header">
-    <div class="session-info-details">
-        <div class="session-info-title"><?= htmlspecialchars($selectedSession['title']) ?></div>
-        <div class="session-info-meta">
-            <span><i class="fas fa-tag"></i> <?= htmlspecialchars($selectedSession['major_service']) ?></span>
-            <?php if (($selectedSession['duration_days'] ?? 1) == 1): ?>
+        <div class="session-info-header">
+          <div class="session-info-details">
+            <div class="session-info-title"><?= htmlspecialchars($selectedSession['title']) ?></div>
+            <div class="session-info-meta">
+              <span><i class="fas fa-tag"></i> <?= htmlspecialchars($selectedSession['major_service']) ?></span>
+              <?php if (($selectedSession['duration_days'] ?? 1) == 1): ?>
                 <span><i class="fas fa-calendar"></i> <?= date('M j, Y', strtotime($selectedSession['session_date'])) ?></span>
-            <?php else: ?>
+              <?php else: ?>
                 <span><i class="fas fa-calendar"></i> <?= date('M j, Y', strtotime($selectedSession['session_date'])) ?> - <?= date('M j, Y', strtotime($selectedSession['session_end_date'])) ?></span>
                 <span><i class="fas fa-calendar-week"></i> <?= $selectedSession['duration_days'] ?> days</span>
-            <?php endif; ?>
-            <span><i class="fas fa-clock"></i> <?= date('g:i A', strtotime($selectedSession['start_time'])) ?> - <?= date('g:i A', strtotime($selectedSession['end_time'])) ?></span>
-            <span><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($selectedSession['venue']) ?></span>
-            <?php if ($selectedSession['fee'] > 0): ?>
+              <?php endif; ?>
+              <span><i class="fas fa-clock"></i> <?= date('g:i A', strtotime($selectedSession['start_time'])) ?> - <?= date('g:i A', strtotime($selectedSession['end_time'])) ?></span>
+              <span><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($selectedSession['venue']) ?></span>
+              <?php if ($selectedSession['fee'] > 0): ?>
                 <span><i class="fas fa-money-bill"></i> ₱<?= number_format($selectedSession['fee'], 2) ?></span>
-            <?php endif; ?>
-            <?php if ($selectedSession['capacity'] > 0): ?>
+              <?php endif; ?>
+              <?php if ($selectedSession['capacity'] > 0): ?>
                 <span><i class="fas fa-users"></i> Capacity: <?= $selectedSession['capacity'] ?></span>
-            <?php endif; ?>
+              <?php endif; ?>
+            </div>
+          </div>
         </div>
-    </div>
-</div>
 
         <div class="registrations-stats">
           <div class="reg-stat-card">
@@ -960,18 +1123,25 @@ if (!function_exists('get_role_color')) {
           </div>
         <?php endif; ?>
       </div>
-          <?php else: ?>
+      
+    <?php else: ?>
       <!-- Sessions List View -->
       
       <!-- Service Filter Tabs (only show allowed services) -->
-      <div class="service-tabs">
+     <div class="service-tabs">
         <a href="?status=<?= htmlspecialchars($statusFilter) ?>" class="service-tab all-services <?= !$serviceFilter ? 'active' : '' ?>">
           <div class="service-name">
             <?= $hasRestrictedAccess ? 'My Services' : 'All Services' ?>
           </div>
           <div class="service-count"><?= $totalStats['total'] ?> sessions</div>
         </a>
-        <?php 
+        
+        <!-- Training Requests Tab -->
+        <a href="?view=requests&status=<?= htmlspecialchars($statusFilter) ?>" class="service-tab <?= isset($_GET['view']) && $_GET['view'] === 'requests' ? 'active' : '' ?>">
+          <div class="service-name">Training Requests</div>
+          <div class="service-count"><?= $requestStats['pending'] + $requestStats['under_review'] ?> pending</div>
+        </a>
+         <?php 
         // Show all services for super admin, or only allowed services for restricted users
         $servicesToShow = $hasRestrictedAccess ? $allowedServices : $majorServices;
         foreach ($servicesToShow as $service): 
@@ -985,6 +1155,194 @@ if (!function_exists('get_role_color')) {
           </a>
         <?php endforeach; ?>
       </div>
+    <?php if (isset($_GET['view']) && $_GET['view'] === 'requests'): ?>
+    <!-- Training Requests Management View -->
+    <div class="training-requests-management">
+        <div class="page-header">
+            <h1><i class="fas fa-chalkboard-teacher"></i> Training Requests Management</h1>
+            <p>Review and manage incoming training requests from users</p>
+        </div>
+
+        <!-- Request Statistics -->
+        <div class="stats-overview">
+            <div class="stat-card">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                    <i class="fas fa-clipboard-list"></i>
+                </div>
+                <div>
+                    <div style="font-size: 1.5rem; font-weight: 700;"><?= $requestStats['total'] ?></div>
+                    <div style="color: var(--gray); font-size: 0.9rem;">Total Requests</div>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #ffd93d 0%, #ff9800 100%);">
+                    <i class="fas fa-clock"></i>
+                </div>
+                <div>
+                    <div style="font-size: 1.5rem; font-weight: 700;"><?= $requestStats['pending'] ?></div>
+                    <div style="color: var(--gray); font-size: 0.9rem;">Pending Review</div>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #00c853 0%, #64dd17 100%);">
+                    <i class="fas fa-check-circle"></i>
+                </div>
+                <div>
+                    <div style="font-size: 1.5rem; font-weight: 700;"><?= $requestStats['approved'] + $requestStats['scheduled'] ?></div>
+                    <div style="color: var(--gray); font-size: 0.9rem;">Approved</div>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #4caf50 0%, #8bc34a 100%);">
+                    <i class="fas fa-graduation-cap"></i>
+                </div>
+                <div>
+                    <div style="font-size: 1.5rem; font-weight: 700;"><?= $requestStats['completed'] ?></div>
+                    <div style="color: var(--gray); font-size: 0.9rem;">Completed</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Training Requests Table -->
+        <div class="sessions-table-wrapper">
+            <div class="table-header">
+                <h2 class="table-title">Training Requests</h2>
+            </div>
+            
+            <?php if (empty($trainingRequests)): ?>
+                <div class="empty-state">
+                    <i class="fas fa-inbox"></i>
+                    <h3>No training requests found</h3>
+                    <p>No users have submitted training requests yet.</p>
+                </div>
+            <?php else: ?>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Request Details</th>
+                            <th>Requester</th>
+                            <th>Service & Program</th>
+                            <th>Schedule Preference</th>
+                            <th>Participants</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($trainingRequests as $req): ?>
+                        <tr class="request-row" data-status="<?= $req['status'] ?>">
+                            <td>
+                                <div class="request-header">
+                                    <strong>Request #<?= $req['request_id'] ?></strong>
+                                    <small style="color: var(--gray); margin-left: 0.5rem;">
+                                        <?= date('M d, Y g:i A', strtotime($req['created_at'])) ?>
+                                    </small>
+                                </div>
+                                <?php if ($req['purpose']): ?>
+                                    <div style="font-size: 0.85rem; color: var(--gray); margin-top: 0.3rem;">
+                                        <strong>Purpose:</strong> <?= htmlspecialchars(substr($req['purpose'], 0, 80)) ?><?= strlen($req['purpose']) > 80 ? '...' : '' ?>
+                                    </div>
+                                <?php endif; ?>
+                                <?php if ($req['location_preference']): ?>
+                                    <div style="font-size: 0.8rem; color: var(--gray); margin-top: 0.2rem;">
+                                        <i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($req['location_preference']) ?>
+                                    </div>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <div class="requester-info">
+                                    <div style="font-weight: 600;"><?= htmlspecialchars($req['user_full_name'] ?? 'Unknown User') ?></div>
+                                    <div style="font-size: 0.85rem; color: var(--gray);"><?= htmlspecialchars($req['user_email']) ?></div>
+                                    <div style="font-size: 0.8rem; margin-top: 0.2rem;">
+                                        <strong>Contact:</strong> <?= htmlspecialchars($req['contact_person']) ?><br>
+                                        <?= htmlspecialchars($req['contact_number']) ?><br>
+                                        <?= htmlspecialchars($req['email']) ?>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="service-badge <?= strtolower(str_replace(' ', '-', $req['service_type'])) ?>">
+                                    <?= htmlspecialchars($req['service_type']) ?>
+                                </span>
+                                <div style="font-weight: 600; margin-top: 0.3rem;">
+                                    <?= htmlspecialchars($req['program_name'] ?: $req['training_program']) ?>
+                                </div>
+                                <?php if ($req['typical_duration_hours']): ?>
+                                    <small style="color: var(--gray);"><?= $req['typical_duration_hours'] ?> hours</small>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php if ($req['preferred_date']): ?>
+                                    <div style="font-weight: 600;">
+                                        <?= date('M d, Y', strtotime($req['preferred_date'])) ?>
+                                    </div>
+                                <?php else: ?>
+                                    <div style="color: var(--gray); font-style: italic;">Flexible</div>
+                                <?php endif; ?>
+                                <div style="font-size: 0.8rem; color: var(--gray);">
+                                    <?= ucfirst($req['preferred_time']) ?>
+                                </div>
+                            </td>
+                            <td>
+                                <div style="text-align: center;">
+                                    <div style="font-size: 1.2rem; font-weight: 600;"><?= $req['participant_count'] ?></div>
+                                    <small style="color: var(--gray);">participants</small>
+                                </div>
+                                <?php if ($req['organization_name']): ?>
+                                    <div style="font-size: 0.8rem; color: var(--gray); margin-top: 0.2rem;">
+                                        <?= htmlspecialchars($req['organization_name']) ?>
+                                    </div>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <span class="status-badge <?= $req['status'] ?>">
+                                    <i class="fas <?= 
+                                        $req['status'] === 'pending' ? 'fa-clock' : 
+                                        ($req['status'] === 'under_review' ? 'fa-search' :
+                                        ($req['status'] === 'approved' ? 'fa-check-circle' :
+                                        ($req['status'] === 'scheduled' ? 'fa-calendar-check' :
+                                        ($req['status'] === 'completed' ? 'fa-graduation-cap' : 'fa-times-circle')))) ?>"></i>
+                                    <?= ucwords(str_replace('_', ' ', $req['status'])) ?>
+                                </span>
+                                <?php if ($req['reviewed_by_name']): ?>
+                                    <div style="font-size: 0.7rem; color: var(--gray); margin-top: 0.2rem;">
+                                        by <?= htmlspecialchars($req['reviewed_by_name']) ?>
+                                    </div>
+                                <?php endif; ?>
+                            </td>
+                            <td class="actions">
+                                <!-- Status Update Form -->
+                                <form method="POST" style="display: inline-block; margin-bottom: 0.5rem;">
+                                    <input type="hidden" name="update_request_status" value="1">
+                                    <input type="hidden" name="request_id" value="<?= $req['request_id'] ?>">
+                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                                    
+                                    <select name="new_status" onchange="this.form.submit()" class="status-select">
+                                        <option value="pending" <?= $req['status'] === 'pending' ? 'selected' : '' ?>>Pending</option>
+                                        <option value="under_review" <?= $req['status'] === 'under_review' ? 'selected' : '' ?>>Under Review</option>
+                                        <option value="approved" <?= $req['status'] === 'approved' ? 'selected' : '' ?>>Approved</option>
+                                        <option value="scheduled" <?= $req['status'] === 'scheduled' ? 'selected' : '' ?>>Scheduled</option>
+                                        <option value="completed" <?= $req['status'] === 'completed' ? 'selected' : '' ?>>Completed</option>
+                                        <option value="rejected" <?= $req['status'] === 'rejected' ? 'selected' : '' ?>>Rejected</option>
+                                    </select>
+                                </form>
+                                
+                                <!-- Quick Create Session Link -->
+                               
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+        </div>
+    </div>
+<?php endif; ?>
+    <!-- Show regular sessions view -->
+    <!-- ... existing sessions view content ... -->
 
       <!-- Action Bar -->
       <div class="action-bar">
@@ -1136,7 +1494,21 @@ if (!function_exists('get_role_color')) {
                         <?php endif; ?>
                     </div>
                 </td>
-                  <td><?= htmlspecialchars($session['venue']) ?></td>
+                  <td>
+    <div class="venue-display">
+        <div class="venue-preview">
+            <?= htmlspecialchars(strlen($session['venue']) > 60 ? 
+                substr($session['venue'], 0, 60) . '...' : 
+                $session['venue']) ?>
+        </div>
+        <?php if (strlen($session['venue']) > 60): ?>
+            <button type="button" class="btn-expand-venue" onclick="showVenueModal('<?= htmlspecialchars($session['title'], ENT_QUOTES) ?>', <?= htmlspecialchars(json_encode($session['venue']), ENT_QUOTES) ?>)">
+                <i class="fas fa-expand-alt"></i> View Full
+            </button>
+        <?php endif; ?>
+    </div>
+</td>
+
                    <td>
                     <div class="fee-display">
                         <?php if ($session['fee'] > 0): ?>
@@ -1251,17 +1623,20 @@ if (!function_exists('get_role_color')) {
             </div>
         
           <div class="form-row">
-                <div class="form-group">
-                    <label for="session_date">Start Date *</label>
-                    <input type="date" id="session_date" name="session_date" required min="<?= date('Y-m-d') ?>">
-                </div>
-                
-                <div class="form-group">
-                    <label for="duration_days">Duration (Days) *</label>
-                    <input type="number" id="duration_days" name="duration_days" min="1" max="365" value="1" required>
-                    <small style="color: var(--gray);">How many days will this session run?</small>
-                </div>
-            </div>
+    <div class="form-group">
+        <label for="session_date">Start Date *</label>
+        <input type="date" id="session_date" name="session_date" required min="<?= date('Y-m-d') ?>">
+    </div>
+    
+    <div class="form-group">
+        <label for="session_end_date_input">End Date *</label>
+        <input type="date" id="session_end_date_input" name="session_end_date_input" required min="<?= date('Y-m-d') ?>">
+        <small style="color: var(--gray);">End date must be same or after start date</small>
+    </div>
+</div>
+
+<!-- Keep the existing duration field but make it hidden since it will be calculated -->
+<input type="hidden" id="duration_days" name="duration_days" value="1">
 
             <div class="date-preview-container" id="datePreviewContainer" style="display: none;">
     <div class="date-preview">
@@ -1279,10 +1654,32 @@ if (!function_exists('get_role_color')) {
         </div>
     </div>
 </div>
-            <div class="form-group">
-                <label for="venue">Venue *</label>
-                <input type="text" id="venue" name="venue" required placeholder="Training venue location" maxlength="255">
-            </div>
+            <div class="form-group venue-group">
+    <label for="venue">
+        Training Venue & Directions *
+        <span class="field-hint">Include full address and travel instructions</span>
+    </label>
+    <textarea 
+        id="venue" 
+        name="venue" 
+        required 
+        rows="4"
+        maxlength="2000"
+        placeholder="Example:&#10;Philippine Red Cross Training Center&#10;Real Street, Guadalupe, Cebu City, 6000 Cebu&#10;&#10;Travel Instructions:&#10;- From Ayala Center: Take jeepney to Guadalupe, alight at Real Street&#10;- Parking available at the rear entrance&#10;- Training Room 2A (Second Floor)&#10;- Contact: 032-123-4567 for assistance"
+        style="resize: vertical; min-height: 100px;"
+    ></textarea>
+    <div class="field-info">
+        <span class="char-counter">
+            <span id="venue-char-count">0</span>/2000 characters
+        </span>
+        <div class="venue-tips">
+            <small>
+                <i class="fas fa-info-circle"></i>
+                Tips: Include room numbers, floor levels, parking info, contact person, and accessibility notes
+            </small>
+        </div>
+    </div>
+</div>
             
             <div class="form-row">
                 <div class="form-group">
@@ -1324,19 +1721,21 @@ let currentSessionId = null;
 // Enhanced date preview WITHOUT conflict checking
 function updateSessionDatePreview() {
     const startDateInput = document.getElementById('session_date');
-    const durationInput = document.getElementById('duration_days');
+    const endDateInput = document.getElementById('session_end_date_input');
     const previewContainer = document.getElementById('datePreviewContainer');
     const previewStartDate = document.getElementById('previewStartDate');
     const previewEndDate = document.getElementById('previewEndDate');
     const previewDuration = document.getElementById('previewDuration');
     
     const startDate = startDateInput.value;
-    const duration = parseInt(durationInput.value) || 1;
+    const endDate = endDateInput.value;
     
-    if (startDate) {
+    if (startDate && endDate) {
         const start = new Date(startDate + 'T00:00:00');
-        const end = new Date(start);
-        end.setDate(end.getDate() + duration - 1);
+        const end = new Date(endDate + 'T00:00:00');
+        
+        // Calculate and update hidden duration field
+        const duration = calculateSessionDurationDays();
         
         // Update preview display
         previewStartDate.textContent = start.toLocaleDateString('en-US', {
@@ -1362,6 +1761,34 @@ function updateSessionDatePreview() {
         previewContainer.style.display = 'none';
         hideSessionConflictWarning();
     }
+}
+
+// Calculate duration days from start and end date
+function calculateSessionDurationDays() {
+    const startDateInput = document.getElementById('session_date');
+    const endDateInput = document.getElementById('session_end_date_input');
+    const hiddenDurationInput = document.getElementById('duration_days');
+    
+    const startDate = startDateInput.value;
+    const endDate = endDateInput.value;
+    
+    if (startDate && endDate) {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        
+        // Calculate difference in days
+        const timeDiff = end.getTime() - start.getTime();
+        const dayDiff = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1; // +1 because same day = 1 day
+        
+        if (dayDiff >= 1) {
+            hiddenDurationInput.value = dayDiff;
+            return dayDiff;
+        } else {
+            hiddenDurationInput.value = 1;
+            return 1;
+        }
+    }
+    return 1;
 }
 
 // Function to check for session conflicts - DISABLED
@@ -1407,7 +1834,12 @@ function openCreateModal() {
     document.getElementById('modalTitle').textContent = 'Create New Session';
     document.getElementById('formAction').name = 'create_session';
     document.getElementById('sessionForm').reset();
-    document.getElementById('session_date').min = new Date().toISOString().split('T')[0];
+    
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('session_date').min = today;
+    document.getElementById('session_date').value = today;
+    document.getElementById('session_end_date_input').min = today;
+    document.getElementById('session_end_date_input').value = today; // Default to same day
     document.getElementById('duration_days').value = 1;
     
     currentSessionId = null;
@@ -1416,7 +1848,7 @@ function openCreateModal() {
     document.getElementById('datePreviewContainer').style.display = 'none';
     hideSessionConflictWarning();
     
-    // Service selection logic
+    // Service selection logic (keep your existing logic)
     const serviceSelect = document.getElementById('major_service');
     if (hasRestrictedAccess && allowedServices && allowedServices.length > 0) {
         Array.from(serviceSelect.options).forEach(option => {
@@ -1450,7 +1882,15 @@ function openEditModal(session) {
     document.getElementById('title').value = session.title;
     document.getElementById('major_service').value = session.major_service;
     document.getElementById('session_date').value = session.session_date;
-    document.getElementById('duration_days').value = session.duration_days || 1;
+    
+    // Calculate end date from duration for editing
+    const startDate = new Date(session.session_date);
+    const duration = session.duration_days || 1;
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + duration - 1);
+    document.getElementById('session_end_date_input').value = endDate.toISOString().split('T')[0];
+    
+    document.getElementById('duration_days').value = duration;
     document.getElementById('start_time').value = session.start_time;
     document.getElementById('end_time').value = session.end_time;
     document.getElementById('venue').value = session.venue;
@@ -1513,8 +1953,11 @@ function openEditModal(session) {
     
     if (sessionDate < today) {
         document.getElementById('session_date').min = session.session_date;
+        document.getElementById('session_end_date_input').min = session.session_date;
     } else {
-        document.getElementById('session_date').min = new Date().toISOString().split('T')[0];
+        const todayStr = new Date().toISOString().split('T')[0];
+        document.getElementById('session_date').min = todayStr;
+        document.getElementById('session_end_date_input').min = todayStr;
     }
     
     document.getElementById('sessionModal').classList.add('active');
@@ -1556,20 +1999,107 @@ function confirmDeleteRegistration() {
     return confirm('Are you sure you want to delete this registration?\n\nThis action cannot be undone.');
 }
 
+// Add these functions to your existing sessions.php JavaScript
+function showVenueModal(sessionTitle, venueText) {
+    // Remove any existing venue modal
+    const existingModal = document.querySelector('.venue-modal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+    
+    // Create modal
+    const modal = document.createElement('div');
+    modal.className = 'venue-modal';
+    modal.innerHTML = `
+        <div class="venue-modal-content">
+            <div class="venue-modal-header">
+                <h3>
+                    <i class="fas fa-map-marker-alt"></i>
+                    ${escapeHtml(sessionTitle)} - Venue
+                </h3>
+                <button class="venue-modal-close" onclick="closeVenueModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="venue-modal-body">
+                ${escapeHtml(venueText).replace(/\n/g, '<br>')}
+            </div>
+        </div>
+    `;
+    
+    // Add to body
+    document.body.appendChild(modal);
+    
+    // Show modal
+    setTimeout(() => {
+        modal.classList.add('active');
+    }, 10);
+    
+    // Add click outside to close
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) {
+            closeVenueModal();
+        }
+    });
+    
+    // Store reference
+    window.currentVenueModal = modal;
+    
+    // Prevent body scroll
+    document.body.style.overflow = 'hidden';
+}
+
+function closeVenueModal() {
+    const modal = window.currentVenueModal || document.querySelector('.venue-modal');
+    if (modal) {
+        modal.classList.remove('active');
+        setTimeout(() => {
+            modal.remove();
+            window.currentVenueModal = null;
+            document.body.style.overflow = '';
+        }, 300);
+    }
+}
+
+// Helper function for escaping HTML (if not already present)
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 // Event listeners initialization
 document.addEventListener('DOMContentLoaded', function() {
     const sessionDateInput = document.getElementById('session_date');
-    const durationInput = document.getElementById('duration_days');
+    const endDateInput = document.getElementById('session_end_date_input');
     const startTimeInput = document.getElementById('start_time');
     const endTimeInput = document.getElementById('end_time');
     
-    if (sessionDateInput) {
-        sessionDateInput.addEventListener('change', updateSessionDatePreview);
-    }
-    
-    if (durationInput) {
-        durationInput.addEventListener('input', updateSessionDatePreview);
-        durationInput.addEventListener('change', updateSessionDatePreview);
+    // Auto-update end date minimum when start date changes
+    if (sessionDateInput && endDateInput) {
+        sessionDateInput.addEventListener('change', function() {
+            const startDate = this.value;
+            endDateInput.min = startDate;
+            
+            // If end date is before start date, update it
+            if (endDateInput.value && endDateInput.value < startDate) {
+                endDateInput.value = startDate;
+            }
+            
+            // If no end date set, default to start date
+            if (!endDateInput.value) {
+                endDateInput.value = startDate;
+            }
+            
+            calculateSessionDurationDays();
+            updateSessionDatePreview();
+        });
+        
+        endDateInput.addEventListener('change', function() {
+            calculateSessionDurationDays();
+            updateSessionDatePreview();
+        });
     }
     
     if (startTimeInput) {
@@ -1584,16 +2114,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const sessionForm = document.getElementById('sessionForm');
     if (sessionForm) {
         sessionForm.addEventListener('submit', function(e) {
+            const startDate = document.getElementById('session_date').value;
+            const endDate = document.getElementById('session_end_date_input').value;
             const startTime = document.getElementById('start_time').value;
             const endTime = document.getElementById('end_time').value;
-            const sessionDate = document.getElementById('session_date').value;
-            const duration = parseInt(document.getElementById('duration_days').value) || 1;
             const title = document.getElementById('title').value.trim();
             const venue = document.getElementById('venue').value.trim();
             const majorService = document.getElementById('major_service').value;
             const isCreating = document.getElementById('formAction').name === 'create_session';
-            
-            console.log('Form submission - Service:', majorService, 'IsCreating:', isCreating, 'Duration:', duration);
             
             // Basic validation
             if (!title) {
@@ -1614,14 +2142,54 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             
-            // Duration validation
-            if (duration < 1 || duration > 365) {
+            if (!startDate) {
                 e.preventDefault();
-                alert('Session duration must be between 1 and 365 days.');
+                alert('Please select a start date.');
                 return;
             }
             
-            // Only check service permission for CREATE operations
+            if (!endDate) {
+                e.preventDefault();
+                alert('Please select an end date.');
+                return;
+            }
+            
+            // Date validation
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            
+            if (end < start) {
+                e.preventDefault();
+                alert('End date cannot be before start date.');
+                return;
+            }
+            
+            // Calculate final duration for submission
+            const finalDuration = calculateSessionDurationDays();
+            if (finalDuration > 365) {
+                e.preventDefault();
+                alert('Session duration cannot exceed 365 days.');
+                return;
+            }
+            
+            // Time validation
+            if (endTime <= startTime) {
+                e.preventDefault();
+                alert('End time must be after start time');
+                return;
+            }
+            
+            const startDateTime = new Date(`2000-01-01T${startTime}`);
+            const endDateTime = new Date(`2000-01-01T${endTime}`);
+            const timeDuration = (endDateTime - startDateTime) / (1000 * 60 * 60);
+            
+            if (timeDuration < 1) {
+                e.preventDefault();
+                alert('Session must be at least 1 hour long');
+                return;
+            }
+            
+            // Service permission check for CREATE operations
             if (isCreating && hasRestrictedAccess && allowedServices && allowedServices.length > 0) {
                 if (!allowedServices.includes(majorService)) {
                     e.preventDefault();
@@ -1631,23 +2199,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
             
-            if (endTime <= startTime) {
-                e.preventDefault();
-                alert('End time must be after start time');
-                return;
-            }
-            
-            const start = new Date(`2000-01-01T${startTime}`);
-            const end = new Date(`2000-01-01T${endTime}`);
-            const timeDuration = (end - start) / (1000 * 60 * 60);
-            
-            if (timeDuration < 1) {
-                e.preventDefault();
-                alert('Session must be at least 1 hour long');
-                return;
-            }
-            
-            const selectedDate = new Date(sessionDate);
+            const selectedDate = new Date(startDate);
             const today = new Date();
             today.setHours(0, 0, 0, 0);
             
@@ -1739,6 +2291,48 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('Allowed Services:', allowedServices);
     console.log('Current User ID:', currentUserId);
     console.log('======================================');
+    
+    // Character counter for venue field
+    const venueField = document.getElementById('venue');
+    const charCounter = document.getElementById('venue-char-count');
+    
+    if (venueField && charCounter) {
+        function updateVenueCharCount() {
+            const currentLength = venueField.value.length;
+            const maxLength = 2000;
+            
+            charCounter.textContent = currentLength;
+            
+            // Update counter color based on usage
+            const counterElement = charCounter.parentElement;
+            counterElement.classList.remove('warning', 'danger');
+            
+            if (currentLength > maxLength * 0.9) {
+                counterElement.classList.add('danger');
+            } else if (currentLength > maxLength * 0.75) {
+                counterElement.classList.add('warning');
+            }
+        }
+        
+        // Update on input
+        venueField.addEventListener('input', updateVenueCharCount);
+        
+        // Initialize counter
+        updateVenueCharCount();
+        
+        // Auto-resize textarea based on content
+        venueField.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.max(100, this.scrollHeight) + 'px';
+        });
+    }
+    
+    // Close venue modal with Escape key
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && window.currentVenueModal) {
+            closeVenueModal();
+        }
+    });
 });
 
 // Keyboard shortcuts
@@ -1779,7 +2373,284 @@ if ('ontouchstart' in window) {
         });
     });
 }
+let currentRequest = null;
 
+// Open Request View Modal
+function openRequestModal(request) {
+    currentRequest = request;
+    document.getElementById('updateRequestId').value = request.request_id;
+    document.getElementById('new_status').value = request.status;
+    document.getElementById('admin_notes').value = request.admin_notes || '';
+    
+    // Populate request details
+    const requestDetails = document.getElementById('requestDetails');
+    const preferredDate = request.preferred_date ? 
+        new Date(request.preferred_date).toLocaleDateString('en-US', {
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric'
+        }) : 'Flexible';
+    
+    requestDetails.innerHTML = `
+        <div class="request-info-grid">
+            <div class="info-item">
+                <div class="info-label">Request ID</div>
+                <div class="info-value">#${request.request_id}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Requested By</div>
+                <div class="info-value">${escapeHtml(request.user_full_name || 'Unknown User')}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Email</div>
+                <div class="info-value">${escapeHtml(request.user_email)}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Service Type</div>
+                <div class="info-value">${escapeHtml(request.service_type)}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Training Program</div>
+                <div class="info-value">${escapeHtml(request.program_name || request.training_program)}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Duration</div>
+                <div class="info-value">${request.typical_duration_hours || 8} hours</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Preferred Date</div>
+                <div class="info-value">${preferredDate}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Preferred Time</div>
+                <div class="info-value">${request.preferred_time.charAt(0).toUpperCase() + request.preferred_time.slice(1)}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Participants</div>
+                <div class="info-value">${request.participant_count}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Contact Person</div>
+                <div class="info-value">${escapeHtml(request.contact_person)}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Contact Number</div>
+                <div class="info-value">${escapeHtml(request.contact_number)}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Contact Email</div>
+                <div class="info-value">${escapeHtml(request.email)}</div>
+            </div>
+        </div>
+        
+        ${request.organization_name ? `
+            <div class="info-item" style="margin-top: 1rem;">
+                <div class="info-label">Organization</div>
+                <div class="info-value">${escapeHtml(request.organization_name)}</div>
+            </div>
+        ` : ''}
+        
+        ${request.location_preference ? `
+            <div class="info-item" style="margin-top: 1rem;">
+                <div class="info-label">Location Preference</div>
+                <div class="info-value">${escapeHtml(request.location_preference)}</div>
+            </div>
+        ` : ''}
+        
+        ${request.purpose ? `
+            <div class="info-item" style="margin-top: 1rem;">
+                <div class="info-label">Purpose/Objective</div>
+                <div class="info-value">${escapeHtml(request.purpose)}</div>
+            </div>
+        ` : ''}
+        
+        ${request.additional_requirements ? `
+            <div class="info-item" style="margin-top: 1rem;">
+                <div class="info-label">Additional Requirements</div>
+                <div class="info-value">${escapeHtml(request.additional_requirements)}</div>
+            </div>
+        ` : ''}
+        
+        <div class="info-item" style="margin-top: 1rem;">
+            <div class="info-label">Submitted</div>
+            <div class="info-value">${new Date(request.created_at).toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'long', 
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit'
+            })}</div>
+        </div>
+        
+        ${request.reviewed_by_name ? `
+            <div class="info-item" style="margin-top: 1rem;">
+                <div class="info-label">Last Reviewed By</div>
+                <div class="info-value">${escapeHtml(request.reviewed_by_name)} on ${new Date(request.reviewed_date).toLocaleDateString('en-US')}</div>
+            </div>
+        ` : ''}
+    `;
+    
+    document.getElementById('requestModal').classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+// Open Create Session Modal
+function openCreateSessionModal(request) {
+    currentRequest = request;
+    document.getElementById('createRequestId').value = request.request_id;
+    
+    // Auto-fill form with request data
+    const programName = request.program_name || request.training_program;
+    document.getElementById('session_title').value = `${programName} Training`;
+    
+    // Set default dates (preferred date or 2 weeks from now)
+    const defaultDate = request.preferred_date || 
+        new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    document.getElementById('session_date').value = defaultDate;
+    document.getElementById('session_end_date').value = defaultDate;
+    
+    // Set capacity based on participant count
+    document.getElementById('capacity').value = Math.max(request.participant_count, 10);
+    
+    // Set time based on preference
+    if (request.preferred_time === 'morning') {
+        document.getElementById('start_time').value = '08:00';
+        document.getElementById('end_time').value = '17:00';
+    } else if (request.preferred_time === 'afternoon') {
+        document.getElementById('start_time').value = '13:00';
+        document.getElementById('end_time').value = '17:00';
+    } else {
+        document.getElementById('start_time').value = '18:00';
+        document.getElementById('end_time').value = '20:00';
+    }
+    
+    // Set default venue if location preference provided
+    if (request.location_preference) {
+        document.getElementById('venue').value = `Training Venue\n${request.location_preference}\n\nDetailed directions will be provided upon confirmation.`;
+    }
+    
+    // Populate request summary
+    const requestSummary = document.getElementById('requestSummary');
+    requestSummary.innerHTML = `
+        <div class="summary-header">
+            <i class="fas fa-info-circle"></i>
+            Request Summary - #${request.request_id}
+        </div>
+        <div class="summary-grid">
+            <div class="summary-item">
+                <div class="summary-label">Requested By</div>
+                <div class="summary-value">${escapeHtml(request.user_full_name || 'Unknown User')}</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-label">Training Program</div>
+                <div class="summary-value">${escapeHtml(programName)}</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-label">Service</div>
+                <div class="summary-value">${escapeHtml(request.service_type)}</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-label">Participants</div>
+                <div class="summary-value">${request.participant_count}</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-label">Contact</div>
+                <div class="summary-value">${escapeHtml(request.contact_person)}<br>${escapeHtml(request.contact_number)}</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-label">Email</div>
+                <div class="summary-value">${escapeHtml(request.email)}</div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('createSessionModal').classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+// Close modals
+function closeRequestModal() {
+    document.getElementById('requestModal').classList.remove('active');
+    document.body.style.overflow = '';
+    currentRequest = null;
+}
+
+function closeCreateSessionModal() {
+    document.getElementById('createSessionModal').classList.remove('active');
+    document.body.style.overflow = '';
+    currentRequest = null;
+}
+
+// Form validation and submission
+document.getElementById('createSessionForm').addEventListener('submit', function(e) {
+    const sessionTitle = document.getElementById('session_title').value.trim();
+    const sessionDate = document.getElementById('session_date').value;
+    const sessionEndDate = document.getElementById('session_end_date').value;
+    const startTime = document.getElementById('start_time').value;
+    const endTime = document.getElementById('end_time').value;
+    const venue = document.getElementById('venue').value.trim();
+    
+    if (!sessionTitle || !sessionDate || !sessionEndDate || !venue) {
+        e.preventDefault();
+        alert('Please fill in all required fields.');
+        return;
+    }
+    
+    if (new Date(sessionEndDate) < new Date(sessionDate)) {
+        e.preventDefault();
+        alert('End date cannot be before start date.');
+        return;
+    }
+    
+    if (endTime <= startTime) {
+        e.preventDefault();
+        alert('End time must be after start time.');
+        return;
+    }
+    
+    // Show loading state
+    const submitBtn = this.querySelector('.btn-submit');
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating Session...';
+    submitBtn.disabled = true;
+});
+
+// Update end date minimum when start date changes
+document.getElementById('session_date').addEventListener('change', function() {
+    const endDateInput = document.getElementById('session_end_date');
+    endDateInput.min = this.value;
+    if (endDateInput.value && endDateInput.value < this.value) {
+        endDateInput.value = this.value;
+    }
+});
+
+// Close modals when clicking outside
+document.getElementById('requestModal').addEventListener('click', function(e) {
+    if (e.target === this) closeRequestModal();
+});
+
+document.getElementById('createSessionModal').addEventListener('click', function(e) {
+    if (e.target === this) closeCreateSessionModal();
+});
+
+// Keyboard navigation
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        if (document.getElementById('requestModal').classList.contains('active')) {
+            closeRequestModal();
+        }
+        if (document.getElementById('createSessionModal').classList.contains('active')) {
+            closeCreateSessionModal();
+        }
+    }
+});
+
+// Helper function for HTML escaping
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
 // CSS Styles for Multi-Day Sessions
 const sessionStyles = `
 /* Enhanced styles for multi-day session display */
@@ -1816,6 +2687,7 @@ const sessionStyles = `
     margin-top: 0.2rem;
     font-weight: 500;
     border: 1px solid rgba(33, 150, 243, 0.2);
+    width: 100px;
 }
 
 .status-badge.ongoing {
@@ -1980,6 +2852,7 @@ const sessionStyles = `
     .session-duration {
         font-size: 0.7rem;
         padding: 0.1rem 0.3rem;
+        width: 100px;
     }
 }
 
@@ -1991,6 +2864,7 @@ const sessionStyles = `
     
     .session-duration {
         font-size: 0.65rem;
+        width: 100px;
     }
 }
 `;

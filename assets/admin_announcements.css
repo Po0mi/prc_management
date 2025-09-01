@@ -499,7 +499,44 @@
   color: var(--gray);
   font-size: 0.85rem;
 }
+/* Loading state for image uploads */
+.image-preview.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 150px;
+}
 
+.image-preview.loading::before {
+  content: "Loading...";
+  color: var(--gray);
+  font-style: italic;
+}
+
+/* Error state for failed uploads */
+.image-preview.error {
+  border-color: #dc3545;
+  background-color: rgba(220, 53, 69, 0.05);
+}
+
+.image-preview.error::before {
+  content: "Failed to load image";
+  color: #dc3545;
+  padding: 1rem;
+  text-align: center;
+}
+
+/* Responsive adjustments for mobile */
+@media (max-width: 576px) {
+  .announcement-image,
+  .image-preview {
+    max-height: 250px;
+  }
+  
+  .image-preview img {
+    max-height: 250px;
+  }
+}
 /* Image Preview Styles */
 .image-preview {
   position: relative;
@@ -508,13 +545,19 @@
   overflow: hidden;
   max-width: 300px;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  display: flex; /* Added for proper centering */
+  align-items: center; /* Center vertically */
+  justify-content: center; /* Center horizontally */
 }
 
 .image-preview img {
   width: 100%;
   height: auto;
   display: block;
+  object-fit: contain; /* Ensure full image is visible */
+  max-height: 300px; /* Maintain container constraint */
 }
+Additional Rec
 
 .remove-image-btn {
   position: absolute;
@@ -634,13 +677,17 @@
   overflow: hidden;
   max-height: 300px;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  display: flex; /* Added to fix alignment */
+  align-items: center; /* Center the image vertically */
+  justify-content: center; /* Center the image horizontally */
 }
 
 .announcement-image img {
   width: 100%;
   height: auto;
   display: block;
-  object-fit: cover;
+  object-fit: contain; /* Changed from 'cover' to 'contain' to show full image */
+  max-height: 300px; /* Added to maintain container height */
 }
 
 .announcement-content {

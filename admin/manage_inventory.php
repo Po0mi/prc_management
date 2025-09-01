@@ -387,7 +387,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_item'])) {
         $errorMessage = "Error deleting item: " . $e->getMessage();
     }
 }
-
+// Handle Delete Maintenance
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_maintenance'])) {
+    $maintenance_id = (int)$_POST['maintenance_id'];
+    
+    try {
+        if ($admin_role === 'super') {
+            $stmt = $pdo->prepare("DELETE FROM vehicle_maintenance WHERE maintenance_id = ?");
+            $stmt->execute([$maintenance_id]);
+        } else {
+            // Only allow deletion if they created it
+            $stmt = $pdo->prepare("DELETE FROM vehicle_maintenance WHERE maintenance_id = ? AND admin_id = ?");
+            $stmt->execute([$maintenance_id, $user_id]);
+        }
+        
+        if ($stmt->rowCount() > 0) {
+            $successMessage = "Maintenance record deleted successfully!";
+        } else {
+            $errorMessage = "You don't have permission to delete this maintenance record or it was not found.";
+        }
+    } catch (PDOException $e) {
+        $errorMessage = "Error deleting maintenance record: " . $e->getMessage();
+    }
+}
 // Handle Vehicle Operations (Service-specific)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_vehicle'])) {
     $vehicle_type = trim($_POST['vehicle_type']);
@@ -482,6 +504,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_vehicle'])) {
 }
 
 // Handle Add Maintenance (Service-specific)
+// Handle Add/Edit Maintenance (Service-specific)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_maintenance'])) {
     $vehicle_id = (int)$_POST['vehicle_id'];
     $maintenance_type = trim($_POST['maintenance_type']);
@@ -491,18 +514,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_maintenance'])) {
     $next_maintenance = $_POST['next_maintenance'] ?: null;
     $service_provider = trim($_POST['service_provider']);
     $mileage_at_service = (int)$_POST['mileage_at_service'];
+    $maintenance_id = isset($_POST['maintenance_id']) ? (int)$_POST['maintenance_id'] : 0;
     
     if ($vehicle_id && $maintenance_type && $maintenance_date) {
         try {
-            $stmt = $pdo->prepare("
-                INSERT INTO vehicle_maintenance 
-                (vehicle_id, maintenance_type, description, cost, maintenance_date, 
-                 next_maintenance_date, service_provider, mileage_at_service, admin_id, created_at) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-            ");
-            $stmt->execute([$vehicle_id, $maintenance_type, $description, $cost, 
-                           $maintenance_date, $next_maintenance, $service_provider, 
-                           $mileage_at_service, $user_id]);
+            if ($maintenance_id) {
+                // Update existing maintenance record
+                $stmt = $pdo->prepare("
+                    UPDATE vehicle_maintenance 
+                    SET vehicle_id = ?, maintenance_type = ?, description = ?, cost = ?, 
+                        maintenance_date = ?, next_maintenance_date = ?, service_provider = ?, 
+                        mileage_at_service = ?
+                    WHERE maintenance_id = ? AND admin_id = ?
+                ");
+                $stmt->execute([$vehicle_id, $maintenance_type, $description, $cost, 
+                               $maintenance_date, $next_maintenance, $service_provider, 
+                               $mileage_at_service, $maintenance_id, $user_id]);
+                
+                $successMessage = "Maintenance record updated successfully!";
+            } else {
+                // Add new maintenance record
+                $stmt = $pdo->prepare("
+                    INSERT INTO vehicle_maintenance 
+                    (vehicle_id, maintenance_type, description, cost, maintenance_date, 
+                     next_maintenance_date, service_provider, mileage_at_service, admin_id, created_at) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                ");
+                $stmt->execute([$vehicle_id, $maintenance_type, $description, $cost, 
+                               $maintenance_date, $next_maintenance, $service_provider, 
+                               $mileage_at_service, $user_id]);
+                
+                $successMessage = "Maintenance record added successfully!";
+            }
             
             if ($mileage_at_service > 0) {
                 $stmt = $pdo->prepare("
@@ -512,9 +555,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_maintenance'])) {
                 $stmt->execute([$mileage_at_service, $vehicle_id, $user_id, $mileage_at_service]);
             }
             
-            $successMessage = "Maintenance record added successfully!";
+            // Redirect to refresh the page and show updated data
+            header("Location: ?tab=vehicles&vehicle=" . $vehicle_id);
+            exit();
+            
         } catch (PDOException $e) {
-            $errorMessage = "Error adding maintenance: " . $e->getMessage();
+            $errorMessage = "Error saving maintenance: " . $e->getMessage();
         }
     }
 }
@@ -1254,43 +1300,86 @@ $badgeColors = [
       </div>
 
       <!-- Maintenance History -->
-      <?php if ($selected_vehicle_id && !empty($maintenance_records)): ?>
-        <div class="maintenance-section">
-          <h3><i class="fas fa-history"></i> Maintenance History</h3>
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Type</th>
-                <th>Description</th>
-                <th>Provider</th>
-                <th>Mileage</th>
-                <th>Cost</th>
-                <th>Next Due</th>
-              </tr>
-            </thead>
-            <tbody>
-              <?php foreach ($maintenance_records as $record): ?>
-                <tr>
-                  <td><?= date('M d, Y', strtotime($record['maintenance_date'])) ?></td>
-                  <td><?= ucfirst(str_replace('_', ' ', $record['maintenance_type'])) ?></td>
-                  <td><?= htmlspecialchars($record['description']) ?></td>
-                  <td><?= htmlspecialchars($record['service_provider']) ?></td>
-                  <td><?= number_format($record['mileage_at_service']) ?> km</td>
-                  <td>₱<?= number_format($record['cost'], 2) ?></td>
-                  <td>
-                    <?= $record['next_maintenance_date'] ? 
-                        date('M d, Y', strtotime($record['next_maintenance_date'])) : 
-                        '-' ?>
-                  </td>
-                </tr>
-              <?php endforeach; ?>
-            </tbody>
-          </table>
-        </div>
-      <?php endif; ?>
-    </div>
+      <!-- Maintenance History -->
+<?php if ($selected_vehicle_id): ?>
+  <div class="maintenance-section">
+    <h3><i class="fas fa-history"></i> Maintenance History</h3>
+    
+    <?php 
+    // Get maintenance records for the selected vehicle
+    try {
+        $stmt = $pdo->prepare("
+            SELECT vm.*, v.plate_number, v.model 
+            FROM vehicle_maintenance vm
+            JOIN vehicles v ON vm.vehicle_id = v.vehicle_id
+            WHERE vm.vehicle_id = ? 
+            ORDER BY vm.maintenance_date DESC
+        ");
+        $stmt->execute([$selected_vehicle_id]);
+        $maintenance_records = $stmt->fetchAll();
+    } catch (PDOException $e) {
+        $maintenance_records = [];
+        error_log("Maintenance query error: " . $e->getMessage());
+    }
+    ?>
+    
+    <?php if (empty($maintenance_records)): ?>
+      <div class="empty-state">
+        <i class="fas fa-wrench"></i>
+        <h3>No Maintenance Records</h3>
+        <p>No maintenance history found for this vehicle</p>
+      </div>
+    <?php else: ?>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Type</th>
+            <th>Description</th>
+            <th>Provider</th>
+            <th>Mileage</th>
+            <th>Cost</th>
+            <th>Next Due</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($maintenance_records as $record): ?>
+            <tr>
+              <td><?= date('M d, Y', strtotime($record['maintenance_date'])) ?></td>
+              <td><?= ucfirst(str_replace('_', ' ', $record['maintenance_type'])) ?></td>
+              <td><?= htmlspecialchars($record['description']) ?></td>
+              <td><?= htmlspecialchars($record['service_provider']) ?></td>
+              <td><?= number_format($record['mileage_at_service']) ?> km</td>
+              <td>₱<?= number_format($record['cost'], 2) ?></td>
+              <td>
+                <?= $record['next_maintenance_date'] ? 
+                    date('M d, Y', strtotime($record['next_maintenance_date'])) : 
+                    '-' ?>
+              </td>
+              <td>
+                <?php if ($admin_role === 'super' || $record['admin_id'] == $user_id): ?>
+                  <button onclick='editMaintenance(<?= json_encode($record) ?>)' class="btn-sm btn-edit">
+                    <i class="fas fa-edit"></i>
+                  </button>
+                  <form method="POST" style="display: inline;" onsubmit="return confirm('Delete this maintenance record?')">
+                    <input type="hidden" name="delete_maintenance" value="1">
+                    <input type="hidden" name="maintenance_id" value="<?= $record['maintenance_id'] ?>">
+                    <button type="submit" class="btn-sm btn-delete">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </form>
+                <?php else: ?>
+                  <span class="text-muted">View Only</span>
+                <?php endif; ?>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    <?php endif; ?>
   </div>
+<?php endif; ?>
 
   <!-- MODALS -->
   
@@ -1612,7 +1701,32 @@ function openAddItemModal() {
     
     openModal('itemModal');
 }
-
+function editMaintenance(record) {
+    // Populate the maintenance form with existing data
+    document.querySelector('select[name="vehicle_id"]').value = record.vehicle_id;
+    document.querySelector('select[name="maintenance_type"]').value = record.maintenance_type;
+    document.querySelector('input[name="maintenance_date"]').value = record.maintenance_date;
+    document.querySelector('textarea[name="description"]').value = record.description || '';
+    document.querySelector('input[name="service_provider"]').value = record.service_provider || '';
+    document.querySelector('input[name="cost"]').value = record.cost || '0.00';
+    document.querySelector('input[name="mileage_at_service"]').value = record.mileage_at_service || '';
+    
+    if (record.next_maintenance_date) {
+        document.querySelector('input[name="next_maintenance"]').value = record.next_maintenance_date;
+    }
+    
+    // Add hidden field for editing
+    let hiddenInput = document.createElement('input');
+    hiddenInput.type = 'hidden';
+    hiddenInput.name = 'maintenance_id';
+    hiddenInput.value = record.maintenance_id;
+    document.querySelector('#maintenanceModal form').appendChild(hiddenInput);
+    
+    // Change form action to update
+    document.querySelector('#maintenanceModal form').setAttribute('action', '?tab=vehicles&vehicle=' + record.vehicle_id);
+    
+    openModal('maintenanceModal');
+}
 function openEditItemModal(item) {
     document.getElementById('itemModalTitle').textContent = `Edit ${isSuper ? '' : '<?= $currentServiceTitle ?>'} Item`;
     document.getElementById('itemId').value = item.item_id;

@@ -9,7 +9,9 @@ if ($user_role) {
     header("Location: /admin/dashboard.php");
     exit;
 }
-
+if (!isset($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
 $userEmail = $_SESSION['email'] ?? '';
 $username = current_username();
 $userId = current_user_id();
@@ -409,7 +411,115 @@ try {
         'my_upcoming' => 0
     ];
 }
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_training'])) {
+    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        $errorMessage = "Security error: Invalid form submission. Please try again.";
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    } else {
+        $serviceType = trim($_POST['service_type'] ?? '');
+        $trainingProgram = trim($_POST['training_program'] ?? '');
+        $preferredDate = !empty($_POST['preferred_date']) ? $_POST['preferred_date'] : null;
+        $preferredTime = $_POST['preferred_time'] ?? 'morning';
+        $participantCount = (int)($_POST['participant_count'] ?? 1);
+        $organizationName = trim($_POST['organization_name'] ?? '');
+        $contactPerson = trim($_POST['contact_person'] ?? '');
+        $contactNumber = trim($_POST['contact_number'] ?? '');
+        $email = trim($_POST['email'] ?? '');
+        $purpose = trim($_POST['purpose'] ?? '');
+        $additionalRequirements = trim($_POST['additional_requirements'] ?? '');
+        $locationPreference = trim($_POST['location_preference'] ?? '');
+        
+        // Validation
+        $errors = [];
+        
+        if (empty($serviceType) || !in_array($serviceType, ['Safety Service', 'Red Cross Youth'])) {
+            $errors[] = "Please select a valid service type.";
+        }
+        
+        if (empty($trainingProgram)) {
+            $errors[] = "Please select a training program.";
+        }
+        
+        if (empty($contactPerson)) {
+            $errors[] = "Contact person is required.";
+        }
+        
+        if (empty($contactNumber)) {
+            $errors[] = "Contact number is required.";
+        }
+        
+        if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $errors[] = "Valid email address is required.";
+        }
+        
+        if ($participantCount < 1 || $participantCount > 100) {
+            $errors[] = "Participant count must be between 1 and 100.";
+        }
+        
+        if ($preferredDate && strtotime($preferredDate) < strtotime('+1 week')) {
+            $errors[] = "Preferred date must be at least 1 week from now.";
+        }
+        
+        // Validate training program against service type
+        $validPrograms = [
+            'Safety Service' => ['EFAT', 'OFAT', 'OTC'],
+            'Red Cross Youth' => ['YVFC', 'LDP', 'AD']
+        ];
+        
+        if (!in_array($trainingProgram, $validPrograms[$serviceType] ?? [])) {
+            $errors[] = "Invalid training program for selected service type.";
+        }
+        
+        if (empty($errors)) {
+            try {
+                $stmt = $pdo->prepare("
+                    INSERT INTO training_requests (
+                        user_id, service_type, training_program, preferred_date, preferred_time, 
+                        participant_count, organization_name, contact_person, contact_number, 
+                        email, purpose, additional_requirements, location_preference, status
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+                ");
+                
+                $result = $stmt->execute([
+                    $userId, $serviceType, $trainingProgram, $preferredDate, $preferredTime,
+                    $participantCount, $organizationName, $contactPerson, $contactNumber,
+                    $email, $purpose, $additionalRequirements, $locationPreference
+                ]);
+                
+                if ($result) {
+                    $requestId = $pdo->lastInsertId();
+                    $successMessage = "Training request submitted successfully! Request ID: #" . $requestId . ". We will contact you within 3-5 business days.";
+                    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+                } else {
+                    $errorMessage = "Failed to submit training request. Please try again.";
+                }
+                
+            } catch (PDOException $e) {
+                error_log("Training request error: " . $e->getMessage());
+                $errorMessage = "Database error occurred. Please try again later.";
+            }
+        } else {
+            $errorMessage = implode("<br>", $errors);
+        }
+    }
+}
 
+// Get user's training requests for display
+try {
+    $userRequestsStmt = $pdo->prepare("
+        SELECT tr.*, tp.program_name, tp.program_description, tp.typical_duration_hours
+        FROM training_requests tr
+        LEFT JOIN training_programs tp ON tr.training_program = tp.program_code 
+            AND tr.service_type = tp.service_type
+        WHERE tr.user_id = ?
+        ORDER BY tr.created_at DESC
+    ");
+    $userRequestsStmt->execute([$userId]);
+    $userTrainingRequests = $userRequestsStmt->fetchAll();
+} catch (PDOException $e) {
+    error_log("Error fetching training requests: " . $e->getMessage());
+    $userTrainingRequests = [];
+}
 ?>
 
 <!DOCTYPE html>
@@ -456,7 +566,10 @@ try {
                 <input type="text" name="search" placeholder="Search training sessions..." value="<?= htmlspecialchars($search) ?>">
                 <button type="submit"><i class="fas fa-arrow-right"></i></button>
               </form>
-              
+              <button class="btn-request-training" onclick="openTrainingRequestModal()" style="margin-left: 1rem;">
+    <i class="fas fa-chalkboard-teacher"></i> Request Training
+</button>
+
               <div class="status-filter">
                 <button onclick="filterService('all')" class="<?= !$serviceFilter || $serviceFilter === 'all' ? 'active' : '' ?>">All Services</button>
                 <?php foreach ($majorServices as $service): ?>
@@ -510,6 +623,167 @@ try {
               </div>
             </div>
           </div>
+<div class="modal" id="trainingRequestModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 class="modal-title">Request Training Program</h2>
+            <button class="close-modal" onclick="closeTrainingRequestModal()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        
+        <?php if (isset($errorMessage)): ?>
+            <div class="alert error">
+                <i class="fas fa-exclamation-circle"></i>
+                <?= $errorMessage ?>
+            </div>
+        <?php endif; ?>
+        
+        <?php if (isset($successMessage)): ?>
+            <div class="alert success">
+                <i class="fas fa-check-circle"></i>
+                <?= $successMessage ?>
+            </div>
+        <?php endif; ?>
+        
+        <form method="POST" id="trainingRequestForm">
+            <input type="hidden" name="request_training" value="1">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+            
+            <div class="form-group">
+                <label for="service_type">Service Type <span class="required">*</span></label>
+                <select id="service_type" name="service_type" required onchange="updateTrainingPrograms()">
+                    <option value="">Select Service Type</option>
+                    <option value="Safety Service" <?= isset($_POST['service_type']) && $_POST['service_type'] === 'Safety Service' ? 'selected' : '' ?>>Safety Service</option>
+                    <option value="Red Cross Youth" <?= isset($_POST['service_type']) && $_POST['service_type'] === 'Red Cross Youth' ? 'selected' : '' ?>>Red Cross Youth</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="training_program">Training Program <span class="required">*</span></label>
+                <select id="training_program" name="training_program" required disabled>
+                    <option value="">Select service type first</option>
+                </select>
+                <div class="program-description" id="program_description" style="display: none;">
+                    <small style="color: var(--gray); margin-top: 0.5rem; display: block;"></small>
+                </div>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="preferred_date">Preferred Date</label>
+                    <input type="date" 
+                           id="preferred_date" 
+                           name="preferred_date" 
+                           min="<?= date('Y-m-d', strtotime('+1 week')) ?>"
+                           value="<?= isset($_POST['preferred_date']) ? htmlspecialchars($_POST['preferred_date']) : '' ?>">
+                    <small style="color: var(--gray);">Leave blank if flexible</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="preferred_time">Preferred Time</label>
+                    <select id="preferred_time" name="preferred_time">
+                        <option value="morning" <?= isset($_POST['preferred_time']) && $_POST['preferred_time'] === 'morning' ? 'selected' : '' ?>>Morning (8:00 AM - 12:00 PM)</option>
+                        <option value="afternoon" <?= isset($_POST['preferred_time']) && $_POST['preferred_time'] === 'afternoon' ? 'selected' : '' ?>>Afternoon (1:00 PM - 5:00 PM)</option>
+                        <option value="evening" <?= isset($_POST['preferred_time']) && $_POST['preferred_time'] === 'evening' ? 'selected' : '' ?>>Evening (6:00 PM - 8:00 PM)</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="participant_count">Expected Participants <span class="required">*</span></label>
+                    <input type="number" 
+                           id="participant_count" 
+                           name="participant_count" 
+                           min="1" 
+                           max="100" 
+                           value="<?= isset($_POST['participant_count']) ? htmlspecialchars($_POST['participant_count']) : '1' ?>" 
+                           required>
+                    <small style="color: var(--gray);">Number of people who will attend</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="location_preference">Location Preference</label>
+                    <input type="text" 
+                           id="location_preference" 
+                           name="location_preference" 
+                           placeholder="Preferred training location"
+                           value="<?= isset($_POST['location_preference']) ? htmlspecialchars($_POST['location_preference']) : '' ?>">
+                    <small style="color: var(--gray);">City or specific venue preference</small>
+                </div>
+            </div>
+            
+            <div class="form-group" id="organization_section" style="display: none;">
+                <label for="organization_name">Organization/Company Name</label>
+                <input type="text" 
+                       id="organization_name" 
+                       name="organization_name" 
+                       placeholder="Organization name if applicable"
+                       value="<?= isset($_POST['organization_name']) ? htmlspecialchars($_POST['organization_name']) : '' ?>">
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="contact_person">Contact Person <span class="required">*</span></label>
+                    <input type="text" 
+                           id="contact_person" 
+                           name="contact_person" 
+                           required 
+                           placeholder="Primary contact person"
+                           value="<?= isset($_POST['contact_person']) ? htmlspecialchars($_POST['contact_person']) : '' ?>">
+                </div>
+                
+                <div class="form-group">
+                    <label for="contact_number">Contact Number <span class="required">*</span></label>
+                    <input type="tel" 
+                           id="contact_number" 
+                           name="contact_number" 
+                           required 
+                           placeholder="+63 XXX XXX XXXX"
+                           value="<?= isset($_POST['contact_number']) ? htmlspecialchars($_POST['contact_number']) : '' ?>">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="email">Email Address <span class="required">*</span></label>
+                <input type="email" 
+                       id="email" 
+                       name="email" 
+                       required 
+                       placeholder="contact@example.com" 
+                       value="<?= isset($_POST['email']) ? htmlspecialchars($_POST['email']) : htmlspecialchars($userEmail ?? '') ?>">
+            </div>
+            
+            <div class="form-group">
+                <label for="purpose">Purpose/Objective</label>
+                <textarea id="purpose" 
+                         name="purpose" 
+                         rows="3" 
+                         placeholder="Brief description of why you need this training..."><?= isset($_POST['purpose']) ? htmlspecialchars($_POST['purpose']) : '' ?></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label for="additional_requirements">Additional Requirements</label>
+                <textarea id="additional_requirements" 
+                         name="additional_requirements" 
+                         rows="2" 
+                         placeholder="Any special requirements, equipment needs, or accessibility considerations..."><?= isset($_POST['additional_requirements']) ? htmlspecialchars($_POST['additional_requirements']) : '' ?></textarea>
+            </div>
+            
+            <div class="form-notice">
+                <i class="fas fa-info-circle"></i>
+                <p>Your training request will be reviewed by our training coordinators. We will contact you within 3-5 business days to discuss scheduling and requirements.</p>
+            </div>
+            
+            <button type="submit" class="btn-submit">
+                <i class="fas fa-paper-plane"></i> Submit Training Request
+            </button>
+        </form>
+    </div>
+</div>
+
+
 
           <!-- Available Training Sessions -->
           <div class="events-table-wrapper">
@@ -700,7 +974,20 @@ try {
                           <?php endif; ?>
                         </div>
                       </td>
-                      <td><?= htmlspecialchars($r['venue']) ?></td>
+                      <td>
+    <div class="venue-display">
+        <div class="venue-preview">
+            <?= htmlspecialchars(strlen($s['venue']) > 60 ? 
+                substr($s['venue'], 0, 60) . '...' : 
+                $s['venue']) ?>
+        </div>
+        <?php if (strlen($s['venue']) > 60): ?>
+            <button type="button" class="btn-view-venue" onclick="showVenueModal('<?= htmlspecialchars($s['title'], ENT_QUOTES) ?>', <?= htmlspecialchars(json_encode($s['venue']), ENT_QUOTES) ?>)">
+                <i class="fas fa-map-marker-alt"></i> View Full
+            </button>
+        <?php endif; ?>
+    </div>
+</td>
                       <td>
                         <span class="type-badge <?= $r['registration_type'] ?>">
                           <?= ucfirst($r['registration_type']) ?>
@@ -754,6 +1041,117 @@ try {
               </div>
             <?php endif; ?>
           </div>
+          <div class="training-requests-section">
+    <div class="section-header">
+        <h2><i class="fas fa-chalkboard-teacher"></i> My Training Requests</h2>
+    </div>
+    
+    <?php if (empty($userTrainingRequests)): ?>
+        <div class="empty-state">
+            <i class="fas fa-clipboard-list"></i>
+            <h3>No training requests found</h3>
+            <p>You haven't submitted any training requests yet. Click "Request Training" to get started.</p>
+        </div>
+    <?php else: ?>
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Request Details</th>
+                        <th>Service & Program</th>
+                        <th>Participants</th>
+                        <th>Preferred Schedule</th>
+                        <th>Contact Info</th>
+                        <th>Status</th>
+                        <th>Submitted</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($userTrainingRequests as $request): ?>
+                    <tr>
+                        <td>
+                            <div class="request-title">Request #<?= $request['request_id'] ?></div>
+                            <?php if ($request['purpose']): ?>
+                                <div style="font-size: 0.85rem; color: var(--gray); margin-top: 0.2rem;">
+                                    <?= htmlspecialchars(substr($request['purpose'], 0, 100)) ?><?= strlen($request['purpose']) > 100 ? '...' : '' ?>
+                                </div>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <div class="service-program">
+                                <span class="service-badge <?= strtolower(str_replace(' ', '-', $request['service_type'])) ?>">
+                                    <?= htmlspecialchars($request['service_type']) ?>
+                                </span>
+                                <div style="font-weight: 600; margin-top: 0.3rem;">
+                                    <?= htmlspecialchars($request['program_name'] ?: $request['training_program']) ?>
+                                </div>
+                                <?php if ($request['typical_duration_hours']): ?>
+                                    <small style="color: var(--gray);"><?= $request['typical_duration_hours'] ?> hours</small>
+                                <?php endif; ?>
+                            </div>
+                        </td>
+                        <td>
+                            <div style="text-align: center;">
+                                <div style="font-size: 1.2rem; font-weight: 600;"><?= $request['participant_count'] ?></div>
+                                <small style="color: var(--gray);">participants</small>
+                            </div>
+                            <?php if ($request['organization_name']): ?>
+                                <div style="font-size: 0.8rem; color: var(--gray); margin-top: 0.2rem;">
+                                    <?= htmlspecialchars($request['organization_name']) ?>
+                                </div>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?php if ($request['preferred_date']): ?>
+                                <div style="font-weight: 600;">
+                                    <?= date('M d, Y', strtotime($request['preferred_date'])) ?>
+                                </div>
+                            <?php else: ?>
+                                <div style="color: var(--gray); font-style: italic;">Flexible</div>
+                            <?php endif; ?>
+                            <div style="font-size: 0.8rem; color: var(--gray);">
+                                <?= ucfirst($request['preferred_time']) ?>
+                            </div>
+                            <?php if ($request['location_preference']): ?>
+                                <div style="font-size: 0.8rem; color: var(--gray); margin-top: 0.2rem;">
+                                    <i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($request['location_preference']) ?>
+                                </div>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <div style="font-size: 0.85rem;">
+                                <div style="font-weight: 600;"><?= htmlspecialchars($request['contact_person']) ?></div>
+                                <div style="color: var(--gray);"><?= htmlspecialchars($request['contact_number']) ?></div>
+                                <div style="color: var(--gray);"><?= htmlspecialchars($request['email']) ?></div>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="status-badge <?= $request['status'] ?>">
+                                <i class="fas <?= 
+                                    $request['status'] === 'pending' ? 'fa-clock' : 
+                                    ($request['status'] === 'under_review' ? 'fa-search' :
+                                    ($request['status'] === 'approved' ? 'fa-check-circle' :
+                                    ($request['status'] === 'scheduled' ? 'fa-calendar-check' :
+                                    ($request['status'] === 'completed' ? 'fa-graduation-cap' : 'fa-times-circle')))) ?>"></i>
+                                <?= ucwords(str_replace('_', ' ', $request['status'])) ?>
+                            </span>
+                        </td>
+                        <td>
+                            <div style="font-size: 0.9rem;">
+                                <?= date('M d, Y', strtotime($request['created_at'])) ?>
+                            </div>
+                            <div style="font-size: 0.8rem; color: var(--gray);">
+                                <?= date('g:i A', strtotime($request['created_at'])) ?>
+                            </div>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php endif; ?>
+</div>
+
         </div>
 
         <!-- Training Calendar Sidebar -->
@@ -1259,7 +1657,66 @@ try {
 // Store training sessions and user registrations in global scope
 window.calendarTrainingsData = <?php echo json_encode($calendarTrainings); ?>;
 window.userTrainingRegistrations = <?php echo json_encode($userRegistrationsJS); ?>;
+function showVenueModal(sessionTitle, venueText) {
+    // Remove any existing venue modal
+    const existingModal = document.querySelector('.venue-modal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+    
+    // Create modal
+    const modal = document.createElement('div');
+    modal.className = 'venue-modal';
+    modal.innerHTML = `
+        <div class="venue-modal-content">
+            <div class="venue-modal-header">
+                <h3>
+                    <i class="fas fa-map-marker-alt"></i>
+                    ${escapeHtml(sessionTitle)} - Training Venue
+                </h3>
+                <button class="venue-modal-close" onclick="closeVenueModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="venue-modal-body">
+                ${escapeHtml(venueText).replace(/\n/g, '<br>')}
+            </div>
+        </div>
+    `;
+    
+    // Add to body
+    document.body.appendChild(modal);
+    
+    // Show modal
+    setTimeout(() => {
+        modal.classList.add('active');
+    }, 10);
+    
+    // Add click outside to close
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) {
+            closeVenueModal();
+        }
+    });
+    
+    // Store reference
+    window.currentVenueModal = modal;
+    
+    // Prevent body scroll
+    document.body.style.overflow = 'hidden';
+}
 
+function closeVenueModal() {
+    const modal = window.currentVenueModal || document.querySelector('.venue-modal');
+    if (modal) {
+        modal.classList.remove('active');
+        setTimeout(() => {
+            modal.remove();
+            window.currentVenueModal = null;
+            document.body.style.overflow = '';
+        }, 300);
+    }
+}
 // Enhanced date formatting function that handles timezone properly
 function formatDateToString(date) {
     if (typeof date === 'string') {
@@ -2037,6 +2494,11 @@ document.addEventListener('DOMContentLoaded', function() {
             handlePaymentMethodChange(this.value);
         });
     });
+     document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && window.currentVenueModal) {
+            closeVenueModal();
+        }
+    });
 
     // Initialize file upload handlers
     const validIdInput = document.getElementById('valid_id');
@@ -2476,6 +2938,233 @@ function injectMultiDayTrainingStyles() {
     styleElement.innerHTML = multiDayTrainingStyles;
     document.head.appendChild(styleElement);
 }
+// Training Programs Data
+const trainingPrograms = {
+    'Safety Service': [
+        {
+            code: 'EFAT',
+            name: 'Emergency First Aid Training (EFAT)',
+            description: 'Basic emergency first aid skills and techniques - 8 hours duration',
+            duration: 8
+        },
+        {
+            code: 'OFAT', 
+            name: 'Occupational First Aid Training (OFAT)',
+            description: 'Workplace-specific first aid training for occupational safety - 16 hours duration',
+            duration: 16
+        },
+        {
+            code: 'OTC',
+            name: 'Occupational Training Course (OTC)', 
+            description: 'Comprehensive occupational safety and health training - 24 hours duration',
+            duration: 24
+        }
+    ],
+    'Red Cross Youth': [
+        {
+            code: 'YVFC',
+            name: 'Youth Volunteer Formation Course (YVFC)',
+            description: 'Foundational training for youth volunteers in Red Cross principles - 12 hours duration',
+            duration: 12
+        },
+        {
+            code: 'LDP',
+            name: 'Leadership Development Program (LDP)', 
+            description: 'Advanced leadership skills for youth officers and coordinators - 20 hours duration',
+            duration: 20
+        },
+        {
+            code: 'AD',
+            name: 'Advocacy Dissemination (AD)',
+            description: 'Training on advocacy techniques and community outreach methods - 8 hours duration', 
+            duration: 8
+        }
+    ]
+};
+
+// Open Training Request Modal
+function openTrainingRequestModal() {
+    document.getElementById('trainingRequestModal').classList.add('active');
+    document.body.style.overflow = 'hidden';
+    
+    // Reset form
+    document.getElementById('trainingRequestForm').reset();
+    document.getElementById('training_program').disabled = true;
+    document.getElementById('program_description').style.display = 'none';
+    document.getElementById('organization_section').style.display = 'none';
+    
+    // Set minimum date to 1 week from now
+    const nextWeek = new Date();
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    document.getElementById('preferred_date').min = nextWeek.toISOString().split('T')[0];
+}
+
+// Close Training Request Modal
+function closeTrainingRequestModal() {
+    document.getElementById('trainingRequestModal').classList.remove('active');
+    document.body.style.overflow = '';
+}
+
+// Update Training Programs based on Service Type
+function updateTrainingPrograms() {
+    const serviceType = document.getElementById('service_type').value;
+    const programSelect = document.getElementById('training_program');
+    const programDescription = document.getElementById('program_description');
+    const participantCount = document.getElementById('participant_count');
+    const orgSection = document.getElementById('organization_section');
+    
+    // Clear program selection
+    programSelect.innerHTML = '<option value="">Select training program</option>';
+    programDescription.style.display = 'none';
+    
+    if (serviceType && trainingPrograms[serviceType]) {
+        // Enable program selection
+        programSelect.disabled = false;
+        
+        // Populate programs for selected service
+        trainingPrograms[serviceType].forEach(program => {
+            const option = document.createElement('option');
+            option.value = program.code;
+            option.textContent = program.name;
+            option.dataset.description = program.description;
+            option.dataset.duration = program.duration;
+            programSelect.appendChild(option);
+        });
+        
+        // Show organization section for multiple participants
+        if (parseInt(participantCount.value) > 5) {
+            orgSection.style.display = 'block';
+        }
+    } else {
+        // Disable program selection
+        programSelect.disabled = true;
+        orgSection.style.display = 'none';
+    }
+}
+
+// Show program description when program is selected
+document.getElementById('training_program').addEventListener('change', function() {
+    const selectedOption = this.options[this.selectedIndex];
+    const programDescription = document.getElementById('program_description');
+    const descriptionText = programDescription.querySelector('small');
+    
+    if (selectedOption.dataset.description) {
+        descriptionText.textContent = selectedOption.dataset.description;
+        programDescription.style.display = 'block';
+    } else {
+        programDescription.style.display = 'none';
+    }
+});
+
+// Show organization section for group training
+document.getElementById('participant_count').addEventListener('input', function() {
+    const orgSection = document.getElementById('organization_section');
+    const participantCount = parseInt(this.value);
+    
+    if (participantCount > 5) {
+        orgSection.classList.add('show');
+        orgSection.style.display = 'block';
+    } else {
+        orgSection.classList.remove('show');
+        orgSection.style.display = 'none';
+        document.getElementById('organization_name').value = '';
+    }
+});
+
+// Form validation
+document.getElementById('trainingRequestForm').addEventListener('submit', function(e) {
+    const serviceType = document.getElementById('service_type').value;
+    const trainingProgram = document.getElementById('training_program').value;
+    const contactPerson = document.getElementById('contact_person').value.trim();
+    const contactNumber = document.getElementById('contact_number').value.trim();
+    const email = document.getElementById('email').value.trim();
+    const participantCount = parseInt(document.getElementById('participant_count').value);
+    
+    let hasErrors = false;
+    
+    // Clear previous errors
+    document.querySelectorAll('.form-group.error').forEach(group => {
+        group.classList.remove('error');
+        const errorMsg = group.querySelector('.error-message');
+        if (errorMsg) errorMsg.remove();
+    });
+    
+    // Validate required fields
+    if (!serviceType) {
+        showFieldError('service_type', 'Please select a service type');
+        hasErrors = true;
+    }
+    
+    if (!trainingProgram) {
+        showFieldError('training_program', 'Please select a training program');
+        hasErrors = true;
+    }
+    
+    if (!contactPerson) {
+        showFieldError('contact_person', 'Contact person is required');
+        hasErrors = true;
+    }
+    
+    if (!contactNumber) {
+        showFieldError('contact_number', 'Contact number is required');
+        hasErrors = true;
+    } else if (!/^\+?[\d\s\-\(\)]{10,}$/.test(contactNumber)) {
+        showFieldError('contact_number', 'Please enter a valid contact number');
+        hasErrors = true;
+    }
+    
+    if (!email) {
+        showFieldError('email', 'Email address is required');
+        hasErrors = true;
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        showFieldError('email', 'Please enter a valid email address');
+        hasErrors = true;
+    }
+    
+    if (participantCount < 1 || participantCount > 100) {
+        showFieldError('participant_count', 'Participant count must be between 1 and 100');
+        hasErrors = true;
+    }
+    
+    if (hasErrors) {
+        e.preventDefault();
+        return;
+    }
+    
+    // Show loading state
+    const submitBtn = this.querySelector('.btn-submit');
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting Request...';
+    submitBtn.disabled = true;
+});
+
+// Helper function to show field errors
+function showFieldError(fieldId, message) {
+    const field = document.getElementById(fieldId);
+    const formGroup = field.closest('.form-group');
+    formGroup.classList.add('error');
+    
+    const errorElement = document.createElement('div');
+    errorElement.className = 'error-message';
+    errorElement.textContent = message;
+    formGroup.appendChild(errorElement);
+}
+
+// Close modal when clicking outside
+document.getElementById('trainingRequestModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeTrainingRequestModal();
+    }
+});
+
+// Keyboard navigation
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        const modal = document.getElementById('trainingRequestModal');
+        if (modal && modal.classList.contains('active')) {
+            closeTrainingRequestModal();
+        }
+    }
+});
 </script>
 
 </body>
