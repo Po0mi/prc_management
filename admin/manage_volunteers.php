@@ -232,7 +232,6 @@ $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(functio
 </head>
 <body>
   <?php include 'sidebar.php'; ?>
-  
   <div class="users-container">
     <div class="page-header">
       <div class="header-content">
@@ -391,7 +390,7 @@ $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(functio
                 <span class="role-badge user"><?= $stats[$service_key]['graduated'] ?></span>
               </td>
               <td style="font-weight: 600; color: var(--dark);"><?= $stats[$service_key]['total'] ?></td>
-              <td class="actions">
+              <td class="action">
                 <a href="?service=<?= $service_key ?>" class="btn-action btn-view">
                   <i class="fas fa-eye"></i> View
                 </a>
@@ -596,7 +595,8 @@ $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(functio
       </form>
     </div>
   </div>
-
+<script src="../admin/js/notification_frontend.js?v=<?php echo time(); ?>"></script>
+  <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
   <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
   <script>
     function openCreateModal() {

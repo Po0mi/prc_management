@@ -77,7 +77,7 @@
 /* Fixed collapse button positioning */
 .collapse-btn {
   position: absolute;
-  bottom: 45%; /* Smaller overlap */
+  bottom: 30%; /* Smaller overlap */
   left: 50%;
   transform: translateX(-50%);
   background: white;

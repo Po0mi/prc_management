@@ -1,3 +1,127 @@
+<?php
+require_once __DIR__ . '/config.php';
+
+// Get database connection
+$pdo = $GLOBALS['pdo'];
+
+// Get upcoming events (limit 6 for display)
+$upcoming_events = [];
+try {
+    $stmt = $pdo->prepare("
+        SELECT 
+            event_id,
+            title,
+            description,
+            event_date,
+            event_end_date,
+            start_time,
+            end_time,
+            location,
+            major_service,
+            capacity,
+            fee,
+            duration_days,
+            (SELECT COUNT(*) FROM registrations WHERE event_id = e.event_id) as registrations_count
+        FROM events e
+        WHERE event_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+        ORDER BY event_date ASC
+        LIMIT 6
+    ");
+    $stmt->execute();
+    $upcoming_events = $stmt->fetchAll();
+} catch (PDOException $e) {
+    error_log("Error fetching events: " . $e->getMessage());
+}
+
+// Get upcoming training sessions (limit 4 for display)
+$upcoming_sessions = [];
+try {
+    $stmt = $pdo->prepare("
+        SELECT 
+            session_id,
+            title,
+            description,
+            major_service,
+            session_date,
+            session_end_date,
+            start_time,
+            end_time,
+            venue,
+            instructor,
+            instructor_bio,
+            instructor_credentials,
+            capacity,
+            fee,
+            duration_days,
+            status,
+            (SELECT COUNT(*) FROM session_registrations WHERE session_id = ts.session_id) as registrations_count
+        FROM training_sessions ts
+        WHERE status = 'active' 
+        AND session_end_date >= CURDATE()
+        ORDER BY session_date ASC
+        LIMIT 4
+    ");
+    $stmt->execute();
+    $upcoming_sessions = $stmt->fetchAll();
+} catch (PDOException $e) {
+    error_log("Error fetching training sessions: " . $e->getMessage());
+}
+
+// Get featured merchandise (available items)
+$featured_merchandise = [];
+try {
+    $stmt = $pdo->prepare("
+        SELECT 
+            merch_id,
+            name,
+            description,
+            category,
+            price,
+            stock_quantity,
+            image_url,
+            is_available
+        FROM merchandise
+        WHERE is_available = 1 AND stock_quantity > 0
+        ORDER BY created_at DESC
+        LIMIT 8
+    ");
+    $stmt->execute();
+    $featured_merchandise = $stmt->fetchAll();
+} catch (PDOException $e) {
+    error_log("Error fetching merchandise: " . $e->getMessage());
+}
+
+// Get recent announcements (limit 3)
+$recent_announcements = [];
+try {
+    $stmt = $pdo->prepare("
+        SELECT 
+            announcement_id,
+            title,
+            content,
+            image_url,
+            posted_at
+        FROM announcements
+        ORDER BY posted_at DESC
+        LIMIT 3
+    ");
+    $stmt->execute();
+    $recent_announcements = $stmt->fetchAll();
+} catch (PDOException $e) {
+    error_log("Error fetching announcements: " . $e->getMessage());
+}
+
+// Function to truncate text
+function truncateText($text, $length = 100) {
+    return strlen($text) > $length ? substr($text, 0, $length) . '...' : $text;
+}
+
+// Function to format service name for CSS class
+function formatServiceClass($service) {
+    return strtolower(str_replace(' ', '-', $service));
+}
+?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -9,6 +133,13 @@
     <link rel="stylesheet" href="assets/index.css?v=<?php echo time(); ?>">
 </head>
 <body>
+    <!-- Auto-refresh indicator -->
+    <div class="auto-refresh-indicator" id="refreshIndicator">
+        <div class="refresh-pulse"></div>
+        <span>Content updated</span>
+    </div>
+
+    <!-- Header -->
     <header class="system-header">
         <div class="logo-title">
             <a href="index.php">
@@ -21,7 +152,8 @@
         </div>
     </header>
 
-    <section class="hero parallax">
+    <!-- Hero Section -->
+    <section class="hero">
         <div class="hero-content">
             <h2>Welcome to the PRC Management System</h2>
             <p>This centralized portal allows access for both staff and volunteers to manage blood services, trainings, donations, and more.</p>
@@ -32,18 +164,232 @@
         </div>
     </section>
 
+    <!-- Photo Slider Section -->
+    <section class="photo-slider-section">
+        <div class="content-section">
+            <div class="section-title">
+                <h2><i class="fas fa-images"></i> Our Impact in Action</h2>
+                <p>Witness the Philippine Red Cross making a difference in communities across the nation</p>
+            </div>
+            <div class="photo-slider-container">
+                <div class="slider-wrapper">
+                    <div class="slider" id="photoSlider">
+                        <div class="list">
+                            <div class="item">
+                                <img src="./assets/images/blood-drive.jpg" alt="Blood Donation Drive">
+                                <div class="photo-overlay">
+                                    <h3>Blood Donation Drives</h3>
+                                    <p>Saving lives through voluntary blood donation campaigns nationwide</p>
+                                </div>
+                            </div>
+                            <div class="item">
+                                 <img src="./assets/images/blood-drive.jpg" alt="Blood Donation Drive">
+                                <div class="photo-overlay">
+                                    <h3>Disaster Response</h3>
+                                    <p>Providing immediate relief and support during emergencies</p>
+                                </div>
+                            </div>
+                            <div class="item">
+                                 <img src="./assets/images/blood-drive.jpg" alt="Blood Donation Drive">
+                                <div class="photo-overlay">
+                                    <h3>Training & Education</h3>
+                                    <p>Empowering communities with life-saving skills and knowledge</p>
+                                </div>
+                            </div>
+                            <div class="item">
+                                 <img src="./assets/images/blood-drive.jpg" alt="Blood Donation Drive">
+                                <div class="photo-overlay">
+                                    <h3>Volunteer Programs</h3>
+                                    <p>Building stronger communities through dedicated volunteer service</p>
+                                </div>
+                            </div>
+                            <div class="item">
+                                 <img src="./assets/images/blood-drive.jpg" alt="Blood Donation Drive">
+                                <div class="photo-overlay">
+                                    <h3>Health Services</h3>
+                                    <p>Providing accessible healthcare and wellness programs</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="buttons">
+                            <button id="prev">
+                                <svg viewBox="0 0 24 24">
+                                    <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
+                                </svg>
+                            </button>
+                            <button id="next">
+                                <svg viewBox="0 0 24 24">
+                                    <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
+                                </svg>
+                            </button>
+                        </div>
+                        <ul class="dots">
+                            <li class="active"></li>
+                            <li></li>
+                            <li></li>
+                            <li></li>
+                            <li></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Dynamic Announcements Section -->
+    <?php if (!empty($recent_announcements)): ?>
+    <section class="dynamic-section" id="announcements-section">
+        <div class="content-section">
+            <div class="section-title">
+                <h2><i class="fas fa-bullhorn"></i> Latest Announcements</h2>
+                <p>Stay updated with the latest news and important information from Philippine Red Cross</p>
+            </div>
+            <div class="announcement-container" id="announcements-grid">
+                <?php foreach ($recent_announcements as $announcement): ?>
+                <div class="announcement-card">
+                    <?php if ($announcement['image_url']): ?>
+                    <div class="announcement-image" style="background-image: url('<?= htmlspecialchars($announcement['image_url']) ?>');"></div>
+                    <?php endif; ?>
+                    <div class="announcement-content">
+                        <h3><?= htmlspecialchars($announcement['title']) ?></h3>
+                        <p><?= htmlspecialchars(truncateText($announcement['content'], 150)) ?></p>
+                        <div class="announcement-meta">
+                            <span><i class="fas fa-calendar-alt"></i> <?= date('F j, Y', strtotime($announcement['posted_at'])) ?></span>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+    </section>
+    <?php endif; ?>
+
+    <!-- Dynamic Events Section -->
+    <?php if (!empty($upcoming_events)): ?>
+    <section class="dynamic-section" id="events-section">
+        <div class="content-section">
+            <div class="section-title">
+                <h2><i class="fas fa-calendar-alt"></i> Upcoming Events</h2>
+                <p>Join our humanitarian activities and make a difference in your community</p>
+            </div>
+            <div class="announcement-container" id="events-grid">
+                <?php foreach ($upcoming_events as $event): ?>
+                <div class="event-card">
+                    <div class="event-header">
+                        <h3><?= htmlspecialchars($event['title']) ?></h3>
+                        <span class="event-service"><?= htmlspecialchars($event['major_service']) ?></span>
+                    </div>
+                    <div class="event-content">
+                        <?php if ($event['description']): ?>
+                        <p class="event-description"><?= htmlspecialchars(truncateText($event['description'], 120)) ?></p>
+                        <?php endif; ?>
+                        <div class="event-details">
+                            <div class="event-detail">
+                                <i class="fas fa-calendar"></i>
+                                <span><?= date('M j, Y', strtotime($event['event_date'])) ?></span>
+                            </div>
+                            <div class="event-detail">
+                                <i class="fas fa-clock"></i>
+                                <span><?= date('g:i A', strtotime($event['start_time'])) ?></span>
+                            </div>
+                            <div class="event-detail">
+                                <i class="fas fa-map-marker-alt"></i>
+                                <span><?= htmlspecialchars(truncateText($event['location'], 30)) ?></span>
+                            </div>
+                            <?php if ($event['fee'] > 0): ?>
+                            <div class="event-detail">
+                                <i class="fas fa-peso-sign"></i>
+                                <span>₱<?= number_format($event['fee'], 2) ?></span>
+                            </div>
+                            <?php endif; ?>
+                        </div>
+                        <div class="event-footer">
+                            <div class="event-capacity">
+                                <i class="fas fa-users"></i>
+                                <span><?= $event['registrations_count'] ?>/<?= $event['capacity'] ?: '∞' ?> registered</span>
+                            </div>
+                            <a href="login.php?event_id=<?= $event['event_id'] ?>" class="btn-event">
+                                <i class="fas fa-user-plus"></i> Register
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+    </section>
+    <?php endif; ?>
+
+    <!-- Dynamic Training Sessions Section -->
+    <?php if (!empty($upcoming_sessions)): ?>
+    <section class="dynamic-section training-section">
+        <div class="content-section">
+            <div class="section-title">
+                <h2><i class="fas fa-graduation-cap"></i> Training Sessions</h2>
+                <p>Enhance your skills and knowledge through our professional training programs</p>
+            </div>
+            <div class="announcement-container" id="sessions-grid">
+                <?php foreach ($upcoming_sessions as $session): ?>
+                <div class="session-card">
+                    <div class="session-header">
+                        <h3><?= htmlspecialchars($session['title']) ?></h3>
+                        <span class="session-service"><?= htmlspecialchars($session['major_service']) ?></span>
+                    </div>
+                    <div class="session-content">
+                        <div class="session-details">
+                            <div class="session-detail">
+                                <i class="fas fa-calendar"></i>
+                                <span><?= date('M j, Y', strtotime($session['session_date'])) ?></span>
+                            </div>
+                            <div class="session-detail">
+                                <i class="fas fa-clock"></i>
+                                <span><?= date('g:i A', strtotime($session['start_time'])) ?> - <?= date('g:i A', strtotime($session['end_time'])) ?></span>
+                            </div>
+                            <div class="session-detail">
+                                <i class="fas fa-map-marker-alt"></i>
+                                <span><?= htmlspecialchars(truncateText($session['venue'], 40)) ?></span>
+                            </div>
+                            <?php if ($session['instructor']): ?>
+                            <div class="session-detail">
+                                <i class="fas fa-user-tie"></i>
+                                <span><?= htmlspecialchars($session['instructor']) ?></span>
+                            </div>
+                            <?php endif; ?>
+                            <div class="session-detail">
+                                <i class="fas fa-users"></i>
+                                <span><?= $session['registrations_count'] ?>/<?= $session['capacity'] ?: '∞' ?> registered</span>
+                            </div>
+                            <?php if ($session['fee'] > 0): ?>
+                            <div class="session-detail">
+                                <i class="fas fa-peso-sign"></i>
+                                <span>₱<?= number_format($session['fee'], 2) ?></span>
+                            </div>
+                            <?php endif; ?>
+                        </div>
+                        <a href="user/training_registration.php?session_id=<?= $session['session_id'] ?>" class="btn-event">
+                            <i class="fas fa-user-plus"></i> Register for Training
+                        </a>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+    </section>
+    <?php endif; ?>
+
+    <!-- Quick Actions Section -->
     <section class="content-section">
         <div class="section-title">
-            <h2><i class="fas fa-bullhorn"></i> Announcements</h2>
-            <p>Latest updates from Philippine Red Cross</p>
+            <h2><i class="fas fa-bolt"></i> Quick Actions</h2>
+            <p>Access common services and resources</p>
         </div>
         <div class="announcement-container">
             <div class="announcement-card">
                 <div class="announcement-image" style="background-image: url('assets/images/blood-drive.jpg');"></div>
                 <div class="announcement-content">
-                    <h3>New Blood Donation Campaign</h3>
-                    <p>Join our nationwide blood donation drive this July. Help save lives in your community.</p>
-                    <a href="#" class="read-more">Read more <i class="fas fa-arrow-right"></i></a>
+                    <h3>Blood Donation Drive</h3>
+                    <p>Join our nationwide blood donation drive. Help save lives in your community.</p>
+                    <a href="user/blood_donation.php" class="read-more">Learn more <i class="fas fa-arrow-right"></i></a>
                 </div>
             </div>
             <div class="announcement-card">
@@ -51,463 +397,618 @@
                 <div class="announcement-content">
                     <h3>Disaster Preparedness Training</h3>
                     <p>Sign up for our free disaster preparedness workshops happening this month.</p>
-                    <a href="#" class="read-more">Read more <i class="fas fa-arrow-right"></i></a>
+                    <a href="user/training_sessions.php" class="read-more">Learn more <i class="fas fa-arrow-right"></i></a>
                 </div>
             </div>
         </div>
     </section>
 
-    <section class="parallax events-section">
+    <!-- Services Section -->
+    <section class="events-section">
         <div class="content-section">
             <div class="section-title">
-                <h2><i class="fas fa-calendar-alt"></i> Upcoming Events</h2>
-                <p>Participate in our humanitarian activities</p>
+                <h2><i class="fas fa-heart"></i> Our Services</h2>
+                <p>Discover how we serve humanity</p>
             </div>
-            <div class="events-container">
-                <div class="event-card">
-                    <div class="event-date">
-                        <span class="day">15</span>
-                        <span class="month">JUL</span>
+            <div class="services-grid">
+                <div class="service-card">
+                    <div class="service-icon">
+                        <i class="fas fa-tint"></i>
                     </div>
-                    <div class="event-details">
-                        <h3>First Aid Training Workshop</h3>
-                        <p>9:00 AM - 4:00 PM | PRC Manila Chapter</p>
-                        <div class="event-image" style="background-image: url('assets/images/first-aid.jpg');"></div>
-                        <a href="#" class="btn btn-event">Register Now</a>
-                    </div>
+                    <h3>Blood Services</h3>
+                    <p>Safe blood collection, testing, and distribution to save lives nationwide.</p>
                 </div>
-                <div class="event-card">
-                    <div class="event-date">
-                        <span class="day">22</span>
-                        <span class="month">JUL</span>
+                <div class="service-card">
+                    <div class="service-icon">
+                        <i class="fas fa-graduation-cap"></i>
                     </div>
-                    <div class="event-details">
-                        <h3>Community Blood Drive</h3>
-                        <p>8:00 AM - 5:00 PM | SM Megamall</p>
-                        <div class="event-image" style="background-image: url('assets/images/blood.jpg');"></div>
-                        <a href="#" class="btn btn-event">Register Now</a>
-                    </div>
+                    <h3>Training & Education</h3>
+                    <p>Professional courses in first aid, CPR, disaster response, and more.</p>
                 </div>
-            </div>
-        </div>
-    </section>
-
-    <section class="content-section">
-        <div class="section-title">
-            <h2><i class="fas fa-newspaper"></i> Latest News</h2>
-            <p>Stay informed with our humanitarian efforts</p>
-        </div>
-        <div class="news-container">
-            <div class="news-card">
-                <div class="news-image" style="background-image: url('assets/images/update.png');"></div>
-                <div class="news-content">
-                    <div class="news-icon">
-                        <i class="fas fa-star"></i>
-                    </div>
-                    <h3>New Features Added</h3>
-                    <p>Admins can now generate volunteer performance reports directly in the dashboard.</p>
-                    <a href="#"><i class="fas fa-arrow-right"></i> Read more</a>
-                </div>
-            </div>
-            <div class="news-card">
-                <div class="news-image" style="background-image: url('assets/images/maintenance.png');"></div>
-                <div class="news-content">
-                    <div class="news-icon">
-                        <i class="fas fa-tools"></i>
-                    </div>
-                    <h3>Maintenance Advisory</h3>
-                    <p>Scheduled downtime on June 20, 12:00AM to 2:00AM. Please log out before maintenance begins.</p>
-                    <a href="#"><i class="fas fa-arrow-right"></i> Read more</a>
-                </div>
-            </div>
-            <div class="news-card">
-                <div class="news-image" style="background-image: url('assets/images/blood-update.png');"></div>
-                <div class="news-content">
-                    <div class="news-icon">
+                <div class="service-card">
+                    <div class="service-icon">
                         <i class="fas fa-hands-helping"></i>
                     </div>
-                    <h3>Volunteer Tools Improved</h3>
-                    <p>Volunteers can now see upcoming blood drives and register with one click.</p>
-                    <a href="#"><i class="fas fa-arrow-right"></i> Read more</a>
+                    <h3>Disaster Response</h3>
+                    <p>Emergency relief operations and disaster preparedness programs.</p>
+                </div>
+                <div class="service-card">
+                    <div class="service-icon">
+                        <i class="fas fa-ambulance"></i>
+                    </div>
+                    <h3>Emergency Services</h3>
+                    <p>24/7 emergency medical services and ambulance operations.</p>
                 </div>
             </div>
         </div>
     </section>
 
-    <section class="parallax gallery-section">
+    <!-- Footer -->
+    <footer class="footer">
         <div class="content-section">
-            <div class="section-title">
-                <h2><i class="fas fa-images"></i> Photo Gallery</h2>
-                <p>Moments from our humanitarian activities</p>
-            </div>
-            <div class="slider">
-                <div class="list">
-                    <div class="item"><img src="assets/images/training.jpg" alt="Training"></div>
-                    <div class="item"><img src="assets/images/feeding.jpg" alt="Feeding program"></div>
-                    <div class="item"><img src="assets/images/blood-drive-pic.jpg" alt="Blood drive"></div>
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h3>Philippine Red Cross</h3>
+                    <p>The Philippine Red Cross is committed to providing humanitarian services that help vulnerable communities become self-reliant.</p>
+                    <div class="social-links">
+                        <a href="#"><i class="fab fa-facebook"></i></a>
+                        <a href="#"><i class="fab fa-twitter"></i></a>
+                        <a href="#"><i class="fab fa-instagram"></i></a>
+                        <a href="#"><i class="fab fa-youtube"></i></a>
+                    </div>
                 </div>
-                <div class="buttons">
-                    <button id="prev">
-                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M15.41 16.59L10.83 12l4.58-4.59L14 6l-6 6 6 6 1.41-1.41z"/>
-                        </svg>
-                    </button>
-                    <button id="next">
-                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
-                        </svg>
-                    </button>
+                <div class="footer-section">
+                    <h4>Quick Links</h4>
+                    <ul>
+                        <li><a href="login.php">Staff Login</a></li>
+                        <li><a href="register.php">Register</a></li>
+                        <li><a href="user/blood_donation.php">Blood Donation</a></li>
+                        <li><a href="user/training_sessions.php">Training</a></li>
+                    </ul>
                 </div>
-                <ul class="dots">
-                    <li class="active"></li>
-                    <li></li>
-                    <li></li>
-                </ul>
+                <div class="footer-section">
+                    <h4>Services</h4>
+                    <ul>
+                        <li><a href="#">Blood Services</a></li>
+                        <li><a href="#">Training & Education</a></li>
+                        <li><a href="#">Disaster Response</a></li>
+                        <li><a href="#">Emergency Services</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>Contact Info</h4>
+                    <div class="contact-info">
+                        <p><i class="fas fa-phone"></i> 143 (Emergency Hotline)</p>
+                        <p><i class="fas fa-envelope"></i> info@redcross.org.ph</p>
+                        <p><i class="fas fa-map-marker-alt"></i> PRC National Headquarters, Manila</p>
+                    </div>
+                </div>
             </div>
-        </div>
-    </section>
-
-    <footer class="system-footer">
-        <div class="footer-content">
-            <div class="footer-logo">
-                <img src="./assets/images/logo.png" alt="PRC Logo" class="prc-logo">
-                <p>Philippine Red Cross<br>Management System</p>
+            <div class="footer-bottom">
+                <p>&copy; 2025 Philippine Red Cross. All rights reserved.</p>
             </div>
-            <div class="footer-links">
-                <a href="https://redcross.org.ph/about-us/history">About Us</a>
-                <a href="#">(033) 503-3393/09171170066.<br>iloilo@redcross.org.ph<br>Brgy. Danao, Bonifacio drive, 5000</a>
-            </div>
-            <div class="footer-social">
-                <a href="https://www.facebook.com/profile.php?id=61560549271970&_rdc=1&_rdr"><i class="fab fa-facebook"></i></a>
-                <a href="https://www.instagram.com/rcy.iloilo/?hl=en"><i class="fab fa-instagram"></i></a>
-            </div>
-        </div>
-        <div class="footer-copyright">
-            <p>&copy; 2023 Philippine Red Cross. All rights reserved.</p>
         </div>
     </footer>
 
+    <!-- Scroll to top button -->
+    <button class="scroll-top" id="scrollTop">
+        <i class="fas fa-chevron-up"></i>
+    </button>
+
+    <!-- Enhanced JavaScript -->
     <script>
-      document.addEventListener("DOMContentLoaded", () => {
-    console.log("Philippine Red Cross Management System loaded successfully.");
-    
-    // Header scroll effect
-    const header = document.querySelector('.system-header');
-    if (header) {
-        window.addEventListener('scroll', function() {
-            if (window.scrollY > 50) {
-                header.classList.add('scrolled');
-            } else {
-                header.classList.remove('scrolled');
-            }
-        });
-    }
-    
-    // Parallax effect with performance optimization
-    let ticking = false;
-    window.addEventListener('scroll', function() {
-        if (!ticking) {
-            window.requestAnimationFrame(function() {
-                const parallaxElements = document.querySelectorAll('.parallax');
-                const scrollPosition = window.pageYOffset;
+        class EnhancedIndexManager {
+            constructor() {
+                this.refreshInterval = 30000; // 30 seconds
+                this.lastUpdate = new Date();
+                this.isRefreshing = false;
+                this.retryCount = 0;
+                this.maxRetries = 3;
                 
-                parallaxElements.forEach(element => {
-                    const elementPosition = element.offsetTop;
-                    const elementHeight = element.offsetHeight;
-                    
-                    // Check if element is in viewport
-                    if (scrollPosition > elementPosition - window.innerHeight && 
-                        scrollPosition < elementPosition + elementHeight) {
-                        const distance = (scrollPosition - elementPosition) * 0.3;
-                        element.style.backgroundPositionY = distance + 'px';
+                this.init();
+                this.initPhotoSlider();
+                this.initScrollEffects();
+            }
+
+            init() {
+                this.startAutoRefresh();
+                
+                document.addEventListener('visibilitychange', () => {
+                    if (document.visibilityState === 'visible') {
+                        this.refreshContent();
                     }
                 });
-                
-                // Show/hide scroll to top button
-                const scrollButton = document.querySelector('.scroll-top');
-                if (scrollButton) {
-                    if (window.pageYOffset > 300) {
-                        scrollButton.classList.add('show');
-                    } else {
-                        scrollButton.classList.remove('show');
-                    }
-                }
-                
-                ticking = false;
-            });
-            
-            ticking = true;
-        }
-    });
-    
-    // Initialize image slider
-    initSlider();
-    
-    // Create and add scroll to top button
-    const scrollButton = document.createElement('div');
-    scrollButton.classList.add('scroll-top');
-    scrollButton.innerHTML = '<i class="fas fa-arrow-up"></i>';
-    document.body.appendChild(scrollButton);
-    
-    scrollButton.addEventListener('click', () => {
-        window.scrollTo({
-            top: 0,
-            behavior: 'smooth'
-        });
-    });
-    
-    // Animation on scroll for cards
-    const animatedElements = document.querySelectorAll('.announcement-card, .event-card, .news-card');
-    
-    const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                entry.target.style.opacity = 1;
-                entry.target.style.transform = 'translateY(0)';
-            }
-        });
-    }, { threshold: 0.1 });
-    
-    animatedElements.forEach(element => {
-        element.style.opacity = 0;
-        element.style.transform = 'translateY(20px)';
-        element.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
-        observer.observe(element);
-    });
-    
-    // Initialize any other components
-    initOtherComponents();
-});
 
-// Image slider functionality
-function initSlider() {
-    const slider = document.querySelector('.slider .list');
-    const items = document.querySelectorAll('.slider .list .item');
-    const next = document.getElementById('next');
-    const prev = document.getElementById('prev');
-    const dots = document.querySelectorAll('.slider .dots li');
-    
-    if (!slider || items.length === 0) return;
-    
-    let lengthItems = items.length - 1;
-    let active = 0;
-    let refreshInterval;
-    let isAnimating = false;
-    
-    const reloadSlider = () => {
-        if (isAnimating) return;
-        
-        isAnimating = true;
-        
-        // Add smooth transition
-        slider.style.transition = 'left 0.5s ease';
-        slider.style.left = -items[active].offsetLeft + 'px';
+                window.addEventListener('online', () => {
+                    this.refreshContent();
+                });
+
+                console.log('🔄 Enhanced Index Manager initialized');
+                console.log(`📡 Auto-refresh every ${this.refreshInterval / 1000} seconds`);
+            }
+
+           // Replace your existing initPhotoSlider method with this fixed version
+
+initPhotoSlider() {
+    const slider = document.getElementById('photoSlider');
+    if (!slider) return;
+
+    const list = slider.querySelector('.list');
+    const items = slider.querySelectorAll('.item');
+    const dots = slider.querySelectorAll('.dots li');
+    const prevBtn = slider.querySelector('#prev');
+    const nextBtn = slider.querySelector('#next');
+
+    let currentIndex = 0;
+    const itemCount = items.length;
+
+    // Auto slide functionality
+    let autoSlideInterval = setInterval(() => {
+        this.nextSlide();
+    }, 5000);
+
+    // Navigation functions
+    const updateSlider = () => {
+        // Use percentage-based transform instead of fixed pixels
+        const translateX = -currentIndex * 20; // 20% per slide (100% ÷ 5 items)
+        list.style.transform = `translateX(${translateX}%)`;
         
         // Update dots
-        const lastActiveDot = document.querySelector('.slider .dots li.active');
-        if (lastActiveDot) lastActiveDot.classList.remove('active');
-        if (dots[active]) dots[active].classList.add('active');
-        
-        // Reset animation flag after transition completes
-        setTimeout(() => {
-            isAnimating = false;
-            slider.style.transition = '';
-        }, 500);
-        
-        // Reset autoplay timer
-        clearInterval(refreshInterval);
-        refreshInterval = setInterval(() => { 
-            if (next) next.click(); 
-        }, 5000);
+        dots.forEach((dot, index) => {
+            dot.classList.toggle('active', index === currentIndex);
+        });
     };
-    
-    // Next button functionality
-    if (next) {
-        next.addEventListener('click', function() {
-            active = active + 1 <= lengthItems ? active + 1 : 0;
-            reloadSlider();
-        });
-    }
-    
-    // Previous button functionality
-    if (prev) {
-        prev.addEventListener('click', function() {
-            active = active - 1 >= 0 ? active - 1 : lengthItems;
-            reloadSlider();
-        });
-    }
-    
+
+    this.nextSlide = () => {
+        currentIndex = (currentIndex + 1) % itemCount;
+        updateSlider();
+    };
+
+    this.prevSlide = () => {
+        currentIndex = (currentIndex - 1 + itemCount) % itemCount;
+        updateSlider();
+    };
+
+    // Event listeners
+    nextBtn.addEventListener('click', () => {
+        clearInterval(autoSlideInterval);
+        this.nextSlide();
+        autoSlideInterval = setInterval(() => this.nextSlide(), 5000);
+    });
+
+    prevBtn.addEventListener('click', () => {
+        clearInterval(autoSlideInterval);
+        this.prevSlide();
+        autoSlideInterval = setInterval(() => this.nextSlide(), 5000);
+    });
+
     // Dot navigation
-    dots.forEach((li, key) => {
-        li.addEventListener('click', () => {
-            active = key;
-            reloadSlider();
+    dots.forEach((dot, index) => {
+        dot.addEventListener('click', () => {
+            clearInterval(autoSlideInterval);
+            currentIndex = index;
+            updateSlider();
+            autoSlideInterval = setInterval(() => this.nextSlide(), 5000);
         });
     });
-    
-    // Pause autoplay on hover
-    const sliderContainer = document.querySelector('.slider');
-    if (sliderContainer) {
-        sliderContainer.addEventListener('mouseenter', () => {
-            clearInterval(refreshInterval);
-        });
-        
-        sliderContainer.addEventListener('mouseleave', () => {
-            clearInterval(refreshInterval);
-            refreshInterval = setInterval(() => { 
-                if (next) next.click(); 
-            }, 5000);
-        });
-    }
-    
-    // Handle window resize with debounce
-    let resizeTimer;
-    window.addEventListener('resize', () => {
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(() => {
-            reloadSlider();
-        }, 250);
-    });
-    
-    // Initialize slider
-    reloadSlider();
-    
-    // Add keyboard navigation
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'ArrowRight') {
-            if (next) next.click();
-        } else if (e.key === 'ArrowLeft') {
-            if (prev) prev.click();
-        }
-    });
-}
 
-// Initialize other components
-function initOtherComponents() {
-    // Add any other component initializations here
-    
-    // Example: Smooth scrolling for anchor links
-    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-        anchor.addEventListener('click', function(e) {
-            e.preventDefault();
-            const targetId = this.getAttribute('href');
-            if (targetId === '#') return;
-            
-            const targetElement = document.querySelector(targetId);
-            if (targetElement) {
-                targetElement.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'start'
-                });
-            }
-        });
+    // Pause on hover
+    slider.addEventListener('mouseenter', () => {
+        clearInterval(autoSlideInterval);
     });
-    
-    // Example: Lazy loading for images
-    if ('IntersectionObserver' in window) {
-        const lazyImages = document.querySelectorAll('img[data-src]');
-        
-        const imageObserver = new IntersectionObserver((entries, observer) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    const img = entry.target;
-                    img.src = img.dataset.src;
-                    img.removeAttribute('data-src');
-                    imageObserver.unobserve(img);
-                }
-            });
-        });
-        
-        lazyImages.forEach(img => {
-            imageObserver.observe(img);
-        });
-    }
-}
 
-// Handle page visibility changes for autoplay
-document.addEventListener('visibilitychange', function() {
-    const slider = document.querySelector('.slider');
-    if (!slider) return;
-    
-    if (document.hidden) {
-        // Page is hidden, pause autoplay
-        const nextButton = document.getElementById('next');
-        if (nextButton && nextButton.autoplayInterval) {
-            clearInterval(nextButton.autoplayInterval);
-        }
-    } else {
-        // Page is visible, restart autoplay
-        const nextButton = document.getElementById('next');
-        if (nextButton) {
-            nextButton.autoplayInterval = setInterval(() => { 
-                nextButton.click(); 
-            }, 5000);
-        }
-    }
-});
+    slider.addEventListener('mouseleave', () => {
+        autoSlideInterval = setInterval(() => this.nextSlide(), 5000);
+    });
 
-// Add touch support for mobile devices
-function addTouchSupport() {
-    const slider = document.querySelector('.slider');
-    if (!slider) return;
-    
-    let startX, moveX, currentX = 0;
+    // Touch/swipe support
+    let startX = 0;
+    let currentX = 0;
     let isDragging = false;
-    
+
     slider.addEventListener('touchstart', (e) => {
         startX = e.touches[0].clientX;
         isDragging = true;
-        
-        // Pause autoplay during interaction
-        const nextButton = document.getElementById('next');
-        if (nextButton && nextButton.autoplayInterval) {
-            clearInterval(nextButton.autoplayInterval);
-        }
+        clearInterval(autoSlideInterval);
     });
-    
+
     slider.addEventListener('touchmove', (e) => {
         if (!isDragging) return;
-        moveX = e.touches[0].clientX;
-        const diffX = moveX - startX;
-        
-        // Move slider temporarily
-        slider.style.transform = `translateX(${currentX + diffX}px)`;
+        currentX = e.touches[0].clientX;
+        e.preventDefault();
     });
-    
-    slider.addEventListener('touchend', (e) => {
+
+    slider.addEventListener('touchend', () => {
         if (!isDragging) return;
         isDragging = false;
         
-        const diffX = moveX - startX;
-        const nextButton = document.getElementById('next');
-        const prevButton = document.getElementById('prev');
-        
-        // Determine if it's a swipe (more than 50px)
+        const diffX = startX - currentX;
         if (Math.abs(diffX) > 50) {
-            if (diffX > 0 && prevButton) {
-                // Swipe right - go to previous
-                prevButton.click();
-            } else if (diffX < 0 && nextButton) {
-                // Swipe left - go to next
-                nextButton.click();
+            if (diffX > 0) {
+                this.nextSlide();
+            } else {
+                this.prevSlide();
             }
         }
         
-        // Reset temporary transform
-        slider.style.transform = '';
-        currentX = 0;
-        
-        // Restart autoplay
-        if (nextButton) {
-            nextButton.autoplayInterval = setInterval(() => { 
-                nextButton.click(); 
-            }, 5000);
-        }
+        autoSlideInterval = setInterval(() => this.nextSlide(), 5000);
     });
+
+    // Initialize first slide
+    updateSlider();
+
+    console.log('Photo slider initialized with auto-play');
 }
 
-// Initialize touch support
-document.addEventListener('DOMContentLoaded', addTouchSupport);
+            initScrollEffects() {
+                // Scroll to top button
+                const scrollTopBtn = document.getElementById('scrollTop');
+                
+                window.addEventListener('scroll', () => {
+                    if (window.pageYOffset > 300) {
+                        scrollTopBtn.classList.add('show');
+                    } else {
+                        scrollTopBtn.classList.remove('show');
+                    }
+                });
+
+                scrollTopBtn.addEventListener('click', () => {
+                    window.scrollTo({
+                        top: 0,
+                        behavior: 'smooth'
+                    });
+                });
+
+                // Intersection Observer for animations
+                const observerOptions = {
+                    threshold: 0.1,
+                    rootMargin: '0px 0px -50px 0px'
+                };
+
+                const observer = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting) {
+                            entry.target.style.opacity = '1';
+                            entry.target.style.transform = 'translateY(0)';
+                        }
+                    });
+                }, observerOptions);
+
+                // Observe elements for scroll animations
+                const animatedElements = document.querySelectorAll('.announcement-card, .event-card, .session-card, .service-card');
+                animatedElements.forEach(el => {
+                    el.style.opacity = '0';
+                    el.style.transform = 'translateY(30px)';
+                    el.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+                    observer.observe(el);
+                });
+
+                console.log('🎨 Scroll effects initialized');
+            }
+
+            async startAutoRefresh() {
+                setInterval(() => {
+                    if (!document.hidden && navigator.onLine) {
+                        this.refreshContent();
+                    }
+                }, this.refreshInterval);
+            }
+
+            async refreshContent() {
+                if (this.isRefreshing) return;
+
+                this.isRefreshing = true;
+                
+                try {
+                    console.log('🔄 Refreshing dynamic content...');
+                    
+                    const response = await fetch('get_dynamic_content.php', {
+                        method: 'GET',
+                        headers: {
+                            'Cache-Control': 'no-cache',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        await this.updateContent(data);
+                        this.showRefreshIndicator();
+                        this.retryCount = 0;
+                        console.log('✅ Content updated successfully');
+                    } else {
+                        throw new Error(data.message || 'Failed to fetch content');
+                    }
+
+                } catch (error) {
+                    console.error('❌ Error refreshing content:', error);
+                    this.handleRefreshError();
+                } finally {
+                    this.isRefreshing = false;
+                    this.lastUpdate = new Date();
+                }
+            }
+
+            async updateContent(data) {
+                await Promise.all([
+                    this.updateAnnouncements(data.announcements),
+                    this.updateEvents(data.events),
+                    this.updateSessions(data.sessions)
+                ]);
+            }
+
+            async updateAnnouncements(announcements) {
+                const container = document.getElementById('announcements-grid');
+                const section = document.getElementById('announcements-section');
+                
+                if (!announcements || announcements.length === 0) {
+                    if (section) section.style.display = 'none';
+                    return;
+                }
+
+                if (section) section.style.display = 'block';
+                if (!container) return;
+
+                this.fadeUpdate(container, announcements.map(announcement => `
+                    <div class="announcement-card">
+                        ${announcement.image_url ? `
+                        <div class="announcement-image" style="background-image: url('${this.escapeHtml(announcement.image_url)}');"></div>
+                        ` : ''}
+                        <div class="announcement-content">
+                            <h3>${this.escapeHtml(announcement.title)}</h3>
+                            <p>${this.escapeHtml(this.truncateText(announcement.content, 150))}</p>
+                            <div class="announcement-meta">
+                                <span><i class="fas fa-calendar-alt"></i> ${this.formatDate(announcement.posted_at)}</span>
+                            </div>
+                        </div>
+                    </div>
+                `).join(''));
+            }
+
+            async updateEvents(events) {
+                const container = document.getElementById('events-grid');
+                const section = document.getElementById('events-section');
+                
+                if (!events || events.length === 0) {
+                    if (section) section.style.display = 'none';
+                    return;
+                }
+
+                if (section) section.style.display = 'block';
+                if (!container) return;
+
+                this.fadeUpdate(container, events.map(event => `
+                    <div class="event-card">
+                        <div class="event-header">
+                            <h3>${this.escapeHtml(event.title)}</h3>
+                            <span class="event-service">${this.escapeHtml(event.major_service)}</span>
+                        </div>
+                        <div class="event-content">
+                            ${event.description ? `
+                            <p class="event-description">${this.escapeHtml(this.truncateText(event.description, 120))}</p>
+                            ` : ''}
+                            <div class="event-details">
+                                <div class="event-detail">
+                                    <i class="fas fa-calendar"></i>
+                                    <span>${this.formatEventDate(event.event_date)}</span>
+                                </div>
+                                <div class="event-detail">
+                                    <i class="fas fa-clock"></i>
+                                    <span>${this.formatTime(event.start_time)}</span>
+                                </div>
+                                <div class="event-detail">
+                                    <i class="fas fa-map-marker-alt"></i>
+                                    <span>${this.escapeHtml(this.truncateText(event.location, 30))}</span>
+                                </div>
+                                ${event.fee > 0 ? `
+                                <div class="event-detail">
+                                    <i class="fas fa-peso-sign"></i>
+                                    <span>₱${this.formatCurrency(event.fee)}</span>
+                                </div>
+                                ` : ''}
+                            </div>
+                            <div class="event-footer">
+                                <div class="event-capacity">
+                                    <i class="fas fa-users"></i>
+                                    <span>${event.registrations_count}/${event.capacity || '∞'} registered</span>
+                                </div>
+                                <a href="user/event_registration.php?event_id=${event.event_id}" class="btn-event">
+                                    <i class="fas fa-user-plus"></i> Register
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                `).join(''));
+            }
+
+            async updateSessions(sessions) {
+                const container = document.getElementById('sessions-grid');
+                const section = document.querySelector('.training-section');
+                
+                if (!sessions || sessions.length === 0) {
+                    if (section) section.style.display = 'none';
+                    return;
+                }
+
+                if (section) section.style.display = 'block';
+                if (!container) return;
+
+                this.fadeUpdate(container, sessions.map(session => `
+                    <div class="session-card">
+                        <div class="session-header">
+                            <h3>${this.escapeHtml(session.title)}</h3>
+                            <span class="session-service">${this.escapeHtml(session.major_service)}</span>
+                        </div>
+                        <div class="session-content">
+                            <div class="session-details">
+                                <div class="session-detail">
+                                    <i class="fas fa-calendar"></i>
+                                    <span>${this.formatEventDate(session.session_date)}</span>
+                                </div>
+                                <div class="session-detail">
+                                    <i class="fas fa-clock"></i>
+                                    <span>${this.formatTime(session.start_time)} - ${this.formatTime(session.end_time)}</span>
+                                </div>
+                                <div class="session-detail">
+                                    <i class="fas fa-map-marker-alt"></i>
+                                    <span>${this.escapeHtml(this.truncateText(session.venue, 40))}</span>
+                                </div>
+                                ${session.instructor ? `
+                                <div class="session-detail">
+                                    <i class="fas fa-user-tie"></i>
+                                    <span>${this.escapeHtml(session.instructor)}</span>
+                                </div>
+                                ` : ''}
+                                <div class="session-detail">
+                                    <i class="fas fa-users"></i>
+                                    <span>${session.registrations_count}/${session.capacity || '∞'} registered</span>
+                                </div>
+                                ${session.fee > 0 ? `
+                                <div class="session-detail">
+                                    <i class="fas fa-peso-sign"></i>
+                                    <span>₱${this.formatCurrency(session.fee)}</span>
+                                </div>
+                                ` : ''}
+                            </div>
+                            <a href="user/training_registration.php?session_id=${session.session_id}" class="btn-event">
+                                <i class="fas fa-user-plus"></i> Register for Training
+                            </a>
+                        </div>
+                    </div>
+                `).join(''));
+            }
+
+            fadeUpdate(container, htmlContent) {
+                container.style.opacity = '0.5';
+                container.style.transition = 'opacity 0.3s ease';
+                
+                setTimeout(() => {
+                    container.innerHTML = htmlContent;
+                    container.style.opacity = '1';
+                    
+                    // Re-initialize scroll animations for new content
+                    const newElements = container.querySelectorAll('.announcement-card, .event-card, .session-card');
+                    newElements.forEach((el, index) => {
+                        el.style.opacity = '0';
+                        el.style.transform = 'translateY(30px)';
+                        el.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+                        
+                        setTimeout(() => {
+                            el.style.opacity = '1';
+                            el.style.transform = 'translateY(0)';
+                        }, index * 100);
+                    });
+                }, 300);
+            }
+
+            handleRefreshError() {
+                this.retryCount++;
+                
+                if (this.retryCount <= this.maxRetries) {
+                    console.log(`🔄 Retrying... (${this.retryCount}/${this.maxRetries})`);
+                    setTimeout(() => {
+                        this.refreshContent();
+                    }, 5000 * this.retryCount);
+                } else {
+                    console.log('❌ Max retries reached, stopping auto-refresh');
+                    this.showErrorIndicator();
+                }
+            }
+
+            showRefreshIndicator() {
+                const indicator = document.getElementById('refreshIndicator');
+                if (indicator) {
+                    indicator.classList.add('active');
+                    setTimeout(() => {
+                        indicator.classList.remove('active');
+                    }, 2000);
+                }
+            }
+
+            showErrorIndicator() {
+                const indicator = document.getElementById('refreshIndicator');
+                if (indicator) {
+                    indicator.innerHTML = '<i class="fas fa-exclamation-triangle"></i><span>Connection error</span>';
+                    indicator.style.background = 'rgba(220, 53, 69, 0.9)';
+                    indicator.classList.add('active');
+                    
+                    setTimeout(() => {
+                        indicator.classList.remove('active');
+                        indicator.innerHTML = '<div class="refresh-pulse"></div><span>Content updated</span>';
+                        indicator.style.background = 'rgba(160, 0, 0, 0.9)';
+                    }, 5000);
+                }
+            }
+
+            // Utility functions
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            truncateText(text, length) {
+                return text && text.length > length ? text.substring(0, length) + '...' : text;
+            }
+
+            formatDate(dateString) {
+                const date = new Date(dateString);
+                return date.toLocaleDateString('en-US', { 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                });
+            }
+
+            formatEventDate(dateString) {
+                const date = new Date(dateString);
+                return date.toLocaleDateString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric', 
+                    year: 'numeric' 
+                });
+            }
+
+            formatTime(timeString) {
+                const time = new Date(`1970-01-01T${timeString}`);
+                return time.toLocaleTimeString('en-US', { 
+                    hour: 'numeric', 
+                    minute: '2-digit',
+                    hour12: true 
+                });
+            }
+
+            formatCurrency(amount) {
+                return new Intl.NumberFormat('en-PH', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                }).format(amount);
+            }
+        }
+
+        // Initialize the enhanced index manager when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new EnhancedIndexManager();
+        });
+
+        // Smooth scrolling for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
     </script>
 </body>
 </html>

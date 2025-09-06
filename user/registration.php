@@ -351,6 +351,7 @@ $userRegistrations = $userRegistrationsStmt->fetchAll();
   <link rel="stylesheet" href="../assets/styles.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/sidebar.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/dashboard.css?v=<?php echo time(); ?>">
+  <link rel="stylesheet" href="../assets/header.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/registration.css?v=<?php echo time(); ?>">
 </head>
 <body>
@@ -653,7 +654,7 @@ $userRegistrations = $userRegistrationsStmt->fetchAll();
                                         <td><?= htmlspecialchars($r['email']) ?></td>
                                         <td><?= htmlspecialchars($r['payment_mode']) ?></td>
                                         <td>
-                                            <div class="document-links">
+                                             <div class="document-links">
                                                 <?php if ($r['valid_id_path']): ?>
                                                     <a href="../<?= htmlspecialchars($r['valid_id_path']) ?>" target="_blank" class="doc-link">
                                                         <i class="fas fa-id-card"></i> Valid ID
@@ -666,7 +667,7 @@ $userRegistrations = $userRegistrationsStmt->fetchAll();
                                                     </a>
                                                 <?php endif; ?>
                                                 
-                                                <?php if ($r['payment_receipt_path']): ?>
+                                                <?php if (!empty($r['payment_receipt_path'])): ?>
                                                     <a href="../<?= htmlspecialchars($r['payment_receipt_path']) ?>" target="_blank" class="doc-link payment-receipt">
                                                         <i class="fas fa-receipt"></i> Payment Receipt
                                                     </a>
@@ -1155,6 +1156,7 @@ $userRegistrations = $userRegistrationsStmt->fetchAll();
     </div>
 
   <script> window.calendarEventsData = <?= json_encode($extendedCalendarEvents) ?>;</script>
+    <script src="js/notifications.js?v=<?php echo time(); ?>"></script>
     <script src="/js/register.js"></script>
     <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
     <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
@@ -2369,6 +2371,30 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize payment listeners
     initializePaymentListeners();
     
+       // Initialize notification manager if available
+    if (typeof NotificationManager !== 'undefined') {
+        notificationManager = new NotificationManager();
+        
+        // You can add registration-specific notifications here
+        const registrationNotifications = [];
+        
+        // Example: Add notification for successful registration if message exists
+        <?php if ($regMessage && strpos($regMessage, 'successfully') !== false): ?>
+        registrationNotifications.push({
+            type: 'success',
+            title: 'Registration Successful',
+            message: 'Your event registration has been submitted for review.',
+            icon: 'check-circle',
+            urgency: 'medium'
+        });
+        <?php endif; ?>
+        
+        // Initialize with any notifications
+        if (registrationNotifications.length > 0) {
+            initializeNotifications(registrationNotifications);
+        }
+    }
+    
     // Initialize calendar
     generateCalendar();
     
@@ -2384,8 +2410,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
-    
-
+        
     // Close calendar modal when clicking outside
     const calendarModal = document.getElementById('calendarModal');
     if (calendarModal) {
@@ -2530,6 +2555,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // Inject multi-day calendar styles
     injectMultiDayCalendarStyles();
 });
+
+
 
 // Function to inject multi-day calendar styles
 function injectMultiDayCalendarStyles() {

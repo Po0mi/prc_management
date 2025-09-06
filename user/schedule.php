@@ -272,22 +272,22 @@ $whereClause = 'WHERE ' . implode(' AND ', $whereConditions);
 try {
     // Main query to get all training sessions - UPDATED WITH MULTI-DAY FIELDS
     $stmt = $pdo->prepare("
-        SELECT ts.*, 
-               COALESCE(ts.session_end_date, ts.session_date) as session_end_date,
-               COALESCE(ts.duration_days, 1) as duration_days,
-               COALESCE((
-                   SELECT 1 FROM session_registrations 
-                   WHERE session_id = ts.session_id 
-                   AND user_id = ?
-               ), 0) AS is_registered,
-               COALESCE((
-                   SELECT COUNT(*) FROM session_registrations 
-                   WHERE session_id = ts.session_id
-               ), 0) AS registered_count
-        FROM training_sessions ts
-        $whereClause
-        ORDER BY ts.major_service, ts.session_date, ts.start_time
-    ");
+    SELECT ts.*, 
+           COALESCE(ts.session_end_date, ts.session_date) as session_end_date,
+           COALESCE(ts.duration_days, 1) as duration_days,
+           COALESCE((
+               SELECT 1 FROM session_registrations 
+               WHERE session_id = ts.session_id 
+               AND user_id = ?
+           ), 0) AS is_registered,
+           COALESCE((
+               SELECT COUNT(*) FROM session_registrations 
+               WHERE session_id = ts.session_id
+           ), 0) AS registered_count
+    FROM training_sessions ts
+    $whereClause
+    ORDER BY ts.major_service, ts.session_date, ts.start_time
+");
 
     $stmt->bindValue(1, $userId, PDO::PARAM_INT);
     foreach ($params as $key => $value) {
@@ -800,17 +800,18 @@ try {
             <?php else: ?>
               <table class="data-table">
                 <thead>
-                  <tr>
-                    <th>Training Details</th>
-                    <th>Date Range & Time</th>
-                    <th>Venue</th>
-                    <th>Service</th>
-                    <th>Capacity</th>
-                    <th>Fee</th>
-                    <th>Status</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
+  <tr>
+    <th>Training Details</th>
+    <th>Date Range & Time</th>
+    <th>Instructor</th>
+    <th>Venue</th>
+    <th>Service</th>
+    <th>Capacity</th>
+    <th>Fee</th>
+    <th>Status</th>
+    <th>Action</th>
+  </tr>
+</thead>
                 <tbody>
                   <?php foreach ($allSessions as $s): 
                     $sessionStartDate = strtotime($s['session_date']);
@@ -855,6 +856,18 @@ try {
                             </div>
                           <?php endif; ?>
                         </div>
+                        <td>
+  <?php if (!empty($s['instructor'])): ?>
+    <div class="instructor-info">
+      <div class="instructor-name"><?= htmlspecialchars($s['instructor']) ?></div>
+      <?php if (!empty($s['instructor_credentials'])): ?>
+        <div class="instructor-credentials"><?= htmlspecialchars($s['instructor_credentials']) ?></div>
+      <?php endif; ?>
+    </div>
+  <?php else: ?>
+    <span class="no-instructor">Not assigned</span>
+  <?php endif; ?>
+</td>
                       </td>
                       <td><?= htmlspecialchars($s['venue']) ?></td>
                       <td>
@@ -1648,9 +1661,9 @@ try {
       </div>
     </div>
   </div>
-
- 
-   <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
+  
+  <script src="js/notifications.js?v=<?php echo time(); ?>"></script>
+  <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
   <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
   <script src="js/header.js?v=<?php echo time(); ?>"></script>
   <script> 

@@ -41,6 +41,10 @@
         <span>Training Sessions</span>       
       </a>     
     </div>
+      <a href="training_request.php" class="nav-link">  
+        <i class="fa-solid fa-clipboard"></i>
+        <span class="link-text">Training Request</span>
+      </a>
         <a href="manage_merch.php" class="nav-link">  
         <i class="fas fa-store"></i>
         <span class="link-text">Manage Merch</span>
@@ -66,4 +70,5 @@
     <i class="fas fa-chevron-left"></i>       
     <i class="fas fa-bars"></i>     
   </button>   
+  <script src="js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
 </aside>

@@ -202,9 +202,122 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     $pdo->commit();
                     
+                    // ===== ADD THIS NOTIFICATION CODE =====
+                    // Notify admins about new user registration
+                   // ===== FIXED NOTIFICATION CODE =====
+try {
+    // Get all admin users for notification
+    $stmt = $pdo->prepare("SELECT user_id, admin_role FROM users WHERE role = 'admin'");
+    $stmt->execute();
+    $admin_users = $stmt->fetchAll();
+    
+    if (!empty($admin_users)) {
+        // Create notification data with enhanced information
+        $notification_data = [
+            'id' => 'user_registered_' . $userId . '_' . time(),
+            'type' => 'new_user',
+            'priority' => $userType === 'rcy_member' ? 'medium' : 'low',
+            'title' => 'New User Registration',
+            'message' => "User '{$username}' has registered as " . 
+                        ($userType === 'rcy_member' ? 'an RCY Member' : 'a regular user') . 
+                        '. Account needs review and verification.',
+            'icon' => $userType === 'rcy_member' ? 'fas fa-users' : 'fas fa-user-plus',
+            'url' => 'admin/manage_users.php?highlight_user=' . $userId,
+            'user_id' => $userId,
+            'username' => $username,
+            'user_type' => $userType,
+            'is_registration' => true, // Flag to identify registration vs admin creation
+            'created_at' => date('Y-m-d H:i:s')
+        ];
+        
+        // Ensure admin_notifications table exists
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `admin_notifications` (
+                `id` int(11) NOT NULL AUTO_INCREMENT,
+                `notification_id` varchar(255) NOT NULL,
+                `user_id` int(11) NOT NULL,
+                `type` varchar(50) NOT NULL,
+                `priority` enum('low','medium','high','critical') DEFAULT 'medium',
+                `title` varchar(255) NOT NULL,
+                `message` text NOT NULL,
+                `icon` varchar(100) DEFAULT NULL,
+                `url` varchar(255) DEFAULT NULL,
+                `metadata` JSON DEFAULT NULL,
+                `is_read` tinyint(1) DEFAULT 0,
+                `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `user_notification` (`user_id`, `notification_id`),
+                KEY `user_id` (`user_id`),
+                KEY `is_read` (`is_read`),
+                KEY `type` (`type`),
+                KEY `priority` (`priority`),
+                FOREIGN KEY (`user_id`) REFERENCES `users`(`user_id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        ");
+        
+        // Insert notification for each admin with enhanced metadata
+        $stmt = $pdo->prepare("
+            INSERT IGNORE INTO admin_notifications 
+            (notification_id, user_id, type, priority, title, message, icon, url, metadata, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        
+        // Enhanced metadata for registration notifications
+        $metadata = json_encode([
+            'user_id' => $userId,
+            'username' => $username,
+            'user_type' => $userType,
+            'is_registration' => true,
+            'services' => $userType === 'rcy_member' ? $selectedServices : [],
+            'documents_uploaded' => $documentCount ?? 0,
+            'registration_source' => 'public_form'
+        ]);
+        
+        $notification_count = 0;
+        foreach ($admin_users as $admin) {
+            try {
+                $stmt->execute([
+                    $notification_data['id'],
+                    $admin['user_id'],
+                    $notification_data['type'],
+                    $notification_data['priority'],
+                    $notification_data['title'],
+                    $notification_data['message'],
+                    $notification_data['icon'],
+                    $notification_data['url'],
+                    $metadata,
+                    $notification_data['created_at']
+                ]);
+                $notification_count++;
+            } catch (Exception $e) {
+                error_log("Failed to notify admin {$admin['user_id']}: " . $e->getMessage());
+            }
+        }
+        
+        error_log("Registration notification sent to {$notification_count} admins for user: $username ($userType)");
+        
+        // Store in session for potential welcome message customization
+        $_SESSION['new_registration_notification'] = [
+            'user_id' => $userId,
+            'username' => $username,
+            'user_type' => $userType,
+            'admins_notified' => $notification_count
+        ];
+        
+    }
+    
+} catch (Exception $notificationError) {
+    error_log("Registration notification error for user $username: " . $notificationError->getMessage());
+    // Don't fail registration if notification fails
+}
+// ===== END FIXED NOTIFICATION CODE =====
+                    // ===== END NOTIFICATION CODE =====
+                    
                     // Send email notification
                     $emailSent = false;
                     $emailMessage = '';
+                    
+                    // ... rest of your existing email code ...
                     
                     try {
                         if ($emailEnabled) {

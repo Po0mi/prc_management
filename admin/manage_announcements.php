@@ -132,7 +132,6 @@ $total_announcements = $pdo->query("SELECT COUNT(*) FROM announcements")->fetchC
 </head>
 <body>
   <?php include 'sidebar.php'; ?>
-  
   <div class="admin-content">
     <div class="announcements-container">
       <div class="page-header">
@@ -254,7 +253,9 @@ $total_announcements = $pdo->query("SELECT COUNT(*) FROM announcements")->fetchC
       </div>
     </div>
   </div>
-  
+  <script src="../admin/js/notification_frontend.js?v=<?php echo time(); ?>"></script>
+  <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
+  <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
   <script>
     // Image upload preview
     document.getElementById('announcement_image').addEventListener('change', function(e) {
@@ -278,6 +279,6 @@ $total_announcements = $pdo->query("SELECT COUNT(*) FROM announcements")->fetchC
       document.getElementById('image-preview').style.display = 'none';
     });
   </script>
-  <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
+  
 </body>
 </html>

@@ -13,7 +13,179 @@
   --header-bg: #2d2d2d;
   --card-bg: #2d2d2d;
 }
+/* Enhanced Notification Bell Styles - Add to header.css */
 
+.notification-bell {
+  position: relative;
+  cursor: pointer;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.3s ease;
+  color: var(--text-color);
+  z-index: 1000; /* Ensure bell stays above other elements */
+}
+
+.notification-bell:hover {
+  background-color: rgba(160, 0, 0, 0.1);
+  color: var(--prc-red);
+}
+
+.notification-bell.active {
+  background-color: rgba(160, 0, 0, 0.15);
+  color: var(--prc-red);
+}
+
+.notification-panel {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px); /* Better positioning */
+  right: 0;
+  background-color: var(--card-bg);
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  width: 320px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  z-index: 2000; /* Higher z-index to ensure it appears above everything */
+  margin-top: 0;
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: all 0.3s ease;
+  max-height: 500px; /* Prevent it from being too tall */
+  overflow: hidden;
+}
+
+.notification-panel.active {
+  display: block;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Dark mode support */
+.dark-mode .notification-panel {
+  border-color: #444;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+/* Remove the problematic hover/focus-within rules */
+.notification-bell:focus-within .notification-panel,
+.notification-bell:hover .notification-panel {
+  /* Remove these rules - we'll handle with JavaScript instead */
+}
+
+/* Enhanced notification items */
+.notification-item {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.notification-item:hover {
+  background-color: rgba(160, 0, 0, 0.05);
+}
+
+.notification-item.unread {
+  background-color: rgba(33, 150, 243, 0.05);
+  border-left: 3px solid var(--prc-red);
+}
+
+.notification-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: white;
+  flex-shrink: 0;
+}
+
+.notification-icon.success { background-color: #28a745; }
+.notification-icon.warning { background-color: #ffc107; color: #212529; }
+.notification-icon.info { background-color: #17a2b8; }
+.notification-icon.event { background-color: #007bff; }
+.notification-icon.session { background-color: #28a745; }
+.notification-icon.announcement { background-color: #fd7e14; }
+
+.notification-text {
+  flex: 1;
+  min-width: 0; /* Allow text to shrink */
+}
+
+.notification-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--text-color);
+  font-size: 14px;
+}
+
+.notification-message {
+  color: var(--gray);
+  font-size: 13px;
+  line-height: 1.4;
+  margin-bottom: 6px;
+}
+
+.notification-time {
+  color: var(--gray);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.unread-indicator {
+  width: 8px;
+  height: 8px;
+  background-color: var(--prc-red);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.notification-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--gray);
+}
+
+.notification-empty i {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.notification-empty h4 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+}
+
+.notification-empty p {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .notification-panel {
+    width: 300px;
+    right: -20px;
+  }
+}
+
+@media (max-width: 576px) {
+  .notification-panel {
+    width: 280px;
+    right: -30px;
+  }
+}
 body {
   background-color: var(--bg-color);
   color: var(--text-color);

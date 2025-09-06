@@ -864,7 +864,6 @@ $badgeColors = [
 </head>
 <body>
   <?php include 'sidebar.php'; ?>
-  
   <div class="main-container">
     <div class="page-header">
       <div class="header-content">
@@ -1644,7 +1643,8 @@ $badgeColors = [
       </form>
     </div>
   </div>
-
+  <script src="../admin/js/notification_frontend.js?v=<?php echo time(); ?>"></script>
+  <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
   <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
   <script>
 // Service-Specific Inventory & Fleet Management JavaScript

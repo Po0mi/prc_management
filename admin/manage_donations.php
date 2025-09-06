@@ -504,7 +504,7 @@ try {
 </head>
 <body>
   <?php include 'sidebar.php'; ?>
-  
+
   <div class="donations-container">
     <div class="page-header">
       <div class="header-content">
@@ -533,7 +533,6 @@ try {
         <form method="GET" class="search-box">
           <i class="fas fa-search"></i>
           <input type="text" name="search" placeholder="Search donations...">
-          <button type="submit"><i class="fas fa-arrow-right"></i></button>
         </form>
         
         <div class="status-filter">
@@ -775,7 +774,7 @@ try {
                     </div>
                   </td>
                   <td class="actions">
-                    <div class="action-buttons">
+                    <div class="action-button">
                      <button class="btn-action btn-view" 
         data-donation='<?= htmlspecialchars(json_encode($d), ENT_QUOTES, 'UTF-8') ?>'
         title="View Details">
@@ -1041,7 +1040,8 @@ try {
       </div>
     </div>
   </div>
-
+<script src="../admin/js/notification_frontend.js?v=<?php echo time(); ?>"></script>
+  <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
   <script>
    // Global variables for managing selections
 let selectedDonations = new Set();

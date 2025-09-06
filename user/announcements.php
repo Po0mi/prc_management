@@ -43,7 +43,7 @@ $announcements = $stmt->fetchAll();
         <div class="announcements-toolbar">
           <div class="search-box">
             <input type="text" placeholder="Search announcements...">
-            <button type="submit"><i class="fas fa-search"></i></button>
+            <i class="fas fa-search"></i>
           </div>
           <div class="filter-dropdown">
             <select>
@@ -102,7 +102,7 @@ $announcements = $stmt->fetchAll();
         <?php endif; ?>
       </div>
     </div>
-
+    <script src="js/notifications.js?v=<?php echo time(); ?>"></script>
     <script src="js/announcements.js"></script>
     <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
     <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>

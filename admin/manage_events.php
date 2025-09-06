@@ -764,7 +764,6 @@ if (!function_exists('get_role_color')) {
 </head>
 <body class="admin-<?= htmlspecialchars($user_role) ?>">
   <?php include 'sidebar.php'; ?>
-  
   <div class="events-container">
     <div class="page-header">
       <h1><i class="fas fa-calendar-alt"></i> Event Management</h1>
@@ -1019,7 +1018,6 @@ if (!function_exists('get_role_color')) {
             <input type="hidden" name="status" value="<?= htmlspecialchars($statusFilter) ?>">
             <i class="fas fa-search"></i>
             <input type="text" name="search" placeholder="Search events..." value="<?= htmlspecialchars($search) ?>">
-            <button type="submit"><i class="fas fa-arrow-right"></i></button>
           </form>
           
           <div class="status-filter">
@@ -2056,213 +2054,9 @@ function filterStatus(status) {
 }
 </script>
 
-<!-- Role-based styling -->
-<style>
-:root {
-  --current-role-color: <?= get_role_color($user_role) ?>;
-}
 
-.role-indicator {
-  background: linear-gradient(135deg, var(--current-role-color) 0%, <?= get_role_color($user_role) ?>dd 100%);
-  color: white;
-  padding: 0.5rem 1rem;
-  border-radius: 8px;
-  margin-top: 0.5rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.85rem;
-}
-
-.role-indicator small {
-  opacity: 0.9;
-  font-size: 0.75rem;
-}
-
-.service-tab.active,
-.btn-create {
-  color: var(--current-role-color) !important;
-}
-
-.btn-create {
-  background: linear-gradient(135deg, var(--current-role-color) 0%, <?= get_role_color($user_role) ?>dd 100%) !important;
-  color: white !important;
-}
-
-.service-tab.active {
-  border-bottom-color: var(--current-role-color) !important;
-  background: linear-gradient(135deg, var(--current-role-color)15 0%, <?= get_role_color($user_role) ?>10 100%) !important;
-}
-
-.stat-card .stat-icon {
-  background: linear-gradient(135deg, var(--current-role-color) 0%, <?= get_role_color($user_role) ?>dd 100%) !important;
-}
-
-.events-container {
-  --role-accent: var(--current-role-color);
-}
-
-.event-service {
-  background: linear-gradient(135deg, var(--current-role-color)20 0%, <?= get_role_color($user_role) ?>15 100%);
-  color: var(--current-role-color);
-  padding: 0.2rem 0.6rem;
-  border-radius: 12px;
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-
-/* Enhanced styles for multi-day event display */
-.event-date-range {
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
-}
-
-.event-date-single .event-date-start {
-    font-weight: 600;
-    color: var(--dark);
-}
-
-.event-date-start {
-    font-weight: 600;
-    color: var(--dark);
-    font-size: 0.9rem;
-}
-
-.event-date-end {
-    font-size: 0.85rem;
-    color: var(--gray);
-    font-style: italic;
-}
-
-.event-duration {
-    font-size: 0.75rem;
-    background: linear-gradient(135deg, var(--light) 0%, #e3f2fd 100%);
-    color: var(--blue);
-    padding: 0.2rem 0.4rem;
-    border-radius: 4px;
-    display: inline-block;
-    margin-top: 0.2rem;
-    font-weight: 500;
-    border: 1px solid rgba(33, 150, 243, 0.2);
-}
-
-.status-badge.ongoing {
-    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
-    color: #856404;
-    border: 1px solid #f7dc6f;
-}
-
-.status-badge.ongoing i {
-    color: #ff9800;
-}
-
-/* Date Preview Styles */
-.date-preview-container {
-    margin: 1rem 0;
-    animation: slideDown 0.3s ease;
-}
-
-.date-preview {
-    background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
-    border: 2px solid #90caf9;
-    border-radius: 12px;
-    padding: 1rem;
-}
-
-.date-preview-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-weight: 600;
-    color: var(--dark);
-    margin-bottom: 0.5rem;
-}
-
-.date-preview-header i {
-    color: var(--blue);
-}
-
-.date-preview-content {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-}
-
-.date-range {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 1rem;
-    font-size: 1.1rem;
-    font-weight: 600;
-}
-
-.start-date, .end-date {
-    background: white;
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
-    color: var(--dark);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-.date-range i {
-    color: var(--blue);
-}
-
-.duration-display {
-    text-align: center;
-    font-size: 0.9rem;
-    color: var(--gray);
-    font-weight: 500;
-}
-
-/* Responsive adjustments */
-@media (max-width: 768px) {
-    .date-range {
-        flex-direction: column;
-        gap: 0.5rem;
-    }
-    
-    .date-range i {
-        transform: rotate(90deg);
-    }
-    
-    .event-date-range {
-        font-size: 0.8rem;
-    }
-    
-    .event-duration {
-        font-size: 0.7rem;
-        padding: 0.1rem 0.3rem;
-    }
-}
-
-@media (max-width: 576px) {
-    .event-date-start,
-    .event-date-end {
-        font-size: 0.75rem;
-    }
-    
-    .event-duration {
-        font-size: 0.65rem;
-    }
-}
-
-@keyframes slideDown {
-    from {
-        opacity: 0;
-        transform: translateY(-20px);
-        max-height: 0;
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-        max-height: 200px;
-    }
-}
-</style>
-  
+  <script src="../admin/js/notification_frontend.js?v=<?php echo time(); ?>"></script>
+  <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
   <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>

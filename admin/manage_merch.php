@@ -232,7 +232,6 @@ $stock_filters = [
 </head>
 <body>
   <?php include 'sidebar.php'; ?>
-  
   <div class="main-container">
     <!-- Page Header -->
     <div class="page-header">
@@ -450,9 +449,6 @@ $stock_filters = [
                     <span class="stock-badge <?= $stock_class ?>">
                       <?= $item['stock_quantity'] ?>
                     </span>
-                    <button class="btn-sm btn-edit" onclick="openStockModal(<?= $item['merch_id'] ?>, '<?= htmlspecialchars($item['name']) ?>', <?= $item['stock_quantity'] ?>)" title="Update Stock">
-                      <i class="fas fa-edit"></i>
-                    </button>
                   </div>
                 </td>
                 <td>
@@ -613,7 +609,8 @@ $stock_filters = [
       </form>
     </div>
   </div>
-
+<script src="../admin/js/notification_frontend.js?v=<?php echo time(); ?>"></script>
+  <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
   <script>
     // Merchandise Management JavaScript
     

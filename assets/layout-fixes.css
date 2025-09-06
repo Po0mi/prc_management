@@ -1,0 +1,639 @@
+/* Admin Dashboard Layout Fixes - layout-fixes.css */
+
+/* Z-Index Management */
+:root {
+  --z-background: -1;
+  --z-base: 0;
+  --z-content: 10;
+  --z-header: 100;
+  --z-sidebar: 200;
+  --z-dropdown: 1000;
+  --z-modal: 2000;
+  --z-toast: 3000;
+  --z-overlay: 9999;
+}
+
+/* Reset any conflicting z-index values */
+* {
+  position: relative;
+}
+
+/* Base Layout Structure */
+body {
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f8f9fa 0%, #c3cfe2 100%);
+}
+
+/* Main Layout Container */
+.main-layout {
+  display: flex;
+  min-height: 100vh;
+  width: 100%;
+}
+
+/* Sidebar Layout */
+.sidebar {
+  width: var(--sidebar-width, 250px);
+  height: 100vh;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: var(--z-sidebar);
+  background: var(--prc-red, #a00000);
+  transition: width 0.3s ease;
+}
+
+.sidebar.collapsed {
+  width: var(--sidebar-collapsed-width, 70px);
+}
+
+/* Main Content Area */
+.main-content {
+  flex: 1;
+  margin-left: var(--sidebar-width, 250px);
+  min-height: 100vh;
+  background: transparent;
+  transition: margin-left 0.3s ease;
+  position: relative;
+  z-index: var(--z-content);
+}
+
+body.sidebar-collapsed .main-content {
+  margin-left: var(--sidebar-collapsed-width, 70px);
+}
+
+/* Top Header Fixes */
+.top-header {
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+  padding: 1.5rem 2rem;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 2rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  position: sticky;
+  top: 0;
+  z-index: var(--z-header);
+  border-radius: 16px;
+  margin: 2rem;
+  margin-bottom: 3rem;
+  border: 1px solid rgba(160, 0, 0, 0.08);
+  min-height: 80px;
+}
+
+/* Header Content Positioning */
+.header-left {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  min-width: 0;
+}
+
+.header-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 0;
+}
+
+.header-right {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+}
+
+/* Page Title */
+.page-title h2 {
+  margin: 0;
+  color: var(--prc-red, #a00000);
+  font-size: 1.5rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Date Display */
+.date-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.current-date {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: #333333;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.live-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--prc-red, #a00000);
+  justify-content: center;
+  white-space: nowrap;
+}
+
+/* User Actions */
+.user-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Notification Bell Container */
+.notification-bell {
+  position: relative;
+  cursor: pointer;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.3s ease;
+  color: #333333;
+  background: transparent;
+  border: none;
+  z-index: var(--z-base);
+}
+
+.notification-bell:hover {
+  background-color: rgba(160, 0, 0, 0.1);
+  color: var(--prc-red, #a00000);
+  transform: scale(1.05);
+}
+
+/* Notification Badge */
+.notification-badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  background-color: var(--prc-red, #a00000);
+  color: white;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: bold;
+  z-index: 2;
+}
+
+.notification-badge.hidden {
+  display: none;
+}
+
+.notification-badge.critical {
+  background: linear-gradient(45deg, #dc3545, #c82333);
+  animation: criticalBadgePulse 1s infinite;
+}
+
+@keyframes criticalBadgePulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+
+/* Notification Panel */
+.notification-panel {
+  display: none;
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  background-color: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  width: 350px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: var(--z-dropdown);
+  max-height: 400px;
+  overflow: hidden;
+  transform: translateY(-10px);
+  opacity: 0;
+  transition: all 0.3s ease;
+}
+
+.notification-panel.active {
+  display: block;
+  transform: translateY(0);
+  opacity: 1;
+}
+
+/* Notification Panel Header */
+.notification-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  border-bottom: 1px solid #e0e0e0;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  flex-shrink: 0;
+}
+
+.notification-header h3 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1rem;
+  color: #333333;
+}
+
+.notification-count {
+  background-color: var(--prc-red, #a00000);
+  color: white;
+  border-radius: 10px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.mark-all-read {
+  background: none;
+  border: none;
+  color: var(--prc-red, #a00000);
+  cursor: pointer;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+  font-weight: 500;
+}
+
+.mark-all-read:hover {
+  background-color: rgba(160, 0, 0, 0.1);
+}
+
+/* Notification List */
+.notification-list {
+  max-height: 300px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0;
+  margin: 0;
+}
+
+/* Custom scrollbar */
+.notification-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.notification-list::-webkit-scrollbar-track {
+  background: #f8f9fa;
+  border-radius: 3px;
+}
+
+.notification-list::-webkit-scrollbar-thumb {
+  background: var(--prc-red, #a00000);
+  border-radius: 3px;
+  opacity: 0.7;
+}
+
+.notification-list::-webkit-scrollbar-thumb:hover {
+  background: #800000;
+  opacity: 1;
+}
+
+/* Notification Items */
+.notification-item {
+  display: flex;
+  align-items: stretch;
+  padding: 0;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  position: relative;
+  overflow: hidden;
+  min-height: 80px;
+}
+
+.notification-item:hover {
+  background-color: #f8f9fa;
+}
+
+.notification-item:last-child {
+  border-bottom: none;
+}
+
+.notification-item.unread {
+  background-color: #fff5f5;
+}
+
+/* Priority Indicators */
+.notification-item.critical {
+  background-color: #ffebee;
+  border-left: 4px solid #dc3545;
+}
+
+.notification-item.high {
+  background-color: #fff8e1;
+  border-left: 4px solid #fd7e14;
+}
+
+.notification-item.medium {
+  background-color: #fffde7;
+  border-left: 4px solid #ffc107;
+}
+
+.notification-item.low {
+  background-color: #f1f8e9;
+  border-left: 4px solid #28a745;
+}
+
+/* Toast Container */
+.toast-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: var(--z-toast);
+  pointer-events: none;
+  max-width: 400px;
+}
+
+/* Dashboard Content */
+.dashboard-container {
+  padding: 0 2rem 2rem;
+  position: relative;
+  z-index: var(--z-content);
+}
+
+/* Welcome Section */
+.welcome-section {
+  background: linear-gradient(135deg, var(--prc-red, #a00000) 0%, #800000 100%);
+  padding: 2rem 3rem;
+  border-radius: 16px;
+  color: white;
+  margin-bottom: 3rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  position: relative;
+  overflow: hidden;
+  z-index: var(--z-content);
+}
+
+/* Dashboard Main Grid */
+.dashboard-main {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 3rem;
+  margin-bottom: 2rem;
+  position: relative;
+  z-index: var(--z-content);
+}
+
+/* Priority Section */
+.priority-section {
+  position: relative;
+  background: white;
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  border-left: 4px solid var(--prc-red, #a00000);
+  border: 1px solid rgba(160, 0, 0, 0.08);
+  z-index: var(--z-content);
+}
+
+/* Activity Section */
+.recent-activity-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  position: relative;
+  z-index: var(--z-content);
+}
+
+/* Management Hub */
+.management-hub-section {
+  background: white;
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  border-left: 4px solid var(--prc-red, #a00000);
+  height: fit-content;
+  position: sticky;
+  top: 20px;
+  border: 1px solid rgba(160, 0, 0, 0.08);
+  z-index: var(--z-content);
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+  .dashboard-main {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+
+  .management-hub-section {
+    position: static;
+  }
+}
+
+@media (max-width: 768px) {
+  .main-content {
+    margin-left: var(--sidebar-collapsed-width, 70px);
+  }
+
+  .top-header {
+    grid-template-columns: 1fr auto;
+    gap: 1rem;
+    padding: 1rem;
+    margin: 1rem;
+    margin-bottom: 2rem;
+  }
+
+  .header-center {
+    display: none;
+  }
+
+  .notification-panel {
+    width: 300px;
+    right: -10px;
+  }
+
+  .dashboard-container {
+    padding: 0 1rem 1rem;
+  }
+
+  .welcome-section {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 2rem;
+  }
+}
+
+@media (max-width: 576px) {
+  .main-content {
+    margin-left: 0;
+  }
+
+  .top-header {
+    grid-template-columns: 1fr auto;
+    padding: 1rem;
+    margin: 0.5rem;
+    border-radius: 12px;
+  }
+
+  .page-title h2 {
+    font-size: 1.25rem;
+  }
+
+  .notification-panel {
+    width: 280px;
+    right: -5px;
+  }
+
+  .notification-bell,
+  .user-actions button {
+    width: 36px;
+    height: 36px;
+    font-size: 1rem;
+  }
+
+  .dashboard-container {
+    padding: 0 0.5rem 1rem;
+  }
+
+  .welcome-section {
+    margin-bottom: 2rem;
+    padding: 1.5rem;
+    text-align: center;
+  }
+
+  .dashboard-main {
+    gap: 1.5rem;
+  }
+
+  .priority-section,
+  .management-hub-section {
+    padding: 1.5rem;
+    border-radius: 12px;
+  }
+}
+
+/* Loading and Empty States */
+.notification-loading {
+  padding: 2rem;
+  text-align: center;
+  color: #777;
+}
+
+.notification-empty {
+  padding: 2rem;
+  text-align: center;
+  color: #777;
+}
+
+.notification-empty i {
+  font-size: 2rem;
+  color: #ccc;
+  margin-bottom: 1rem;
+  display: block;
+}
+
+.notification-empty h4 {
+  margin: 0 0 0.5rem 0;
+  color: #333;
+  font-size: 1.1rem;
+}
+
+.notification-empty p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #666;
+}
+
+/* Utility Classes for Z-Index Management */
+.z-background { z-index: var(--z-background); }
+.z-base { z-index: var(--z-base); }
+.z-content { z-index: var(--z-content); }
+.z-header { z-index: var(--z-header); }
+.z-sidebar { z-index: var(--z-sidebar); }
+.z-dropdown { z-index: var(--z-dropdown); }
+.z-modal { z-index: var(--z-modal); }
+.z-toast { z-index: var(--z-toast); }
+.z-overlay { z-index: var(--z-overlay); }
+
+/* Fix for overlapping elements */
+.overlay-fix {
+  position: relative;
+  z-index: var(--z-content);
+}
+
+/* Ensure notifications don't interfere with content */
+.content-safe-zone {
+  position: relative;
+  z-index: var(--z-content);
+}
+
+/* Animation fixes */
+.notification-bell.has-new {
+  animation: bellRing 0.8s ease-in-out;
+}
+
+@keyframes bellRing {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-10deg); }
+  75% { transform: rotate(10deg); }
+}
+
+/* Focus management */
+.notification-bell:focus {
+  outline: 2px solid var(--prc-red, #a00000);
+  outline-offset: 2px;
+}
+
+.notification-panel:focus-within {
+  outline: none;
+}
+
+/* Prevent layout shifts */
+.notification-panel {
+  will-change: transform, opacity;
+}
+
+.notification-badge {
+  will-change: transform;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .notification-panel {
+    border: 3px solid #333;
+  }
+  
+  .notification-item {
+    border-bottom: 2px solid #666;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .notification-panel,
+  .notification-bell,
+  .notification-badge {
+    transition: none;
+    animation: none;
+  }
+}

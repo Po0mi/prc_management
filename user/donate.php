@@ -754,6 +754,7 @@ error_log("=== DONATION FORM DEBUG END ===");
       </div>
     </div>
   </div>
+  <script src="js/notifications.js?v=<?php echo time(); ?>"></script>
  <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
   <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
   <script src="js/header.js?v=<?php echo time(); ?>"></script>

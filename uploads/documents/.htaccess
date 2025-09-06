@@ -1,0 +1,6 @@
+# Prevent direct access to uploaded files
+Options -Indexes
+<Files *.php>
+    Order Deny,Allow
+    Deny from all
+</Files>
