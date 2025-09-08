@@ -11,6 +11,102 @@ $current_user_id = $_SESSION['user_id'];
 $current_user_role = current_user_role();
 $is_super_admin = ($current_user_role === 'admin');
 
+// Handle API requests
+if (isset($_GET['api']) && $_GET['api'] === 'geographic') {
+    header('Content-Type: application/json');
+    
+    try {
+        // Get geographic distribution
+        $geographic_sql = "
+            SELECT 
+                COALESCE(barangay, 'Not Specified') as barangay,
+                COALESCE(municipality, 'Not Specified') as municipality,
+                COALESCE(city, 'Not Specified') as city,
+                service,
+                status,
+                COUNT(*) as count
+            FROM volunteers 
+        ";
+        
+        $where_conditions = [];
+        $params = [];
+        
+        // Add service access restriction for non-super-admin users
+        if (!$is_super_admin) {
+            $stmt = $pdo->prepare("
+                SELECT service, access_level 
+                FROM user_service_access 
+                WHERE user_id = ? AND access_level IN ('admin', 'write')
+            ");
+            $stmt->execute([$current_user_id]);
+            $access_results = $stmt->fetchAll();
+            
+            $user_service_access = [];
+            foreach ($access_results as $access) {
+                $user_service_access[] = $access['service'];
+            }
+            
+            if (!empty($user_service_access)) {
+                $placeholders = str_repeat('?,', count($user_service_access) - 1) . '?';
+                $where_conditions[] = "service IN ($placeholders)";
+                $params = array_merge($params, $user_service_access);
+            }
+        }
+        
+        if (!empty($where_conditions)) {
+            $geographic_sql .= " WHERE " . implode(" AND ", $where_conditions);
+        }
+        
+        $geographic_sql .= " GROUP BY barangay, municipality, city, service, status ORDER BY city, municipality, barangay";
+        
+        $stmt = $pdo->prepare($geographic_sql);
+        $stmt->execute($params);
+        $geographic_data = $stmt->fetchAll();
+        
+        // Process data for better structure
+        $locations = [];
+        foreach ($geographic_data as $row) {
+            $location_key = $row['barangay'] . '|' . $row['municipality'] . '|' . $row['city'];
+            
+            if (!isset($locations[$location_key])) {
+                $locations[$location_key] = [
+                    'barangay' => $row['barangay'],
+                    'municipality' => $row['municipality'],
+                    'city' => $row['city'],
+                    'total_volunteers' => 0,
+                    'current_volunteers' => 0,
+                    'graduated_volunteers' => 0,
+                    'services' => []
+                ];
+            }
+            
+            $locations[$location_key]['total_volunteers'] += $row['count'];
+            
+            if ($row['status'] === 'current') {
+                $locations[$location_key]['current_volunteers'] += $row['count'];
+            } else {
+                $locations[$location_key]['graduated_volunteers'] += $row['count'];
+            }
+            
+            if (!isset($locations[$location_key]['services'][$row['service']])) {
+                $locations[$location_key]['services'][$row['service']] = [
+                    'current' => 0,
+                    'graduated' => 0,
+                    'total' => 0
+                ];
+            }
+            
+            $locations[$location_key]['services'][$row['service']][$row['status']] += $row['count'];
+            $locations[$location_key]['services'][$row['service']]['total'] += $row['count'];
+        }
+        
+        echo json_encode(['success' => true, 'data' => array_values($locations)]);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
 // Get user's service access permissions
 $user_service_access = [];
 if (!$is_super_admin) {
@@ -54,6 +150,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $full_name = trim($_POST['full_name']);
         $age = (int)$_POST['age'];
         $location = trim($_POST['location']);
+        $barangay = trim($_POST['barangay']);
+        $municipality = trim($_POST['municipality']);
+        $city = trim($_POST['city']);
         $contact_number = trim($_POST['contact_number']);
         $service = $_POST['service'];
         $status = $_POST['status'];
@@ -63,13 +162,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Check if user has access to this service
         if (!$is_super_admin && !in_array($service, $user_service_access)) {
             $errorMessage = "You don't have permission to add volunteers to this service.";
-        } elseif ($full_name && $age && $location && $contact_number && array_key_exists($service, $accessible_services) && in_array($status, ['current', 'graduated'])) {
+        } elseif ($full_name && $age && $contact_number && array_key_exists($service, $accessible_services) && in_array($status, ['current', 'graduated'])) {
             $stmt = $pdo->prepare("
-                INSERT INTO volunteers (full_name, age, location, contact_number, service, status, email, notes, created_at, created_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
+                INSERT INTO volunteers (full_name, age, location, barangay, municipality, city, contact_number, service, status, email, notes, created_at, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
             ");
             try {
-                $stmt->execute([$full_name, $age, $location, $contact_number, $service, $status, $email, $notes, $current_user_id]);
+                $stmt->execute([$full_name, $age, $location, $barangay, $municipality, $city, $contact_number, $service, $status, $email, $notes, $current_user_id]);
                 $successMessage = "Volunteer '$full_name' added successfully!";
             } catch (Exception $e) {
                 $errorMessage = "Error adding volunteer: " . $e->getMessage();
@@ -83,6 +182,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $full_name = trim($_POST['full_name']);
         $age = (int)$_POST['age'];
         $location = trim($_POST['location']);
+        $barangay = trim($_POST['barangay']);
+        $municipality = trim($_POST['municipality']);
+        $city = trim($_POST['city']);
         $contact_number = trim($_POST['contact_number']);
         $service = $_POST['service'];
         $status = $_POST['status'];
@@ -92,7 +194,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Check if user has access to this service
         if (!$is_super_admin && !in_array($service, $user_service_access)) {
             $errorMessage = "You don't have permission to edit volunteers in this service.";
-        } elseif ($volunteer_id && $full_name && $age && $location && $contact_number && array_key_exists($service, $accessible_services) && in_array($status, ['current', 'graduated'])) {
+        } elseif ($volunteer_id && $full_name && $age && $contact_number && array_key_exists($service, $accessible_services) && in_array($status, ['current', 'graduated'])) {
             // Verify user has access to the volunteer's current service
             $stmt = $pdo->prepare("SELECT service FROM volunteers WHERE volunteer_id = ?");
             $stmt->execute([$volunteer_id]);
@@ -103,10 +205,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $stmt = $pdo->prepare("
                     UPDATE volunteers
-                    SET full_name = ?, age = ?, location = ?, contact_number = ?, service = ?, status = ?, email = ?, notes = ?, updated_at = NOW(), updated_by = ?
+                    SET full_name = ?, age = ?, location = ?, barangay = ?, municipality = ?, city = ?, contact_number = ?, service = ?, status = ?, email = ?, notes = ?, updated_at = NOW(), updated_by = ?
                     WHERE volunteer_id = ?
                 ");
-                $stmt->execute([$full_name, $age, $location, $contact_number, $service, $status, $email, $notes, $current_user_id, $volunteer_id]);
+                $stmt->execute([$full_name, $age, $location, $barangay, $municipality, $city, $contact_number, $service, $status, $email, $notes, $current_user_id, $volunteer_id]);
                 $successMessage = "Volunteer updated successfully!";
             }
         } else {
@@ -132,11 +234,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Get volunteers with service filter
+// Get volunteers with filters
 $service_filter = isset($_GET['service']) ? $_GET['service'] : '';
 $status_filter = isset($_GET['status']) ? $_GET['status'] : '';
+$location_filter = isset($_GET['location']) ? $_GET['location'] : '';
 
-// Validate service filter against user access
+// Validate filters against user access
 if ($service_filter && !$is_super_admin && !in_array($service_filter, $user_service_access)) {
     $service_filter = '';
 }
@@ -161,10 +264,25 @@ if ($status_filter && in_array($status_filter, ['current', 'graduated'])) {
     $params[] = $status_filter;
 }
 
+if ($location_filter) {
+    if ($location_filter === 'no_location') {
+        $where_conditions[] = "(barangay IS NULL OR barangay = '' OR municipality IS NULL OR municipality = '' OR city IS NULL OR city = '')";
+    } else {
+        // Format: "barangay|municipality|city"
+        $location_parts = explode('|', $location_filter);
+        if (count($location_parts) >= 3) {
+            $where_conditions[] = "barangay = ? AND municipality = ? AND city = ?";
+            $params[] = $location_parts[0];
+            $params[] = $location_parts[1];
+            $params[] = $location_parts[2];
+        }
+    }
+}
+
 $where_clause = !empty($where_conditions) ? "WHERE " . implode(" AND ", $where_conditions) : "";
 
 $stmt = $pdo->prepare("
-    SELECT volunteer_id, full_name, age, location, contact_number, service, status, email, notes, created_at
+    SELECT volunteer_id, full_name, age, location, barangay, municipality, city, contact_number, service, status, email, notes, created_at
     FROM volunteers 
     $where_clause
     ORDER BY full_name
@@ -191,6 +309,7 @@ foreach ($accessible_services as $service_key => $service_name) {
 if ($is_super_admin) {
     $total_current = $pdo->query("SELECT COUNT(*) FROM volunteers WHERE status = 'current'")->fetchColumn();
     $total_graduated = $pdo->query("SELECT COUNT(*) FROM volunteers WHERE status = 'graduated'")->fetchColumn();
+    $total_with_location = $pdo->query("SELECT COUNT(*) FROM volunteers WHERE barangay IS NOT NULL AND barangay != '' AND municipality IS NOT NULL AND municipality != '' AND city IS NOT NULL AND city != ''")->fetchColumn();
 } else {
     $placeholders = str_repeat('?,', count($user_service_access) - 1) . '?';
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM volunteers WHERE service IN ($placeholders) AND status = 'current'");
@@ -200,9 +319,34 @@ if ($is_super_admin) {
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM volunteers WHERE service IN ($placeholders) AND status = 'graduated'");
     $stmt->execute($user_service_access);
     $total_graduated = $stmt->fetchColumn();
+    
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM volunteers WHERE service IN ($placeholders) AND barangay IS NOT NULL AND barangay != '' AND municipality IS NOT NULL AND municipality != '' AND city IS NOT NULL AND city != ''");
+    $stmt->execute($user_service_access);
+    $total_with_location = $stmt->fetchColumn();
 }
 
 $total_volunteers = $total_current + $total_graduated;
+
+// Get unique locations for filter
+$location_stmt = $pdo->prepare("
+    SELECT DISTINCT 
+        COALESCE(barangay, 'Not Specified') as barangay,
+        COALESCE(municipality, 'Not Specified') as municipality,
+        COALESCE(city, 'Not Specified') as city,
+        COUNT(*) as volunteer_count
+    FROM volunteers 
+    " . (!$is_super_admin ? "WHERE service IN (" . str_repeat('?,', count($user_service_access) - 1) . "?)" : "") . "
+    GROUP BY barangay, municipality, city
+    HAVING volunteer_count > 0
+    ORDER BY city, municipality, barangay
+");
+
+if (!$is_super_admin) {
+    $location_stmt->execute($user_service_access);
+} else {
+    $location_stmt->execute();
+}
+$unique_locations = $location_stmt->fetchAll();
 
 // Determine page title based on access level
 $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(function($s) use ($services) { return $services[$s]; }, $user_service_access));
@@ -236,7 +380,7 @@ $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(functio
     <div class="page-header">
       <div class="header-content">
         <h1><i class="fas fa-hands-helping"></i> Volunteer Management</h1>
-        <p>Manage volunteers across PRC services with advanced filtering and organization tools</p>
+        <p>Manage volunteers across PRC services with advanced filtering and geographic tracking</p>
       </div>
       <div class="branch-indicator">
         <i class="fas fa-layer-group"></i>
@@ -267,7 +411,7 @@ $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(functio
           <input type="text" id="volunteerSearch" placeholder="Search volunteers by name, location, or contact...">
         </div>
         
-        <!-- Service Filter - Only show accessible services -->
+        <!-- Service Filter -->
         <?php if (count($accessible_services) > 1): ?>
         <div class="role-filter">
           <a href="?<?= http_build_query(array_merge($_GET, ['service' => ''])) ?>" 
@@ -298,6 +442,32 @@ $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(functio
              class="<?= $status_filter === 'graduated' ? 'active' : '' ?>">
             <i class="fas fa-graduation-cap"></i> Graduated
           </a>
+        </div>
+        
+        <!-- Location Filter -->
+        <div class="role-filter">
+          <a href="?<?= http_build_query(array_merge($_GET, ['location' => ''])) ?>" 
+             class="<?= empty($location_filter) ? 'active' : '' ?>">
+            <i class="fas fa-map-marker-alt"></i> All Locations
+          </a>
+          <a href="?<?= http_build_query(array_merge($_GET, ['location' => 'no_location'])) ?>" 
+             class="<?= $location_filter === 'no_location' ? 'active' : '' ?>">
+            <i class="fas fa-map-marker"></i> No Location
+          </a>
+          <?php foreach ($unique_locations as $loc): ?>
+            <?php 
+            $location_key = $loc['barangay'] . '|' . $loc['municipality'] . '|' . $loc['city'];
+            $location_display = ($loc['barangay'] !== 'Not Specified' ? $loc['barangay'] . ', ' : '') . 
+                               ($loc['municipality'] !== 'Not Specified' ? $loc['municipality'] . ', ' : '') . 
+                               ($loc['city'] !== 'Not Specified' ? $loc['city'] : '');
+            $location_display = trim($location_display, ', ');
+            if (empty($location_display)) $location_display = 'Not Specified';
+            ?>
+            <a href="?<?= http_build_query(array_merge($_GET, ['location' => $location_key])) ?>" 
+               class="<?= $location_filter === $location_key ? 'active' : '' ?>">
+              <i class="fas fa-map-pin"></i> <?= htmlspecialchars($location_display) ?> (<?= $loc['volunteer_count'] ?>)
+            </a>
+          <?php endforeach; ?>
         </div>
       </div>
       
@@ -339,6 +509,16 @@ $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(functio
       </div>
       
       <div class="stat-card">
+        <div class="stat-icon" style="background: linear-gradient(135deg, #2196f3 0%, #21cbf3 100%);">
+          <i class="fas fa-map-marker-alt"></i>
+        </div>
+        <div>
+          <div style="font-size: 1.8rem; font-weight: 700; color: var(--dark);"><?= $total_with_location ?></div>
+          <div style="color: var(--gray); font-size: 0.9rem; font-weight: 500;">With Location</div>
+        </div>
+      </div>
+      
+      <div class="stat-card">
         <div class="stat-icon" style="background: linear-gradient(135deg, #9c27b0 0%, #673ab7 100%);">
           <i class="fas fa-layer-group"></i>
         </div>
@@ -347,6 +527,33 @@ $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(functio
           <div style="color: var(--gray); font-size: 0.9rem; font-weight: 500;"><?= $is_super_admin ? 'Services' : 'My Services' ?></div>
         </div>
       </div>
+    </div>
+
+    <!-- Geographic Distribution Section -->
+    <div class="users-table-wrapper" id="geographicSection" style="display: none;">
+      <div class="table-header">
+        <h2 class="table-title">
+          <i class="fas fa-map-marked-alt"></i>
+          Geographic Distribution
+        </h2>
+        <button class="btn-toggle" onclick="toggleGeographicView()">
+          <i class="fas fa-eye-slash"></i> Hide Geographic View
+        </button>
+      </div>
+      
+      <div id="geographicData" class="geographic-grid">
+        <div class="loading-state">
+          <i class="fas fa-spinner fa-spin"></i>
+          <p>Loading geographic data...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toggle Button for Geographic View -->
+    <div class="geographic-toggle">
+      <button class="btn-toggle" onclick="toggleGeographicView()" id="geographicToggle">
+        <i class="fas fa-map-marked-alt"></i> Show Geographic Distribution
+      </button>
     </div>
 
     <!-- Service Statistics -->
@@ -415,6 +622,15 @@ $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(functio
           }
           ?>
           <?= $status_filter ? ' - ' . ucfirst($status_filter) : '' ?>
+          <?php if ($location_filter && $location_filter !== 'no_location'): ?>
+            <?php 
+            $location_parts = explode('|', $location_filter);
+            $location_display = implode(', ', array_filter($location_parts, function($part) { return $part !== 'Not Specified'; }));
+            ?>
+            - <?= htmlspecialchars($location_display) ?>
+          <?php elseif ($location_filter === 'no_location'): ?>
+            - No Location Specified
+          <?php endif; ?>
         </h2>
         <div class="table-controls">
           <span class="volunteer-count"><?= count($volunteers) ?> volunteers found</span>
@@ -434,7 +650,7 @@ $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(functio
               <th>ID</th>
               <th>Full Name</th>
               <th>Age</th>
-              <th>Location</th>
+              <th>Location Details</th>
               <th>Contact Number</th>
               <?php if (count($accessible_services) > 1): ?>
               <th>Service</th>
@@ -459,7 +675,31 @@ $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(functio
                   </div>
                 </td>
                 <td style="font-weight: 500;"><?= htmlspecialchars($v['age']) ?></td>
-                <td><?= htmlspecialchars($v['location']) ?></td>
+                <td>
+                  <div class="location-details">
+                    <?php if (!empty($v['barangay']) || !empty($v['municipality']) || !empty($v['city'])): ?>
+                      <div class="primary-location">
+                        <i class="fas fa-map-marker-alt"></i>
+                        <?php 
+                        $location_parts = array_filter([
+                          $v['barangay'], 
+                          $v['municipality'], 
+                          $v['city']
+                        ]);
+                        echo htmlspecialchars(implode(', ', $location_parts));
+                        ?>
+                      </div>
+                    <?php endif; ?>
+                    <?php if (!empty($v['location'])): ?>
+                      <div class="secondary-location" style="font-size: 0.85em; color: var(--gray); margin-top: 2px;">
+                        <?= htmlspecialchars($v['location']) ?>
+                      </div>
+                    <?php endif; ?>
+                    <?php if (empty($v['barangay']) && empty($v['municipality']) && empty($v['city']) && empty($v['location'])): ?>
+                      <span style="color: var(--gray); font-style: italic;">No location specified</span>
+                    <?php endif; ?>
+                  </div>
+                </td>
                 <td style="font-family: monospace; font-weight: 500;"><?= htmlspecialchars($v['contact_number']) ?></td>
                 <?php if (count($accessible_services) > 1): ?>
                 <td>
@@ -529,12 +769,46 @@ $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(functio
           </div>
         </div>
         
-        <div class="form-group">
-          <label for="location">
-            <i class="fas fa-map-marker-alt"></i>
-            Location *
-          </label>
-          <input type="text" id="location" name="location" required placeholder="Enter complete address">
+        <!-- Enhanced Location Fields -->
+        <div class="form-section">
+          <h3 class="section-title">
+            <i class="fas fa-map-marked-alt"></i>
+            Location Information
+          </h3>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label for="barangay">
+                <i class="fas fa-map-pin"></i>
+                Barangay
+              </label>
+              <input type="text" id="barangay" name="barangay" placeholder="Enter barangay">
+            </div>
+            
+            <div class="form-group">
+              <label for="municipality">
+                <i class="fas fa-building"></i>
+                Municipality
+              </label>
+              <input type="text" id="municipality" name="municipality" placeholder="Enter municipality">
+            </div>
+            
+            <div class="form-group">
+              <label for="city">
+                <i class="fas fa-city"></i>
+                City/Province
+              </label>
+              <input type="text" id="city" name="city" placeholder="Enter city or province">
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label for="location">
+              <i class="fas fa-map-marker-alt"></i>
+              Complete Address (Optional)
+            </label>
+            <textarea id="location" name="location" placeholder="Enter complete address or additional location details" rows="2"></textarea>
+          </div>
         </div>
         
         <div class="form-row">
@@ -595,10 +869,14 @@ $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(functio
       </form>
     </div>
   </div>
+
 <script src="../admin/js/notification_frontend.js?v=<?php echo time(); ?>"></script>
   <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
   <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
   <script>
+    let geographicDataLoaded = false;
+    let geographicVisible = false;
+    
     function openCreateModal() {
       document.getElementById('modalTitle').innerHTML = '<i class="fas fa-user-plus"></i> Add New Volunteer';
       document.getElementById('formAction').name = 'create_volunteer';
@@ -619,7 +897,10 @@ $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(functio
       document.getElementById('volunteerId').value = volunteer.volunteer_id;
       document.getElementById('full_name').value = volunteer.full_name;
       document.getElementById('age').value = volunteer.age;
-      document.getElementById('location').value = volunteer.location;
+      document.getElementById('location').value = volunteer.location || '';
+      document.getElementById('barangay').value = volunteer.barangay || '';
+      document.getElementById('municipality').value = volunteer.municipality || '';
+      document.getElementById('city').value = volunteer.city || '';
       document.getElementById('contact_number').value = volunteer.contact_number;
       document.getElementById('service').value = volunteer.service;
       document.getElementById('status').value = volunteer.status;
@@ -634,6 +915,137 @@ $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(functio
     
     function confirmDelete(name) {
       return confirm(`Are you sure you want to delete the volunteer "${name}"?\n\nThis action cannot be undone and will remove all associated training records and activities.`);
+    }
+    
+    // Geographic data functions
+    function toggleGeographicView() {
+      const section = document.getElementById('geographicSection');
+      const toggle = document.getElementById('geographicToggle');
+      
+      geographicVisible = !geographicVisible;
+      
+      if (geographicVisible) {
+        section.style.display = 'block';
+        toggle.innerHTML = '<i class="fas fa-eye-slash"></i> Hide Geographic Distribution';
+        
+        if (!geographicDataLoaded) {
+          loadGeographicData();
+        }
+      } else {
+        section.style.display = 'none';
+        toggle.innerHTML = '<i class="fas fa-map-marked-alt"></i> Show Geographic Distribution';
+      }
+    }
+    
+    function loadGeographicData() {
+      fetch('?api=geographic')
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            renderGeographicData(data.data);
+            geographicDataLoaded = true;
+          } else {
+            document.getElementById('geographicData').innerHTML = `
+              <div class="error-state">
+                <i class="fas fa-exclamation-triangle"></i>
+                <p>Error loading geographic data: ${data.error}</p>
+              </div>
+            `;
+          }
+        })
+        .catch(error => {
+          console.error('Error loading geographic data:', error);
+          document.getElementById('geographicData').innerHTML = `
+            <div class="error-state">
+              <i class="fas fa-exclamation-triangle"></i>
+              <p>Failed to load geographic data. Please try again.</p>
+            </div>
+          `;
+        });
+    }
+    
+    function renderGeographicData(locations) {
+      const container = document.getElementById('geographicData');
+      
+      if (locations.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <i class="fas fa-map-marked"></i>
+            <h3>No geographic data available</h3>
+            <p>Start adding location information to volunteers to see geographic distribution</p>
+          </div>
+        `;
+        return;
+      }
+      
+      const services = <?= json_encode($services) ?>;
+      
+      let html = '<div class="location-cards">';
+      
+      locations.forEach(location => {
+        const locationDisplay = [
+          location.barangay !== 'Not Specified' ? location.barangay : null,
+          location.municipality !== 'Not Specified' ? location.municipality : null,
+          location.city !== 'Not Specified' ? location.city : null
+        ].filter(Boolean).join(', ') || 'Location Not Specified';
+        
+        const locationKey = `${location.barangay}|${location.municipality}|${location.city}`;
+        
+        html += `
+          <div class="location-card">
+            <div class="location-header">
+              <div class="location-icon">
+                <i class="fas fa-map-marker-alt"></i>
+              </div>
+              <div class="location-info">
+                <h3>${locationDisplay}</h3>
+                <p>${location.total_volunteers} volunteers</p>
+              </div>
+            </div>
+            
+            <div class="location-stats">
+              <div class="stat-item">
+                <span class="stat-value">${location.current_volunteers}</span>
+                <span class="stat-label">Current</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-value">${location.graduated_volunteers}</span>
+                <span class="stat-label">Graduated</span>
+              </div>
+            </div>
+            
+            <div class="location-services">
+              <h4>Services Available:</h4>
+              <div class="service-list">
+        `;
+        
+        Object.keys(location.services).forEach(serviceKey => {
+          const service = location.services[serviceKey];
+          const serviceName = services[serviceKey] || serviceKey;
+          
+          html += `
+            <div class="service-item">
+              <span class="service-name">${serviceName}</span>
+              <span class="service-count">${service.total}</span>
+            </div>
+          `;
+        });
+        
+        html += `
+              </div>
+            </div>
+            
+            <div class="location-actions">
+              <a href="?location=${encodeURIComponent(locationKey)}" class="btn-location-view">
+                <i class="fas fa-eye"></i> View Volunteers
+              </a>
+            </div>
+          </div>
+        `;
+      });
+      
+      html += '</div>';
+      container.innerHTML = html;
     }
     
     // Close modal when clicking outside
@@ -705,6 +1117,15 @@ $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(functio
       return true;
     });
     
+    // Auto-capitalize location fields
+    ['barangay', 'municipality', 'city'].forEach(fieldId => {
+      document.getElementById(fieldId).addEventListener('blur', function() {
+        this.value = this.value.replace(/\w\S*/g, (txt) => 
+          txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase()
+        );
+      });
+    });
+    
     // Auto-capitalize names
     document.getElementById('full_name').addEventListener('blur', function() {
       this.value = this.value.replace(/\w\S*/g, (txt) => 
@@ -721,6 +1142,11 @@ $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(functio
       if (e.ctrlKey && e.key === 'n' && !document.getElementById('volunteerModal').classList.contains('active')) {
         e.preventDefault();
         openCreateModal();
+      }
+      
+      if (e.ctrlKey && e.key === 'g') {
+        e.preventDefault();
+        toggleGeographicView();
       }
     });
     

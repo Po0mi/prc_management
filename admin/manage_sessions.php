@@ -420,18 +420,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_session'])) {
 }
 
 // Handle REGISTRATION ACTIONS
+// Handle REGISTRATION ACTIONS
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_registration_status'])) {
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
         $errorMessage = "Security error: Invalid form submission.";
     } else {
-        $registration_id = (int)($_POST['registration_id'] ?? 0);
-        $new_status = $_POST['new_status'] ?? '';
+        $registration_id = isset($_POST['registration_id']) ? (int)$_POST['registration_id'] : 0;
+        $new_status = isset($_POST['new_status']) ? trim($_POST['new_status']) : '';
         
-        if ($registration_id > 0 && in_array($new_status, ['pending', 'approved', 'rejected'])) {
+        // Debug logging for local environment
+        error_log("DEBUG: Registration ID: $registration_id, New Status: $new_status");
+        
+        if ($registration_id <= 0) {
+            $errorMessage = "Invalid registration ID: $registration_id";
+        } elseif (!in_array($new_status, ['pending', 'approved', 'rejected'])) {
+            $errorMessage = "Invalid status: $new_status";
+        } else {
             try {
                 // Check if user has access to this registration's session
                 $stmt = $pdo->prepare("
-                    SELECT ts.major_service, ts.session_id, ts.created_by
+                    SELECT ts.major_service, ts.session_id, ts.created_by, sr.registration_id
                     FROM session_registrations sr 
                     JOIN training_sessions ts ON sr.session_id = ts.session_id 
                     WHERE sr.registration_id = ?
@@ -440,25 +448,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_registration_s
                 $regSession = $stmt->fetch();
                 
                 if (!$regSession) {
-                    $errorMessage = "Registration not found.";
+                    $errorMessage = "Registration not found for ID: $registration_id";
                 } else if ($hasRestrictedAccess && !in_array($regSession['major_service'], $allowedServices) && $regSession['created_by'] != $current_user_id) {
                     $errorMessage = "You don't have permission to manage this registration.";
                 } else {
                     $stmt = $pdo->prepare("UPDATE session_registrations SET status = ? WHERE registration_id = ?");
                     $result = $stmt->execute([$new_status, $registration_id]);
                     
-                    if ($result) {
-                        $successMessage = "Registration status updated successfully!";
+                    if ($result && $stmt->rowCount() > 0) {
+                        $successMessage = "Registration status updated to '$new_status' successfully!";
                         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
                     } else {
-                        $errorMessage = "Failed to update registration status.";
+                        $errorMessage = "Failed to update registration status. No rows affected.";
                     }
                 }
             } catch (PDOException $e) {
+                error_log("Registration update error: " . $e->getMessage());
                 $errorMessage = handleDatabaseError($e);
             }
-        } else {
-            $errorMessage = "Invalid registration data.";
         }
     }
 }
@@ -1110,53 +1117,56 @@ if (!function_exists('get_role_color')) {
               </div>
             </td>
             <td>
-              <div class="reg-actions">
-                <?php if ($reg['status'] !== 'approved'): ?>
-                  <form method="POST" style="display: inline; margin-bottom: 0.3rem;">
-                    <input type="hidden" name="update_registration_status" value="1">
-                    <input type="hidden" name="registration_id" value="<?= $reg['registration_id'] ?>">
-                    <input type="hidden" name="new_status" value="approved">
-                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-                    <button type="submit" class="btn-reg-action btn-approve">
-                      <i class="fas fa-check"></i> Approve
-                    </button>
-                  </form>
-                <?php endif; ?>
-                
-                <?php if ($reg['status'] !== 'rejected'): ?>
-                  <form method="POST" style="display: inline; margin-bottom: 0.3rem;">
-                    <input type="hidden" name="update_registration_status" value="1">
-                    <input type="hidden" name="registration_id" value="<?= $reg['registration_id'] ?>">
-                    <input type="hidden" name="new_status" value="rejected">
-                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-                    <button type="submit" class="btn-reg-action btn-reject">
-                      <i class="fas fa-times"></i> Reject
-                    </button>
-                  </form>
-                <?php endif; ?>
-                
-                <?php if ($reg['status'] !== 'pending'): ?>
-                  <form method="POST" style="display: inline; margin-bottom: 0.3rem;">
-                    <input type="hidden" name="update_registration_status" value="1">
-                    <input type="hidden" name="registration_id" value="<?= $reg['registration_id'] ?>">
-                    <input type="hidden" name="new_status" value="pending">
-                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-                    <button type="submit" class="btn-reg-action btn-pending">
-                      <i class="fas fa-clock"></i> Pending
-                    </button>
-                  </form>
-                <?php endif; ?>
-                
-                <form method="POST" style="display: inline;" onsubmit="return confirmDeleteRegistration();">
-                  <input type="hidden" name="delete_registration" value="1">
-                  <input type="hidden" name="registration_id" value="<?= $reg['registration_id'] ?>">
-                  <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-                  <button type="submit" class="btn-reg-action btn-delete-reg">
-                    <i class="fas fa-trash"></i> Delete
-                  </button>
-                </form>
-              </div>
-            </td>
+    <div class="reg-actions">
+        <?php if ($reg['status'] !== 'approved'): ?>
+            <form method="POST" style="display: inline; margin-bottom: 0.3rem;">
+                <input type="hidden" name="update_registration_status" value="1">
+                <input type="hidden" name="registration_id" value="<?= (int)$reg['registration_id'] ?>">
+                <input type="hidden" name="new_status" value="approved">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                <button type="submit" class="btn-reg-action btn-approve" 
+                        onclick="return confirm('Approve this registration?');">
+                    <i class="fas fa-check"></i> Approve
+                </button>
+            </form>
+        <?php endif; ?>
+        
+        <?php if ($reg['status'] !== 'rejected'): ?>
+            <form method="POST" style="display: inline; margin-bottom: 0.3rem;">
+                <input type="hidden" name="update_registration_status" value="1">
+                <input type="hidden" name="registration_id" value="<?= (int)$reg['registration_id'] ?>">
+                <input type="hidden" name="new_status" value="rejected">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                <button type="submit" class="btn-reg-action btn-reject" 
+                        onclick="return confirm('Reject this registration?');">
+                    <i class="fas fa-times"></i> Reject
+                </button>
+            </form>
+        <?php endif; ?>
+        
+        <?php if ($reg['status'] !== 'pending'): ?>
+            <form method="POST" style="display: inline; margin-bottom: 0.3rem;">
+                <input type="hidden" name="update_registration_status" value="1">
+                <input type="hidden" name="registration_id" value="<?= (int)$reg['registration_id'] ?>">
+                <input type="hidden" name="new_status" value="pending">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                <button type="submit" class="btn-reg-action btn-pending" 
+                        onclick="return confirm('Set registration to pending?');">
+                    <i class="fas fa-clock"></i> Pending
+                </button>
+            </form>
+        <?php endif; ?>
+        
+        <form method="POST" style="display: inline;" onsubmit="return confirmDeleteRegistration();">
+            <input type="hidden" name="delete_registration" value="1">
+            <input type="hidden" name="registration_id" value="<?= (int)$reg['registration_id'] ?>">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+            <button type="submit" class="btn-reg-action btn-delete-reg">
+                <i class="fas fa-trash"></i> Delete
+            </button>
+        </form>
+    </div>
+</td>
           </tr>
         <?php endforeach; ?>
       </tbody>
@@ -1516,8 +1526,8 @@ if (!function_exists('get_role_color')) {
         </div>
     </div>
 </div>
-            <div class="form-group venue-group">
-    <label for "venue">
+    <div class="form-group venue-group">
+    <label for="venue">
         Training Venue & Directions *
         <span class="field-hint">Include full address and travel instructions</span>
     </label>
@@ -2075,108 +2085,107 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
     // Form validation
-    const sessionForm = document.getElementById('sessionForm');
-    if (sessionForm) {
-        sessionForm.addEventListener('submit', function(e) {
-            const startDate = document.getElementById('session_date')?.value;
-            const endDate = document.getElementById('session_end_date_input')?.value;
-            const startTime = document.getElementById('start_time')?.value;
-            const endTime = document.getElementById('end_time')?.value;
-            const title = document.getElementById('title')?.value.trim();
-            const venue = document.getElementById('venue')?.value.trim();
-            const majorService = document.getElementById('major_service')?.value;
-            const formAction = document.getElementById('formAction');
-            const isCreating = formAction ? formAction.name === 'create_session' : false;
-            
-            if (!title) {
+   if (sessionForm) {
+    sessionForm.addEventListener('submit', function(e) {
+        const startDate = document.getElementById('session_date')?.value;
+        const endDate = document.getElementById('session_end_date_input')?.value;
+        const startTime = document.getElementById('start_time')?.value;
+        const endTime = document.getElementById('end_time')?.value;
+        const title = document.getElementById('title')?.value.trim();
+        const venue = document.getElementById('venue')?.value.trim();
+        const majorService = document.getElementById('major_service')?.value;
+        const formAction = document.getElementById('formAction');
+        const isCreating = formAction ? formAction.name === 'create_session' : false;
+        
+        if (!title) {
+            e.preventDefault();
+            alert('Please enter a session title.');
+            return;
+        }
+        
+        if (!venue) {
+            e.preventDefault();
+            alert('Please enter a venue.');
+            return;
+        }
+        
+        if (!majorService) {
+            e.preventDefault();
+            alert('Please select a major service.');
+            return;
+        }
+        
+        if (!startDate) {
+            e.preventDefault();
+            alert('Please select a start date.');
+            return;
+        }
+        
+        if (!endDate) {
+            e.preventDefault();
+            alert('Please select an end date.');
+            return;
+        }
+        
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        
+        if (end < start) {
+            e.preventDefault();
+            alert('End date cannot be before start date.');
+            return;
+        }
+        
+        const finalDuration = calculateSessionDurationDays();
+        if (finalDuration > 365) {
+            e.preventDefault();
+            alert('Session duration cannot exceed 365 days.');
+            return;
+        }
+        
+        if (endTime <= startTime) {
+            e.preventDefault();
+            alert('End time must be after start time');
+            return;
+        }
+        
+        const startDateTime = new Date(`2000-01-01T${startTime}`);
+        const endDateTime = new Date(`2000-01-01T${endTime}`);
+        const timeDuration = (endDateTime - startDateTime) / (1000 * 60 * 60);
+        
+        if (timeDuration < 1) {
+            e.preventDefault();
+            alert('Session must be at least 1 hour long');
+            return;
+        }
+        
+        if (isCreating && typeof hasRestrictedAccess !== 'undefined' && hasRestrictedAccess && typeof allowedServices !== 'undefined' && allowedServices && allowedServices.length > 0) {
+            if (!allowedServices.includes(majorService)) {
                 e.preventDefault();
-                alert('Please enter a session title.');
+                alert("You don't have permission to create sessions for " + majorService + 
+                      "\n\nYou can only create sessions for: " + allowedServices.join(', '));
                 return;
             }
-            
-            if (!venue) {
-                e.preventDefault();
-                alert('Please enter a venue.');
-                return;
-            }
-            
-            if (!majorService) {
-                e.preventDefault();
-                alert('Please select a major service.');
-                return;
-            }
-            
-            if (!startDate) {
-                e.preventDefault();
-                alert('Please select a start date.');
-                return;
-            }
-            
-            if (!endDate) {
-                e.preventDefault();
-                alert('Please select an end date.');
-                return;
-            }
-            
-            const start = new Date(startDate);
-            const end = new Date(endDate);
-            
-            if (end < start) {
-                e.preventDefault();
-                alert('End date cannot be before start date.');
-                return;
-            }
-            
-            const finalDuration = calculateSessionDurationDays();
-            if (finalDuration > 365) {
-                e.preventDefault();
-                alert('Session duration cannot exceed 365 days.');
-                return;
-            }
-            
-            if (endTime <= startTime) {
-                e.preventDefault();
-                alert('End time must be after start time');
-                return;
-            }
-            
-            const startDateTime = new Date(`2000-01-01T${startTime}`);
-            const endDateTime = new Date(`2000-01-01T${endTime}`);
-            const timeDuration = (endDateTime - startDateTime) / (1000 * 60 * 60);
-            
-            if (timeDuration < 1) {
-                e.preventDefault();
-                alert('Session must be at least 1 hour long');
-                return;
-            }
-            
-            if (isCreating && typeof hasRestrictedAccess !== 'undefined' && hasRestrictedAccess && typeof allowedServices !== 'undefined' && allowedServices && allowedServices.length > 0) {
-                if (!allowedServices.includes(majorService)) {
-                    e.preventDefault();
-                    alert("You don't have permission to create sessions for " + majorService + 
-                          "\n\nYou can only create sessions for: " + allowedServices.join(', '));
-                    return;
-                }
-            }
-            
-            const selectedDate = new Date(startDate);
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            
-            if (selectedDate < today && isCreating) {
-                e.preventDefault();
-                alert('Session date cannot be in the past for new sessions');
-                return;
-            }
-            
-            const submitBtn = this.querySelector('.btn-submit');
-            if (submitBtn) {
-                const originalText = submitBtn.innerHTML;
-                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-                submitBtn.disabled = true;
-            }
-        });
-    }
+        }
+        
+        const selectedDate = new Date(startDate);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        if (selectedDate < today && isCreating) {
+            e.preventDefault();
+            alert('Session date cannot be in the past for new sessions');
+            return;
+        }
+        
+        const submitBtn = this.querySelector('.btn-submit');
+        if (submitBtn) {
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+            submitBtn.disabled = true;
+        }
+    });
+}
     
     // Modal close on outside click
     const sessionModal = document.getElementById('sessionModal');
@@ -2606,6 +2615,154 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+// Document viewer function
+function viewDocument(filePath) {
+    if (!filePath) {
+        alert('No document path provided');
+        return;
+    }
+    
+    // Ensure the file path is properly formatted
+    let documentPath = filePath;
+    if (!documentPath.startsWith('http') && !documentPath.startsWith('/')) {
+        // If it's a relative path, make sure it's relative to the root
+        documentPath = '../' + filePath;
+    }
+    
+    // Create modal for document viewing
+    const existingModal = document.querySelector('.document-modal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+    
+    const modal = document.createElement('div');
+    modal.className = 'document-modal';
+    modal.innerHTML = `
+        <div class="document-modal-content">
+            <div class="document-modal-header">
+                <h3>
+                    <i class="fas fa-file-alt"></i>
+                    Document Viewer
+                </h3>
+                <button class="document-modal-close" onclick="closeDocumentModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="document-modal-body">
+                <div class="document-loading">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    Loading document...
+                </div>
+                <div class="document-content" style="display: none;">
+                    <!-- Document will be loaded here -->
+                </div>
+                <div class="document-actions">
+                    <a href="${documentPath}" target="_blank" class="btn-download">
+                        <i class="fas fa-external-link-alt"></i> Open in New Tab
+                    </a>
+                    <a href="${documentPath}" download class="btn-download">
+                        <i class="fas fa-download"></i> Download
+                    </a>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Show modal
+    setTimeout(() => {
+        modal.classList.add('active');
+    }, 10);
+    
+    // Load document content
+    loadDocumentContent(documentPath, modal);
+    
+    // Close on outside click
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) {
+            closeDocumentModal();
+        }
+    });
+    
+    window.currentDocumentModal = modal;
+    document.body.style.overflow = 'hidden';
+}
+
+// Load document content based on file type
+function loadDocumentContent(filePath, modal) {
+    const loadingDiv = modal.querySelector('.document-loading');
+    const contentDiv = modal.querySelector('.document-content');
+    
+    // Get file extension
+    const extension = filePath.split('.').pop().toLowerCase();
+    
+    setTimeout(() => {
+        loadingDiv.style.display = 'none';
+        contentDiv.style.display = 'block';
+        
+        if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(extension)) {
+            // Image file
+            contentDiv.innerHTML = `
+                <div class="image-viewer">
+                    <img src="${filePath}" alt="Document" style="max-width: 100%; max-height: 70vh; object-fit: contain;" 
+                         onload="this.style.opacity='1'" 
+                         onerror="showImageError(this)"
+                         style="opacity: 0; transition: opacity 0.3s;">
+                </div>
+            `;
+        } else if (extension === 'pdf') {
+            // PDF file
+            contentDiv.innerHTML = `
+                <div class="pdf-viewer">
+                    <iframe src="${filePath}" width="100%" height="500px" style="border: none; border-radius: 8px;">
+                        <p>Your browser does not support PDFs. 
+                           <a href="${filePath}" target="_blank">Click here to view the PDF</a>
+                        </p>
+                    </iframe>
+                </div>
+            `;
+        } else {
+            // Other document files
+            contentDiv.innerHTML = `
+                <div class="document-preview">
+                    <div class="file-icon">
+                        <i class="fas fa-file-alt"></i>
+                    </div>
+                    <h4>${filePath.split('/').pop()}</h4>
+                    <p>This document can be downloaded or opened in a new tab for viewing.</p>
+                    <div class="file-info">
+                        <span class="file-type">${extension.toUpperCase()} File</span>
+                    </div>
+                </div>
+            `;
+        }
+    }, 500);
+}
+
+// Handle image load error
+function showImageError(img) {
+    img.parentElement.innerHTML = `
+        <div class="error-message">
+            <i class="fas fa-exclamation-triangle"></i>
+            <h4>Unable to load image</h4>
+            <p>The image file may be missing or corrupted. Try using the "Open in New Tab" or "Download" buttons below.</p>
+        </div>
+    `;
+}
+
+// Close document modal
+function closeDocumentModal() {
+    const modal = window.currentDocumentModal || document.querySelector('.document-modal');
+    if (modal) {
+        modal.classList.remove('active');
+        setTimeout(() => {
+            modal.remove();
+            window.currentDocumentModal = null;
+            document.body.style.overflow = '';
+        }, 300);
+    }
 }
 // CSS Styles for Multi-Day Sessions
 const sessionStyles = `

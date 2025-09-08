@@ -901,33 +901,45 @@ if (!function_exists('get_role_color')) {
                         <?= ucfirst($reg['status']) ?>
                       </span>
                     </td>
-                    <td>
-                      <div class="document-links">
-                        <?php if (!empty($reg['valid_id_path'])): ?>
-                          <a href="../<?= htmlspecialchars($reg['valid_id_path']) ?>" target="_blank" class="doc-link" style="font-size: 0.8rem; padding: 0.2rem 0.5rem;">
-                            <i class="fas fa-id-card"></i> ID
-                          </a>
-                        <?php endif; ?>
-                        <?php if (!empty($reg['requirements_path'])): ?>
-                          <a href="../<?= htmlspecialchars($reg['requirements_path']) ?>" target="_blank" class="doc-link" style="font-size: 0.8rem; padding: 0.2rem 0.5rem;">
-                            <i class="fas fa-file-alt"></i> Requirements
-                          </a>
-                        <?php endif; ?>
-                        <?php if (!empty($reg['documents_path'])): ?>
-                          <a href="../<?= htmlspecialchars($reg['documents_path']) ?>" target="_blank" class="doc-link" style="font-size: 0.8rem; padding: 0.2rem 0.5rem;">
-                            <i class="fas fa-file-alt"></i> Documents
-                          </a>
-                        <?php endif; ?>
-                        <?php if (!empty($reg['receipt_path'])): ?>
-                          <a href="../<?= htmlspecialchars($reg['receipt_path']) ?>" target="_blank" class="doc-link" style="font-size: 0.8rem; padding: 0.2rem 0.5rem;">
-                            <i class="fas fa-receipt"></i> Receipt
-                          </a>
-                        <?php endif; ?>
-                        <?php if (empty($reg['valid_id_path']) && empty($reg['requirements_path']) && empty($reg['documents_path']) && empty($reg['receipt_path'])): ?>
-                          <span style="color: var(--gray); font-size: 0.8rem;">No documents</span>
-                        <?php endif; ?>
-                      </div>
-                    </td>
+                 <td>
+  <div class="document-links" style="display: flex; flex-direction: column; gap: 0.2rem;">
+    <?php if (!empty($reg['valid_id_path'])): ?>
+      <button onclick="viewDocument('<?= htmlspecialchars($reg['valid_id_path']) ?>')" 
+              class="doc-link" style="font-size: 0.7rem; padding: 0.2rem 0.4rem;">
+        <i class="fas fa-id-card"></i> Valid ID
+      </button>
+    <?php endif; ?>
+    
+    <?php if (!empty($reg['requirements_path'])): ?>
+      <button onclick="viewDocument('<?= htmlspecialchars($reg['requirements_path']) ?>')" 
+              class="doc-link" style="font-size: 0.7rem; padding: 0.2rem 0.4rem;">
+        <i class="fas fa-file-alt"></i> Requirements
+      </button>
+    <?php endif; ?>
+    
+    <?php if (!empty($reg['documents_path'])): ?>
+      <button onclick="viewDocument('<?= htmlspecialchars($reg['documents_path']) ?>')" 
+              class="doc-link" style="font-size: 0.7rem; padding: 0.2rem 0.4rem;">
+        <i class="fas fa-file-alt"></i> Documents
+      </button>
+    <?php endif; ?>
+    
+    <?php if (!empty($reg['receipt_path'])): ?>
+      <button onclick="viewDocument('<?= htmlspecialchars($reg['receipt_path']) ?>')" 
+              class="doc-link" style="font-size: 0.7rem; padding: 0.2rem 0.4rem;">
+        <i class="fas fa-receipt"></i> Receipt
+      </button>
+    <?php endif; ?>
+    
+    <?php if (empty($reg['valid_id_path']) && empty($reg['requirements_path']) && empty($reg['documents_path']) && empty($reg['receipt_path'])): ?>
+      <span style="color: var(--gray); font-size: 0.7rem;">No documents</span>
+    <?php else: ?>
+      <div style="font-size: 0.6rem; color: var(--gray); margin-top: 0.2rem;">
+        <?= (int)!empty($reg['valid_id_path']) + (int)!empty($reg['requirements_path']) + (int)!empty($reg['documents_path']) + (int)!empty($reg['receipt_path']) ?> file(s)
+      </div>
+    <?php endif; ?>
+  </div>
+</td>
                     <td>
                       <div class="reg-actions">
                         <?php if ($reg['status'] !== 'approved'): ?>
@@ -2052,6 +2064,161 @@ function filterStatus(status) {
     
     window.location.search = urlParams.toString();
 }
+// Document viewer function for events
+function viewDocument(filePath) {
+    if (!filePath) {
+        alert('No document path provided');
+        return;
+    }
+    
+    // Ensure the file path is properly formatted
+    let documentPath = filePath;
+    if (!documentPath.startsWith('http') && !documentPath.startsWith('/')) {
+        // If it's a relative path, make sure it's relative to the root
+        documentPath = '../' + filePath;
+    }
+    
+    // Create modal for document viewing
+    const existingModal = document.querySelector('.document-modal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+    
+    const modal = document.createElement('div');
+    modal.className = 'document-modal';
+    modal.innerHTML = `
+        <div class="document-modal-content">
+            <div class="document-modal-header">
+                <h3>
+                    <i class="fas fa-file-alt"></i>
+                    Document Viewer
+                </h3>
+                <button class="document-modal-close" onclick="closeDocumentModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="document-modal-body">
+                <div class="document-loading">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    Loading document...
+                </div>
+                <div class="document-content" style="display: none;">
+                    <!-- Document will be loaded here -->
+                </div>
+                <div class="document-actions">
+                    <a href="${documentPath}" target="_blank" class="btn-download">
+                        <i class="fas fa-external-link-alt"></i> Open in New Tab
+                    </a>
+                    <a href="${documentPath}" download class="btn-download">
+                        <i class="fas fa-download"></i> Download
+                    </a>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Show modal
+    setTimeout(() => {
+        modal.classList.add('active');
+    }, 10);
+    
+    // Load document content
+    loadDocumentContent(documentPath, modal);
+    
+    // Close on outside click
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) {
+            closeDocumentModal();
+        }
+    });
+    
+    window.currentDocumentModal = modal;
+    document.body.style.overflow = 'hidden';
+}
+
+// Load document content based on file type
+function loadDocumentContent(filePath, modal) {
+    const loadingDiv = modal.querySelector('.document-loading');
+    const contentDiv = modal.querySelector('.document-content');
+    
+    // Get file extension
+    const extension = filePath.split('.').pop().toLowerCase();
+    
+    setTimeout(() => {
+        loadingDiv.style.display = 'none';
+        contentDiv.style.display = 'block';
+        
+        if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(extension)) {
+            // Image file
+            contentDiv.innerHTML = `
+                <div class="image-viewer">
+                    <img src="${filePath}" alt="Document" style="max-width: 100%; max-height: 70vh; object-fit: contain;" 
+                         onload="this.style.opacity='1'" 
+                         onerror="showImageError(this)"
+                         style="opacity: 0; transition: opacity 0.3s;">
+                </div>
+            `;
+        } else if (extension === 'pdf') {
+            // PDF file
+            contentDiv.innerHTML = `
+                <div class="pdf-viewer">
+                    <iframe src="${filePath}" width="100%" height="500px" style="border: none; border-radius: 8px;">
+                        <p>Your browser does not support PDFs. 
+                           <a href="${filePath}" target="_blank">Click here to view the PDF</a>
+                        </p>
+                    </iframe>
+                </div>
+            `;
+        } else {
+            // Other document files
+            contentDiv.innerHTML = `
+                <div class="document-preview">
+                    <div class="file-icon">
+                        <i class="fas fa-file-alt"></i>
+                    </div>
+                    <h4>${filePath.split('/').pop()}</h4>
+                    <p>This document can be downloaded or opened in a new tab for viewing.</p>
+                    <div class="file-info">
+                        <span class="file-type">${extension.toUpperCase()} File</span>
+                    </div>
+                </div>
+            `;
+        }
+    }, 500);
+}
+
+// Handle image load error
+function showImageError(img) {
+    img.parentElement.innerHTML = `
+        <div class="error-message">
+            <i class="fas fa-exclamation-triangle"></i>
+            <h4>Unable to load image</h4>
+            <p>The image file may be missing or corrupted. Try using the "Open in New Tab" or "Download" buttons below.</p>
+        </div>
+    `;
+}
+
+// Close document modal
+function closeDocumentModal() {
+    const modal = window.currentDocumentModal || document.querySelector('.document-modal');
+    if (modal) {
+        modal.classList.remove('active');
+        setTimeout(() => {
+            modal.remove();
+            window.currentDocumentModal = null;
+            document.body.style.overflow = '';
+        }, 300);
+    }
+}
+
+// Add keyboard support for document modal in events
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && window.currentDocumentModal) {
+        closeDocumentModal();
+    }
+});
 </script>
 
 

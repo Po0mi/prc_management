@@ -311,7 +311,14 @@ function markAsRead($pdo, $user_id, $notification_id) {
     }
     
     try {
-        // Create table if it doesn't exist
+        // Handle registration notifications differently
+        if (strpos($notification_id, 'registration_') === 0) {
+            $realId = str_replace('registration_', '', $notification_id);
+            $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?");
+            return $stmt->execute([$realId, $user_id]);
+        }
+        
+        // Your existing code for other notification types
         createNotificationReadTable($pdo);
         
         $stmt = $pdo->prepare("
@@ -410,7 +417,40 @@ function markAllAsRead($pdo, $user_id) {
         return false;
     }
 }
+// Add this section to your existing getNewNotifications function
+// Check for registration status notifications
+try {
+    $stmt = $pdo->prepare("
+        SELECT id, type, title, message, icon, url, created_at
+        FROM notifications 
+        WHERE user_id = ? AND is_read = 0 AND created_at > ?
+        ORDER BY created_at DESC LIMIT 5
+    ");
+    $stmt->execute([$user_id, $sinceDate]);
+    $regNotifications = $stmt->fetchAll();
 
+    foreach ($regNotifications as $regNotif) {
+        $notificationId = 'registration_' . $regNotif['id'];
+        
+        // Skip if already read
+        if (in_array($notificationId, $readNotifications)) {
+            continue;
+        }
+        
+        $notifications[] = [
+            'id' => $notificationId,
+            'type' => $regNotif['type'],
+            'title' => $regNotif['title'],
+            'message' => $regNotif['message'],
+            'icon' => $regNotif['icon'],
+            'color' => $regNotif['type'] === 'success' ? '#28a745' : ($regNotif['type'] === 'warning' ? '#ffc107' : '#007bff'),
+            'url' => $regNotif['url'],
+            'created_at' => $regNotif['created_at']
+        ];
+    }
+} catch (PDOException $e) {
+    error_log("Error getting registration notifications: " . $e->getMessage());
+}
 // Clean up old notification reads (run occasionally)
 function cleanupOldReads($pdo) {
     try {

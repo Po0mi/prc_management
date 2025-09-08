@@ -1232,8 +1232,12 @@ function openRequestModal(request) {
     document.getElementById('new_status').value = request.status;
     document.getElementById('admin_notes').value = request.admin_notes || '';
     
-    // Check if documents are uploaded
-    const hasDocuments = request.valid_id_path || request.participant_list_path || request.additional_docs_paths;
+    // Check if documents are uploaded - updated to handle your table structure
+    const hasDocuments = request.valid_id_path || 
+                         request.valid_id_request_path || 
+                         request.participant_list_path || 
+                         request.additional_docs_paths || 
+                         request.additional_docs_path;
     
     // Populate request details
     const requestDetails = document.getElementById('requestDetails');
@@ -1469,19 +1473,38 @@ function closeCreateSessionModal() {
     currentRequest = null;
 }
 
-// Enhanced openDocumentModal function with better error handling
+// UPDATED: Enhanced openDocumentModal function specifically for your table structure
 function openDocumentModal(request) {
     currentRequest = request;
+    
+    // Debug the request object
+    console.log('Opening document modal for request:', request.request_id);
+    console.log('Document fields in request:', {
+        valid_id_path: request.valid_id_path,
+        valid_id_filename: request.valid_id_filename,
+        valid_id_request_path: request.valid_id_request_path,
+        participant_list_path: request.participant_list_path,
+        participant_list_filename: request.participant_list_filename,
+        additional_docs_paths: request.additional_docs_paths,
+        additional_docs_filenames: request.additional_docs_filenames,
+        additional_docs_path: request.additional_docs_path,
+        documents_verified: request.documents_verified,
+        documents_uploaded_at: request.documents_uploaded_at
+    });
     
     // Populate document details
     const documentDetails = document.getElementById('documentDetails');
     let documentsHtml = '';
     let docCount = 0;
+    let hasAnyDocuments = false;
     
-    // Valid ID Document
-    if (request.valid_id_path) {
-        const fileIcon = getFileIconClass(request.valid_id_filename || request.valid_id_path);
-        const fileName = request.valid_id_filename || extractFilename(request.valid_id_path);
+    // Check for Valid ID Document (prioritize valid_id_request_path, then valid_id_path)
+    const validIdPath = request.valid_id_request_path || request.valid_id_path;
+    const validIdFilename = request.valid_id_filename || extractFilename(validIdPath);
+    
+    if (validIdPath && validIdPath.trim() && validIdPath !== 'null') {
+        hasAnyDocuments = true;
+        const fileIcon = getFileIconClass(validIdFilename);
         docCount++;
         
         documentsHtml += `
@@ -1489,15 +1512,15 @@ function openDocumentModal(request) {
                 <div class="document-header">
                     <i class="fas ${fileIcon}"></i>
                     <span class="document-title">Valid ID Document</span>
-                    <span class="document-status ${request.documents_verified || 'pending'}">${(request.documents_verified || 'pending').charAt(0).toUpperCase() + (request.documents_verified || 'pending').slice(1)}</span>
+                    <span class="document-status ${request.documents_verified || 'pending'}">${capitalizeFirst(request.documents_verified || 'pending')}</span>
                 </div>
                 <div class="document-info">
-                    <span class="document-filename" title="${escapeHtml(fileName)}">${escapeHtml(fileName)}</span>
+                    <span class="document-filename" title="${escapeHtml(validIdFilename)}">${escapeHtml(validIdFilename)}</span>
                     <div class="document-actions">
-                        <button onclick="viewDocument('${request.valid_id_path}')" class="btn-view-doc">
+                        <button onclick="viewDocument('${validIdPath}')" class="btn-view-doc">
                             <i class="fas fa-eye"></i> View
                         </button>
-                        <button onclick="downloadDocument('${request.valid_id_path}', '${escapeHtml(fileName)}')" class="btn-download-doc">
+                        <button onclick="downloadDocument('${validIdPath}', '${escapeHtml(validIdFilename)}')" class="btn-download-doc">
                             <i class="fas fa-download"></i> Download
                         </button>
                     </div>
@@ -1505,36 +1528,12 @@ function openDocumentModal(request) {
             </div>
         `;
     }
-     // Valid ID Request Document (alternative field)
-    if (request.valid_id_request_path && request.valid_id_request_path !== request.valid_id_path) {
-        const fileName = extractFilename(request.valid_id_request_path);
-        const fileIcon = getFileIconClass(fileName);
-        docCount++;
-        
-        documentsHtml += `
-            <div class="document-item">
-                <div class="document-header">
-                    <i class="fas ${fileIcon}"></i>
-                    <span class="document-title">ID Document</span>
-                </div>
-                <div class="document-info">
-                    <span class="document-filename" title="${escapeHtml(fileName)}">${escapeHtml(fileName)}</span>
-                    <div class="document-actions">
-                        <button onclick="viewDocument('${request.valid_id_request_path}')" class="btn-view-doc">
-                            <i class="fas fa-eye"></i> View
-                        </button>
-                        <button onclick="downloadDocument('${request.valid_id_request_path}', '${escapeHtml(fileName)}')" class="btn-download-doc">
-                            <i class="fas fa-download"></i> Download
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-    // Participant List Document
-    if (request.participant_list_path) {
-        const fileIcon = getFileIconClass(request.participant_list_filename || request.participant_list_path);
+    
+    // Check for Participant List Document
+    if (request.participant_list_path && request.participant_list_path.trim() && request.participant_list_path !== 'null') {
+        hasAnyDocuments = true;
         const fileName = request.participant_list_filename || extractFilename(request.participant_list_path);
+        const fileIcon = getFileIconClass(fileName);
         docCount++;
         
         documentsHtml += `
@@ -1558,29 +1557,47 @@ function openDocumentModal(request) {
         `;
     }
     
-     // Additional Documents (handle both fields: additional_docs_paths and additional_docs_path)
+    // Check for Additional Documents - handle both additional_docs_paths and additional_docs_path
     const additionalDocsFields = [
-        { paths: request.additional_docs_paths, filenames: request.additional_docs_filenames },
-        { paths: request.additional_docs_path, filenames: null }
+        { 
+            paths: request.additional_docs_paths, 
+            filenames: request.additional_docs_filenames,
+            label: 'Additional Document'
+        },
+        { 
+            paths: request.additional_docs_path, 
+            filenames: null,
+            label: 'Supporting Document'
+        }
     ];
     
-    additionalDocsFields.forEach(({ paths, filenames }) => {
-        if (paths) {
+    let additionalDocIndex = 1;
+    
+    additionalDocsFields.forEach(({ paths, filenames, label }) => {
+        if (paths && paths.trim() && paths !== 'null' && paths !== '[]') {
+            hasAnyDocuments = true;
+            
             try {
                 let docPaths = [];
                 let docFilenames = [];
                 
-                // Handle both JSON array and single path string
-                if (paths.startsWith('[')) {
+                // Handle JSON array format
+                if (paths.startsWith('[') && paths.endsWith(']')) {
                     docPaths = JSON.parse(paths);
                 } else {
+                    // Handle single path
                     docPaths = [paths];
                 }
                 
+                // Ensure docPaths is an array
+                if (!Array.isArray(docPaths)) {
+                    docPaths = [docPaths];
+                }
+                
                 // Parse filenames if available
-                if (filenames) {
+                if (filenames && filenames.trim() && filenames !== 'null') {
                     try {
-                        if (filenames.startsWith('[')) {
+                        if (filenames.startsWith('[') && filenames.endsWith(']')) {
                             docFilenames = JSON.parse(filenames);
                         } else {
                             docFilenames = [filenames];
@@ -1593,8 +1610,14 @@ function openDocumentModal(request) {
                     docFilenames = docPaths.map(path => extractFilename(path));
                 }
                 
+                // Ensure docFilenames is an array
+                if (!Array.isArray(docFilenames)) {
+                    docFilenames = [docFilenames];
+                }
+                
+                // Process each document path
                 docPaths.forEach((path, index) => {
-                    if (path && path.trim()) { // Only process non-empty paths
+                    if (path && path.trim() && path !== 'null') {
                         const fileName = docFilenames[index] || extractFilename(path);
                         const fileIcon = getFileIconClass(fileName);
                         docCount++;
@@ -1603,7 +1626,7 @@ function openDocumentModal(request) {
                             <div class="document-item">
                                 <div class="document-header">
                                     <i class="fas ${fileIcon}"></i>
-                                    <span class="document-title">Additional Document ${docCount - (request.valid_id_path ? 1 : 0) - (request.participant_list_path ? 1 : 0)}</span>
+                                    <span class="document-title">${label} ${additionalDocIndex}</span>
                                 </div>
                                 <div class="document-info">
                                     <span class="document-filename" title="${escapeHtml(fileName)}">${escapeHtml(fileName)}</span>
@@ -1618,18 +1641,25 @@ function openDocumentModal(request) {
                                 </div>
                             </div>
                         `;
+                        additionalDocIndex++;
                     }
                 });
+                
             } catch (e) {
-                console.error('Error parsing additional documents:', e);
+                console.error('Error parsing additional documents:', e, 'Raw data:', paths);
+                hasAnyDocuments = true;
+                
                 documentsHtml += `
                     <div class="document-item error">
                         <div class="document-header">
                             <i class="fas fa-exclamation-triangle"></i>
-                            <span class="document-title">Additional Documents (Parse Error)</span>
+                            <span class="document-title">Document Parse Error</span>
                         </div>
                         <div class="document-info">
-                            <span class="document-filename">Error loading document list: ${escapeHtml(String(paths))}</span>
+                            <span class="document-filename">Unable to parse document list</span>
+                            <small style="color: var(--red); display: block; margin-top: 0.5rem;">
+                                Raw data: ${escapeHtml(String(paths).substring(0, 100))}...
+                            </small>
                         </div>
                     </div>
                 `;
@@ -1637,70 +1667,236 @@ function openDocumentModal(request) {
         }
     });
     
-    // If no documents found
-    if (!documentsHtml) {
+    // If no documents found, show appropriate message
+    if (!hasAnyDocuments) {
         documentsHtml = `
             <div class="no-documents">
                 <i class="fas fa-file-slash"></i>
-                <p>No documents uploaded for this request</p>
-                <small style="color: var(--gray);">Request ID: ${request.request_id}</small>
+                <h3>No documents uploaded</h3>
+                <p>This training request was submitted without document uploads.</p>
+                <div class="request-info">
+                    <small style="color: var(--gray);">
+                        <strong>Request ID:</strong> #${request.request_id}<br>
+                        <strong>Submitted:</strong> ${formatDate(request.created_at)}<br>
+                        <strong>Requester:</strong> ${escapeHtml(request.user_full_name || 'Unknown')}<br>
+                        <strong>Email:</strong> ${escapeHtml(request.user_email || request.email || 'Unknown')}
+                    </small>
+                </div>
+                <div class="suggestion-box">
+                    <div class="suggestion-header">
+                        <i class="fas fa-lightbulb"></i>
+                        <strong>Suggestion</strong>
+                    </div>
+                    <p>Contact the requester to request necessary documents:</p>
+                    <ul>
+                        <li>Valid ID (required)</li>
+                        ${request.participant_count >= 5 ? '<li>Participant list (required for groups)</li>' : ''}
+                        <li>Supporting documents (optional)</li>
+                    </ul>
+                </div>
             </div>
         `;
+    } else {
+        // Add document summary header if there are documents
+        const documentSummary = `
+            <div class="document-summary">
+                <div class="summary-header">
+                    <i class="fas fa-file-alt"></i>
+                    <span>Document Summary</span>
+                </div>
+                <div class="summary-stats">
+                    <div class="stat-item">
+                        <span class="stat-number">${docCount}</span>
+                        <span class="stat-label">Total Files</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-status ${request.documents_verified || 'pending'}">${capitalizeFirst(request.documents_verified || 'pending')}</span>
+                        <span class="stat-label">Verification Status</span>
+                    </div>
+                    ${request.documents_uploaded_at ? `
+                        <div class="stat-item">
+                            <span class="stat-date">${formatDate(request.documents_uploaded_at)}</span>
+                            <span class="stat-label">Upload Date</span>
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+        
+        documentsHtml = documentSummary + documentsHtml;
     }
     
-     documentDetails.innerHTML = documentsHtml;
+    // Populate the modal with document details
+    documentDetails.innerHTML = documentsHtml;
     
     // Set verification form values
     document.getElementById('docRequestId').value = request.request_id;
     document.getElementById('verification_status').value = request.documents_verified || 'pending';
     document.getElementById('verification_notes').value = request.document_verification_notes || '';
     
-    // Show modal
-    document.getElementById('documentModal').classList.add('active');
-    document.body.style.overflow = 'hidden';
+    // Show the modal with explicit display settings
+    const modal = document.getElementById('documentModal');
+    if (modal) {
+        // Force remove any existing blur effects
+        modal.style.filter = 'none';
+        modal.style.backdropFilter = 'none';
+        
+        // Set display properties
+        modal.style.display = 'flex';
+        modal.classList.add('active');
+        
+        // Prevent body scroll
+        document.body.style.overflow = 'hidden';
+        
+        // Ensure modal content is visible
+        const modalContent = modal.querySelector('.modal-content');
+        if (modalContent) {
+            modalContent.style.filter = 'none';
+            modalContent.style.backdropFilter = 'none';
+            modalContent.style.opacity = '1';
+            modalContent.style.visibility = 'visible';
+        }
+        
+        console.log('Document modal opened successfully with', docCount, 'documents');
+    } else {
+        console.error('Document modal element not found');
+    }
 }
-// Add debugging function
-function debugDocumentPaths(request) {
-    console.log('Document Debugging for Request #' + request.request_id);
-    console.log('Valid ID Path:', request.valid_id_path);
-    console.log('Valid ID Filename:', request.valid_id_filename);
-    console.log('Valid ID Request Path:', request.valid_id_request_path);
-    console.log('Participant List Path:', request.participant_list_path);
-    console.log('Participant List Filename:', request.participant_list_filename);
-    console.log('Additional Docs Paths:', request.additional_docs_paths);
-    console.log('Additional Docs Filenames:', request.additional_docs_filenames);
-    console.log('Additional Docs Path (singular):', request.additional_docs_path);
+
+// Helper function to capitalize first letter
+function capitalizeFirst(str) {
+    if (!str) return '';
+    return str.charAt(0).toUpperCase() + str.slice(1);
 }
+
+// Helper function to format dates
+function formatDate(dateString) {
+    if (!dateString) return 'Unknown';
+    
+    try {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    } catch (e) {
+        return 'Invalid date';
+    }
+}
+
+// Enhanced closeDocumentModal function
 function closeDocumentModal() {
-    document.getElementById('documentModal').classList.remove('active');
-    document.body.style.overflow = '';
+    const modal = document.getElementById('documentModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+        
+        // Reset verification form
+        document.getElementById('verification_status').value = 'pending';
+        document.getElementById('verification_notes').value = '';
+        
+        console.log('Document modal closed');
+    }
     currentRequest = null;
 }
 
-function getFileIconClass(filename) {
-    if (!filename) return 'fa-file';
+// Enhanced document viewing with your table structure
+function viewDocument(filePath) {
+    if (!filePath || filePath === 'null') {
+        alert('Invalid file path');
+        return;
+    }
     
-    const extension = filename.split('.').pop().toLowerCase();
-    switch (extension) {
-        case 'pdf':
-            return 'fa-file-pdf';
-        case 'jpg':
-        case 'jpeg':
-        case 'png':
-        case 'gif':
-            return 'fa-file-image';
-        case 'doc':
-        case 'docx':
-            return 'fa-file-word';
-        case 'xls':
-        case 'xlsx':
-            return 'fa-file-excel';
-        case 'csv':
-            return 'fa-file-csv';
-        default:
-            return 'fa-file';
+    console.log('Attempting to view document:', filePath);
+    
+    // Create the view URL - adjust this path based on your server setup
+    const viewUrl = `${window.location.pathname}?path=${encodeURIComponent(filePath)}`;
+    
+    console.log('Document view URL:', viewUrl);
+    
+    // Open in new tab
+    const newWindow = window.open(viewUrl, '_blank', 'width=1000,height=800,scrollbars=yes,resizable=yes');
+    
+    if (!newWindow) {
+        // Fallback for popup blockers
+        const confirmed = confirm(
+            'Pop-up was blocked. Would you like to open the document in the current tab?\n\n' +
+            'Note: This will navigate away from the current page.'
+        );
+        
+        if (confirmed) {
+            window.location.href = viewUrl;
+        }
     }
 }
+
+// Enhanced document download with your table structure
+function downloadDocument(filePath, filename) {
+    if (!filePath || filePath === 'null') {
+        alert('Invalid file path');
+        return;
+    }
+    
+    console.log('Attempting to download document:', filePath, 'as', filename);
+    
+    const downloadFilename = filename || extractFilename(filePath);
+    const downloadUrl = `${window.location.pathname}?download=true&path=${encodeURIComponent(filePath)}&filename=${encodeURIComponent(downloadFilename)}`;
+    
+    // Create and trigger download
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = downloadFilename;
+    link.style.display = 'none';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Updated extractFilename function
+function extractFilename(path) {
+    if (!path || path === 'null') return 'Unknown File';
+    
+    // Handle full paths and get just the filename
+    let filename = path.split('/').pop() || 'Unknown File';
+    
+    // Remove query parameters
+    filename = filename.split('?')[0];
+    
+    return filename;
+}
+
+// Updated getFileIconClass function
+function getFileIconClass(filename) {
+    if (!filename || filename === 'null') return 'fa-file';
+    
+    const extension = filename.split('.').pop().toLowerCase();
+    const iconMap = {
+        'pdf': 'fa-file-pdf',
+        'jpg': 'fa-file-image',
+        'jpeg': 'fa-file-image',
+        'png': 'fa-file-image',
+        'gif': 'fa-file-image',
+        'bmp': 'fa-file-image',
+        'webp': 'fa-file-image',
+        'doc': 'fa-file-word',
+        'docx': 'fa-file-word',
+        'xls': 'fa-file-excel',
+        'xlsx': 'fa-file-excel',
+        'csv': 'fa-file-csv',
+        'txt': 'fa-file-alt',
+        'zip': 'fa-file-archive',
+        'rar': 'fa-file-archive',
+        '7z': 'fa-file-archive'
+    };
+    
+    return iconMap[extension] || 'fa-file';
+}
+
 // Enhanced error handling for document operations
 function handleDocumentError(error, operation = 'access') {
     console.error(`Document ${operation} error:`, error);
@@ -1719,69 +1915,13 @@ function handleDocumentError(error, operation = 'access') {
     
     alert(errorMessage);
 }
-function extractFilename(path) {
-    if (!path) return 'Unknown File';
-    
-    // Remove any leading paths and get just the filename
-    let filename = path.split('/').pop() || 'Unknown File';
-    
-    // Clean up any timestamp suffixes that might be added by the upload system
-    // Example: "document_1756902422.jpg" -> "document.jpg" (optional cleanup)
-    // You can uncomment and modify this if you want to clean up filenames:
-    // filename = filename.replace(/_\d{10,}\./g, '.');
-    
-    return filename;
-}
-
-function viewDocument(filePath) {
-    if (!filePath) {
-        alert('Invalid file path');
-        return;
-    }
-    
-    // Clean the file path and create the view URL
-    const cleanPath = filePath.replace(/^\.\.\//, ''); // Remove ../ prefix if present
-    const viewUrl = `${window.location.pathname}?path=${encodeURIComponent(cleanPath)}`;
-    
-    // Open in new tab for viewing
-    const newWindow = window.open(viewUrl, '_blank');
-    
-    // Fallback error handling
-    setTimeout(() => {
-        if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-            alert('Pop-up blocked or document cannot be displayed. Please check your browser settings.');
-        }
-    }, 1000);
-}
-function downloadDocument(filePath, filename) {
-    if (!filePath) {
-        alert('Invalid file path');
-        return;
-    }
-    
-    // Clean the file path and ensure we have a filename
-    const cleanPath = filePath.replace(/^\.\.\//, ''); // Remove ../ prefix if present
-    const downloadFilename = filename || extractFilename(cleanPath);
-    
-    // Create download URL
-    const downloadUrl = `${window.location.pathname}?download=true&path=${encodeURIComponent(cleanPath)}&filename=${encodeURIComponent(downloadFilename)}`;
-    
-    // Create temporary link and trigger download
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.download = downloadFilename;
-    link.style.display = 'none';
-    
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-}
 
 // Helper function for HTML escaping
 function escapeHtml(text) {
-    if (!text) return '';
+    if (!text || text === 'null') return '';
+    
     const div = document.createElement('div');
-    div.textContent = text;
+    div.textContent = String(text);
     return div.innerHTML;
 }
 
@@ -1860,28 +2000,46 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Close modals when clicking outside
-    document.getElementById('requestModal').addEventListener('click', function(e) {
-        if (e.target === this) closeRequestModal();
-    });
+    const requestModal = document.getElementById('requestModal');
+    const createSessionModal = document.getElementById('createSessionModal');
+    const documentModal = document.getElementById('documentModal');
 
-    document.getElementById('createSessionModal').addEventListener('click', function(e) {
-        if (e.target === this) closeCreateSessionModal();
-    });
+    if (requestModal) {
+        requestModal.addEventListener('click', function(e) {
+            if (e.target === this) closeRequestModal();
+        });
+    }
 
-    document.getElementById('documentModal').addEventListener('click', function(e) {
-        if (e.target === this) closeDocumentModal();
-    });
+    if (createSessionModal) {
+        createSessionModal.addEventListener('click', function(e) {
+            if (e.target === this) closeCreateSessionModal();
+        });
+    }
+
+    if (documentModal) {
+        documentModal.addEventListener('click', function(e) {
+            if (e.target === this) closeDocumentModal();
+        });
+        
+        // Prevent modal content clicks from closing modal
+        const modalContent = documentModal.querySelector('.modal-content');
+        if (modalContent) {
+            modalContent.addEventListener('click', function(e) {
+                e.stopPropagation();
+            });
+        }
+    }
 
     // Keyboard navigation
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
-            if (document.getElementById('requestModal').classList.contains('active')) {
+            if (requestModal && requestModal.classList.contains('active')) {
                 closeRequestModal();
             }
-            if (document.getElementById('createSessionModal').classList.contains('active')) {
+            if (createSessionModal && createSessionModal.classList.contains('active')) {
                 closeCreateSessionModal();
             }
-            if (document.getElementById('documentModal').classList.contains('active')) {
+            if (documentModal && documentModal.classList.contains('active')) {
                 closeDocumentModal();
             }
         }
@@ -1946,6 +2104,20 @@ document.addEventListener('DOMContentLoaded', function() {
         // Store initial value
         select.dataset.previousValue = select.value;
     });
+
+    // Form submission handler for document verification
+    const verificationForm = documentModal ? documentModal.querySelector('form') : null;
+    if (verificationForm) {
+        verificationForm.addEventListener('submit', function(e) {
+            const submitBtn = this.querySelector('.btn-submit');
+            if (submitBtn) {
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating Verification...';
+                submitBtn.disabled = true;
+            }
+        });
+    }
+    
+    console.log('Document modal event handlers initialized for your table structure');
 });
 </script>
 

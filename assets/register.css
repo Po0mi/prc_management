@@ -1045,38 +1045,37 @@ input[type="file"]:hover {
 
 /* Enhanced Success Modal */
 .modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.8);
-  display: none;
-  justify-content: center;
-  align-items: center;
-  z-index: 10000;
-  opacity: 0;
-  transition: opacity 0.3s ease-out;
-  backdrop-filter: blur(5px);
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 99999;
+    opacity: 0;
+    transition: opacity 0.3s ease;
 }
 
 .modal-overlay.active {
   opacity: 1;
 }
-
+.modal-overlay.show-modal {
+    display: flex !important;
+    opacity: 1 !important;
+}
 .success-modal {
-  background: white;
-  border-radius: var(--border-radius-lg);
-  max-width: 500px;
-  width: 90%;
-  max-height: 90vh;
-  overflow-y: auto;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  transform: translateY(-50px) scale(0.9);
-  opacity: 0;
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-  overflow: hidden;
+    background: white;
+    border-radius: 15px;
+    max-width: 500px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    animation: modalSlideIn 0.4s ease-out;
+    position: relative;
 }
 
 .success-modal::before {
@@ -1220,7 +1219,21 @@ input[type="file"]:hover {
   font-size: var(--font-size-lg);
   font-weight: 600;
 }
+@keyframes modalSlideIn {
+    0% {
+        transform: translateY(-50px) scale(0.9);
+        opacity: 0;
+    }
+    100% {
+        transform: translateY(0) scale(1);
+        opacity: 1;
+    }
+}
 
+/* Prevent page scrolling when modal is open */
+body.modal-open {
+    overflow: hidden;
+}
 /* Animation Keyframes */
 @keyframes fadeIn {
   from {

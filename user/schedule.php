@@ -472,26 +472,112 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_training'])) 
         
         if (empty($errors)) {
             try {
-                $stmt = $pdo->prepare("
-                    INSERT INTO training_requests (
-                        user_id, service_type, training_program, preferred_date, preferred_time, 
-                        participant_count, organization_name, contact_person, contact_number, 
-                        email, purpose, additional_requirements, location_preference, status
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-                ");
-                
-                $result = $stmt->execute([
-                    $userId, $serviceType, $trainingProgram, $preferredDate, $preferredTime,
-                    $participantCount, $organizationName, $contactPerson, $contactNumber,
-                    $email, $purpose, $additionalRequirements, $locationPreference
-                ]);
-                
-                if ($result) {
-                    $requestId = $pdo->lastInsertId();
-                    $successMessage = "Training request submitted successfully! Request ID: #" . $requestId . ". We will contact you within 3-5 business days.";
-                    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+                // Create user folder for document uploads
+                $userFolder = __DIR__ . "/../uploads/training_request_user_" . $userId;
+                if (!file_exists($userFolder)) {
+                    mkdir($userFolder, 0755, true);
+                }
+
+                $validIdPath = '';
+                $participantListPath = '';
+                $additionalDocsPaths = [];
+                $additionalDocsFilenames = [];
+
+                // Handle Valid ID upload (required)
+                if (isset($_FILES['valid_id_request']) && $_FILES['valid_id_request']['error'] === UPLOAD_ERR_OK) {
+                    $allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+                    $fileType = $_FILES['valid_id_request']['type'];
+                    
+                    if (in_array($fileType, $allowedTypes)) {
+                        $fileExtension = pathinfo($_FILES['valid_id_request']['name'], PATHINFO_EXTENSION);
+                        $originalName = pathinfo($_FILES['valid_id_request']['name'], PATHINFO_FILENAME);
+                        $fileName = 'valid_id_' . time() . '.' . $fileExtension;
+                        $fullPath = $userFolder . '/' . $fileName;
+                        
+                        if (move_uploaded_file($_FILES['valid_id_request']['tmp_name'], $fullPath)) {
+                            $validIdPath = 'uploads/training_request_user_' . $userId . '/' . $fileName;
+                        } else {
+                            $errors[] = "Failed to upload valid ID. Please try again.";
+                        }
+                    } else {
+                        $errors[] = "Invalid file type for Valid ID. Please upload JPG, PNG, or PDF files only.";
+                    }
                 } else {
-                    $errorMessage = "Failed to submit training request. Please try again.";
+                    $errors[] = "Valid ID upload is required.";
+                }
+
+                // Handle Participant List upload (optional for groups > 5)
+                if (isset($_FILES['participant_list']) && $_FILES['participant_list']['error'] === UPLOAD_ERR_OK) {
+                    $allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/csv', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
+                    $fileType = $_FILES['participant_list']['type'];
+                    
+                    if (in_array($fileType, $allowedTypes)) {
+                        $fileExtension = pathinfo($_FILES['participant_list']['name'], PATHINFO_EXTENSION);
+                        $fileName = 'participants_' . time() . '.' . $fileExtension;
+                        $fullPath = $userFolder . '/' . $fileName;
+                        
+                        if (move_uploaded_file($_FILES['participant_list']['tmp_name'], $fullPath)) {
+                            $participantListPath = 'uploads/training_request_user_' . $userId . '/' . $fileName;
+                        } else {
+                            $errors[] = "Failed to upload participant list. Please try again.";
+                        }
+                    } else {
+                        $errors[] = "Invalid file type for participant list. Please upload PDF, DOC, DOCX, CSV, or Excel files.";
+                    }
+                }
+
+                // Handle Additional Documents upload (optional)
+                if (isset($_FILES['additional_docs']) && is_array($_FILES['additional_docs']['name'])) {
+                    $allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+                    
+                    for ($i = 0; $i < count($_FILES['additional_docs']['name']); $i++) {
+                        if ($_FILES['additional_docs']['error'][$i] === UPLOAD_ERR_OK) {
+                            $fileType = $_FILES['additional_docs']['type'][$i];
+                            
+                            if (in_array($fileType, $allowedTypes)) {
+                                $originalName = $_FILES['additional_docs']['name'][$i];
+                                $fileExtension = pathinfo($originalName, PATHINFO_EXTENSION);
+                                $fileName = 'additional_' . time() . '_' . $i . '.' . $fileExtension;
+                                $fullPath = $userFolder . '/' . $fileName;
+                                
+                                if (move_uploaded_file($_FILES['additional_docs']['tmp_name'][$i], $fullPath)) {
+                                    $additionalDocsPaths[] = 'uploads/training_request_user_' . $userId . '/' . $fileName;
+                                    $additionalDocsFilenames[] = $originalName;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Only proceed if no file upload errors
+                if (empty($errors)) {
+                    $stmt = $pdo->prepare("
+                        INSERT INTO training_requests (
+                            user_id, service_type, training_program, preferred_date, preferred_time, 
+                            participant_count, organization_name, contact_person, contact_number, 
+                            email, purpose, additional_requirements, location_preference, status,
+                            valid_id_request_path, participant_list_path, additional_docs_paths, 
+                            additional_docs_filenames, documents_uploaded_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, NOW())
+                    ");
+                    
+                    $result = $stmt->execute([
+                        $userId, $serviceType, $trainingProgram, $preferredDate, $preferredTime,
+                        $participantCount, $organizationName, $contactPerson, $contactNumber,
+                        $email, $purpose, $additionalRequirements, $locationPreference,
+                        $validIdPath,
+                        $participantListPath ?: null,
+                        !empty($additionalDocsPaths) ? json_encode($additionalDocsPaths) : null,
+                        !empty($additionalDocsFilenames) ? json_encode($additionalDocsFilenames) : null
+                    ]);
+                    
+                    if ($result) {
+                        $requestId = $pdo->lastInsertId();
+                        $successMessage = "Training request submitted successfully! Request ID: #" . $requestId . ". We will contact you within 3-5 business days.";
+                        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+                    } else {
+                        $errorMessage = "Failed to submit training request. Please try again.";
+                    }
                 }
                 
             } catch (PDOException $e) {
@@ -624,7 +710,7 @@ try {
             </div>
           </div>
 <div class="modal" id="trainingRequestModal">
-    <div class="modal-content">
+    <div class="modal-content" style="max-width: 800px;">
         <div class="modal-header">
             <h2 class="modal-title">Request Training Program</h2>
             <button class="close-modal" onclick="closeTrainingRequestModal()">
@@ -646,134 +732,224 @@ try {
             </div>
         <?php endif; ?>
         
-        <form method="POST" id="trainingRequestForm">
+        <form method="POST" id="trainingRequestForm" enctype="multipart/form-data">
             <input type="hidden" name="request_training" value="1">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
             
-            <div class="form-group">
-                <label for="service_type">Service Type <span class="required">*</span></label>
-                <select id="service_type" name="service_type" required onchange="updateTrainingPrograms()">
-                    <option value="">Select Service Type</option>
-                    <option value="Safety Service" <?= isset($_POST['service_type']) && $_POST['service_type'] === 'Safety Service' ? 'selected' : '' ?>>Safety Service</option>
-                    <option value="Red Cross Youth" <?= isset($_POST['service_type']) && $_POST['service_type'] === 'Red Cross Youth' ? 'selected' : '' ?>>Red Cross Youth</option>
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <label for="training_program">Training Program <span class="required">*</span></label>
-                <select id="training_program" name="training_program" required disabled>
-                    <option value="">Select service type first</option>
-                </select>
-                <div class="program-description" id="program_description" style="display: none;">
-                    <small style="color: var(--gray); margin-top: 0.5rem; display: block;"></small>
-                </div>
-            </div>
-            
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="preferred_date">Preferred Date</label>
-                    <input type="date" 
-                           id="preferred_date" 
-                           name="preferred_date" 
-                           min="<?= date('Y-m-d', strtotime('+1 week')) ?>"
-                           value="<?= isset($_POST['preferred_date']) ? htmlspecialchars($_POST['preferred_date']) : '' ?>">
-                    <small style="color: var(--gray);">Leave blank if flexible</small>
-                </div>
+            <!-- Step 1: Program Selection -->
+            <div class="form-section">
+                <h3 class="section-title">
+                    <i class="fas fa-graduation-cap"></i>
+                    Training Program Details
+                </h3>
                 
                 <div class="form-group">
-                    <label for="preferred_time">Preferred Time</label>
-                    <select id="preferred_time" name="preferred_time">
-                        <option value="morning" <?= isset($_POST['preferred_time']) && $_POST['preferred_time'] === 'morning' ? 'selected' : '' ?>>Morning (8:00 AM - 12:00 PM)</option>
-                        <option value="afternoon" <?= isset($_POST['preferred_time']) && $_POST['preferred_time'] === 'afternoon' ? 'selected' : '' ?>>Afternoon (1:00 PM - 5:00 PM)</option>
-                        <option value="evening" <?= isset($_POST['preferred_time']) && $_POST['preferred_time'] === 'evening' ? 'selected' : '' ?>>Evening (6:00 PM - 8:00 PM)</option>
+                    <label for="service_type">Service Type <span class="required">*</span></label>
+                    <select id="service_type" name="service_type" required onchange="updateTrainingPrograms()">
+                        <option value="">Select Service Type</option>
+                        <option value="Safety Service" <?= isset($_POST['service_type']) && $_POST['service_type'] === 'Safety Service' ? 'selected' : '' ?>>Safety Service</option>
+                        <option value="Red Cross Youth" <?= isset($_POST['service_type']) && $_POST['service_type'] === 'Red Cross Youth' ? 'selected' : '' ?>>Red Cross Youth</option>
                     </select>
                 </div>
-            </div>
-            
-            <div class="form-row">
+                
                 <div class="form-group">
-                    <label for="participant_count">Expected Participants <span class="required">*</span></label>
-                    <input type="number" 
-                           id="participant_count" 
-                           name="participant_count" 
-                           min="1" 
-                           max="100" 
-                           value="<?= isset($_POST['participant_count']) ? htmlspecialchars($_POST['participant_count']) : '1' ?>" 
-                           required>
-                    <small style="color: var(--gray);">Number of people who will attend</small>
+                    <label for="training_program">Training Program <span class="required">*</span></label>
+                    <select id="training_program" name="training_program" required disabled>
+                        <option value="">Select service type first</option>
+                    </select>
+                    <div class="program-description" id="program_description" style="display: none;">
+                        <small style="color: var(--gray); margin-top: 0.5rem; display: block;"></small>
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="preferred_date">Preferred Date</label>
+                        <input type="date" 
+                               id="preferred_date" 
+                               name="preferred_date" 
+                               min="<?= date('Y-m-d', strtotime('+1 week')) ?>"
+                               value="<?= isset($_POST['preferred_date']) ? htmlspecialchars($_POST['preferred_date']) : '' ?>">
+                        <small style="color: var(--gray);">Leave blank if flexible</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="preferred_time">Preferred Time</label>
+                        <select id="preferred_time" name="preferred_time">
+                            <option value="morning" <?= isset($_POST['preferred_time']) && $_POST['preferred_time'] === 'morning' ? 'selected' : '' ?>>Morning (8:00 AM - 12:00 PM)</option>
+                            <option value="afternoon" <?= isset($_POST['preferred_time']) && $_POST['preferred_time'] === 'afternoon' ? 'selected' : '' ?>>Afternoon (1:00 PM - 5:00 PM)</option>
+                            <option value="evening" <?= isset($_POST['preferred_time']) && $_POST['preferred_time'] === 'evening' ? 'selected' : '' ?>>Evening (6:00 PM - 8:00 PM)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 2: Participant Information -->
+            <div class="form-section">
+                <h3 class="section-title">
+                    <i class="fas fa-users"></i>
+                    Participant Information
+                </h3>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="participant_count">Expected Participants <span class="required">*</span></label>
+                        <input type="number" 
+                               id="participant_count" 
+                               name="participant_count" 
+                               min="1" 
+                               max="100" 
+                               value="<?= isset($_POST['participant_count']) ? htmlspecialchars($_POST['participant_count']) : '1' ?>" 
+                               required
+                               onchange="toggleOrganizationSection()">
+                        <small style="color: var(--gray);">Number of people who will attend</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="location_preference">Location Preference</label>
+                        <input type="text" 
+                               id="location_preference" 
+                               name="location_preference" 
+                               placeholder="Preferred training location"
+                               value="<?= isset($_POST['location_preference']) ? htmlspecialchars($_POST['location_preference']) : '' ?>">
+                        <small style="color: var(--gray);">City or specific venue preference</small>
+                    </div>
+                </div>
+                
+                <div class="form-group" id="organization_section" style="display: none;">
+                    <label for="organization_name">Organization/Company Name</label>
+                    <input type="text" 
+                           id="organization_name" 
+                           name="organization_name" 
+                           placeholder="Organization name if applicable"
+                           value="<?= isset($_POST['organization_name']) ? htmlspecialchars($_POST['organization_name']) : '' ?>">
+                    <small style="color: var(--gray);">Required for groups of 5 or more participants</small>
+                </div>
+            </div>
+
+            <!-- Step 3: Contact Information -->
+            <div class="form-section">
+                <h3 class="section-title">
+                    <i class="fas fa-address-book"></i>
+                    Contact Information
+                </h3>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="contact_person">Contact Person <span class="required">*</span></label>
+                        <input type="text" 
+                               id="contact_person" 
+                               name="contact_person" 
+                               required 
+                               placeholder="Primary contact person"
+                               value="<?= isset($_POST['contact_person']) ? htmlspecialchars($_POST['contact_person']) : '' ?>">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="contact_number">Contact Number <span class="required">*</span></label>
+                        <input type="tel" 
+                               id="contact_number" 
+                               name="contact_number" 
+                               required 
+                               placeholder="+63 XXX XXX XXXX"
+                               value="<?= isset($_POST['contact_number']) ? htmlspecialchars($_POST['contact_number']) : '' ?>">
+                    </div>
                 </div>
                 
                 <div class="form-group">
-                    <label for="location_preference">Location Preference</label>
-                    <input type="text" 
-                           id="location_preference" 
-                           name="location_preference" 
-                           placeholder="Preferred training location"
-                           value="<?= isset($_POST['location_preference']) ? htmlspecialchars($_POST['location_preference']) : '' ?>">
-                    <small style="color: var(--gray);">City or specific venue preference</small>
-                </div>
-            </div>
-            
-            <div class="form-group" id="organization_section" style="display: none;">
-                <label for="organization_name">Organization/Company Name</label>
-                <input type="text" 
-                       id="organization_name" 
-                       name="organization_name" 
-                       placeholder="Organization name if applicable"
-                       value="<?= isset($_POST['organization_name']) ? htmlspecialchars($_POST['organization_name']) : '' ?>">
-            </div>
-            
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="contact_person">Contact Person <span class="required">*</span></label>
-                    <input type="text" 
-                           id="contact_person" 
-                           name="contact_person" 
+                    <label for="email">Email Address <span class="required">*</span></label>
+                    <input type="email" 
+                           id="email" 
+                           name="email" 
                            required 
-                           placeholder="Primary contact person"
-                           value="<?= isset($_POST['contact_person']) ? htmlspecialchars($_POST['contact_person']) : '' ?>">
+                           placeholder="contact@example.com" 
+                           value="<?= isset($_POST['email']) ? htmlspecialchars($_POST['email']) : htmlspecialchars($userEmail ?? '') ?>">
                 </div>
                 
                 <div class="form-group">
-                    <label for="contact_number">Contact Number <span class="required">*</span></label>
-                    <input type="tel" 
-                           id="contact_number" 
-                           name="contact_number" 
-                           required 
-                           placeholder="+63 XXX XXX XXXX"
-                           value="<?= isset($_POST['contact_number']) ? htmlspecialchars($_POST['contact_number']) : '' ?>">
+                    <label for="purpose">Purpose/Objective</label>
+                    <textarea id="purpose" 
+                             name="purpose" 
+                             rows="3" 
+                             placeholder="Brief description of why you need this training..."><?= isset($_POST['purpose']) ? htmlspecialchars($_POST['purpose']) : '' ?></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label for="additional_requirements">Additional Requirements</label>
+                    <textarea id="additional_requirements" 
+                             name="additional_requirements" 
+                             rows="2" 
+                             placeholder="Any special requirements, equipment needs, or accessibility considerations..."><?= isset($_POST['additional_requirements']) ? htmlspecialchars($_POST['additional_requirements']) : '' ?></textarea>
                 </div>
             </div>
-            
-            <div class="form-group">
-                <label for="email">Email Address <span class="required">*</span></label>
-                <input type="email" 
-                       id="email" 
-                       name="email" 
-                       required 
-                       placeholder="contact@example.com" 
-                       value="<?= isset($_POST['email']) ? htmlspecialchars($_POST['email']) : htmlspecialchars($userEmail ?? '') ?>">
-            </div>
-            
-            <div class="form-group">
-                <label for="purpose">Purpose/Objective</label>
-                <textarea id="purpose" 
-                         name="purpose" 
-                         rows="3" 
-                         placeholder="Brief description of why you need this training..."><?= isset($_POST['purpose']) ? htmlspecialchars($_POST['purpose']) : '' ?></textarea>
-            </div>
-            
-            <div class="form-group">
-                <label for="additional_requirements">Additional Requirements</label>
-                <textarea id="additional_requirements" 
-                         name="additional_requirements" 
-                         rows="2" 
-                         placeholder="Any special requirements, equipment needs, or accessibility considerations..."><?= isset($_POST['additional_requirements']) ? htmlspecialchars($_POST['additional_requirements']) : '' ?></textarea>
+
+            <!-- Step 4: Document Upload -->
+            <div class="form-section">
+                <h3 class="section-title">
+                    <i class="fas fa-file-upload"></i>
+                    Required Documents
+                </h3>
+                
+                <div class="upload-notice">
+                    <i class="fas fa-info-circle"></i>
+                    <p>Please upload the following documents to process your training request:</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="valid_id_request">Valid ID <span class="required">*</span></label>
+                    <div class="file-upload-container">
+                        <input type="file" 
+                               id="valid_id_request" 
+                               name="valid_id_request" 
+                               required 
+                               accept=".jpg,.jpeg,.png,.pdf"
+                               onchange="handleFileUpload(this)">
+                        <div class="file-upload-info">
+                            <i class="fas fa-id-card"></i>
+                            <span>Upload a clear photo of your valid ID</span>
+                            <small>Accepted formats: JPG, PNG, PDF (Max 5MB)</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-group" id="participant_list_section" style="display: none;">
+                    <label for="participant_list">Participant List</label>
+                    <div class="file-upload-container">
+                        <input type="file" 
+                               id="participant_list" 
+                               name="participant_list" 
+                               accept=".pdf,.doc,.docx,.csv,.xls,.xlsx"
+                               onchange="handleFileUpload(this)">
+                        <div class="file-upload-info">
+                            <i class="fas fa-users"></i>
+                            <span>Upload list of participants (for groups of 5 or more)</span>
+                            <small>Accepted formats: PDF, DOC, DOCX, CSV, Excel (Max 10MB)</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="additional_docs">Additional Documents (Optional)</label>
+                    <div class="file-upload-container">
+                        <input type="file" 
+                               id="additional_docs" 
+                               name="additional_docs[]" 
+                               multiple 
+                               accept=".jpg,.jpeg,.png,.pdf,.doc,.docx"
+                               onchange="handleFileUpload(this)">
+                        <div class="file-upload-info">
+                            <i class="fas fa-file-alt"></i>
+                            <span>Upload supporting documents (certificates, authorization letters, etc.)</span>
+                            <small>Accepted formats: JPG, PNG, PDF, DOC, DOCX (Max 5MB each)</small>
+                        </div>
+                    </div>
+                    <div id="additional_docs_list" class="uploaded-files-list"></div>
+                </div>
             </div>
             
             <div class="form-notice">
                 <i class="fas fa-info-circle"></i>
-                <p>Your training request will be reviewed by our training coordinators. We will contact you within 3-5 business days to discuss scheduling and requirements.</p>
+                <p>Your training request will be reviewed by our training coordinators. We will contact you within 3-5 business days to discuss scheduling and requirements. All uploaded documents are securely stored and used only for training request processing.</p>
             </div>
             
             <button type="submit" class="btn-submit">
@@ -782,8 +958,6 @@ try {
         </form>
     </div>
 </div>
-
-
 
           <!-- Available Training Sessions -->
           <div class="events-table-wrapper">
@@ -2650,7 +2824,336 @@ function showDayTrainings(date, trainings) {
         return `• ${t.title}${durationText} - ${t.venue}`;
     }).join('\n')}`);
 }
+function handleFileUpload(inputElement) {
+    const container = inputElement.closest('.file-upload-container');
+    const info = container.querySelector('.file-upload-info span');
+    
+    if (inputElement.files && inputElement.files.length > 0) {
+        if (inputElement.multiple) {
+            // Handle multiple files
+            handleMultipleFileUpload(inputElement);
+        } else {
+            // Handle single file
+            const file = inputElement.files[0];
+            const maxSize = getMaxFileSize(inputElement.name);
+            
+            if (file.size > maxSize) {
+                alert(`File size too large. Maximum allowed: ${maxSize / (1024 * 1024)}MB`);
+                inputElement.value = '';
+                return;
+            }
+            
+            if (!validateFileType(file, inputElement.accept)) {
+                alert('Invalid file type. Please upload a supported file format.');
+                inputElement.value = '';
+                return;
+            }
+            
+            container.classList.add('has-file');
+            info.textContent = `Selected: ${file.name}`;
+        }
+        
+        // Show participant list section for groups
+        if (inputElement.name === 'participant_count') {
+            toggleParticipantListSection();
+        }
+    } else {
+        container.classList.remove('has-file');
+        resetFileUploadInfo(inputElement);
+    }
+}
 
+function handleMultipleFileUpload(inputElement) {
+    const files = Array.from(inputElement.files);
+    const listContainer = document.getElementById('additional_docs_list');
+    
+    // Clear existing list
+    listContainer.innerHTML = '';
+    
+    if (files.length > 0) {
+        listContainer.classList.add('has-files');
+        
+        files.forEach((file, index) => {
+            const maxSize = 5 * 1024 * 1024; // 5MB
+            
+            if (file.size > maxSize) {
+                alert(`File "${file.name}" is too large. Maximum allowed: 5MB`);
+                return;
+            }
+            
+            if (!validateFileType(file, inputElement.accept)) {
+                alert(`File "${file.name}" has an invalid type.`);
+                return;
+            }
+            
+            const fileElement = document.createElement('div');
+            fileElement.className = 'uploaded-file';
+            fileElement.innerHTML = `
+                <i class="fas ${getFileIconClass(file.name)}"></i>
+                <span title="${file.name}">${file.name}</span>
+                <button type="button" onclick="removeFile(this, ${index})" title="Remove file">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+            
+            listContainer.appendChild(fileElement);
+        });
+        
+        const container = inputElement.closest('.file-upload-container');
+        const info = container.querySelector('.file-upload-info span');
+        container.classList.add('has-file');
+        info.textContent = `Selected: ${files.length} file(s)`;
+    } else {
+        listContainer.classList.remove('has-files');
+    }
+}
+
+function removeFile(button, index) {
+    const fileInput = document.getElementById('additional_docs');
+    const dt = new DataTransfer();
+    
+    // Rebuild file list without the removed file
+    Array.from(fileInput.files).forEach((file, i) => {
+        if (i !== index) {
+            dt.items.add(file);
+        }
+    });
+    
+    fileInput.files = dt.files;
+    
+    // Update the display
+    handleMultipleFileUpload(fileInput);
+}
+
+function getMaxFileSize(fileName) {
+    if (fileName === 'valid_id_request' || fileName === 'additional_docs[]') {
+        return 5 * 1024 * 1024; // 5MB
+    }
+    return 10 * 1024 * 1024; // 10MB
+}
+
+function validateFileType(file, acceptedTypes) {
+    if (!acceptedTypes) return true;
+    
+    const accepted = acceptedTypes.split(',').map(type => type.trim());
+    const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+    
+    return accepted.some(type => {
+        if (type.startsWith('.')) {
+            return type === fileExtension;
+        } else {
+            return file.type === type || file.type.startsWith(type.split('/')[0] + '/');
+        }
+    });
+}
+
+function getFileIconClass(filename) {
+    const extension = filename.split('.').pop().toLowerCase();
+    const iconMap = {
+        'pdf': 'fa-file-pdf',
+        'jpg': 'fa-file-image',
+        'jpeg': 'fa-file-image',
+        'png': 'fa-file-image',
+        'gif': 'fa-file-image',
+        'doc': 'fa-file-word',
+        'docx': 'fa-file-word',
+        'xls': 'fa-file-excel',
+        'xlsx': 'fa-file-excel',
+        'csv': 'fa-file-csv'
+    };
+    return iconMap[extension] || 'fa-file';
+}
+
+function resetFileUploadInfo(inputElement) {
+    const container = inputElement.closest('.file-upload-container');
+    const info = container.querySelector('.file-upload-info span');
+    
+    container.classList.remove('has-file');
+    
+    switch (inputElement.name) {
+        case 'valid_id_request':
+            info.textContent = 'Upload a clear photo of your valid ID';
+            break;
+        case 'participant_list':
+            info.textContent = 'Upload list of participants (for groups of 5 or more)';
+            break;
+        case 'additional_docs[]':
+            info.textContent = 'Upload supporting documents (certificates, authorization letters, etc.)';
+            break;
+    }
+}
+
+function toggleOrganizationSection() {
+    const participantCount = parseInt(document.getElementById('participant_count').value) || 0;
+    const orgSection = document.getElementById('organization_section');
+    const participantListSection = document.getElementById('participant_list_section');
+    
+    if (participantCount >= 5) {
+        orgSection.style.display = 'block';
+        participantListSection.style.display = 'block';
+        document.getElementById('participant_list').required = true;
+    } else {
+        orgSection.style.display = 'none';
+        participantListSection.style.display = 'none';
+        document.getElementById('participant_list').required = false;
+        document.getElementById('organization_name').value = '';
+    }
+}
+
+function toggleParticipantListSection() {
+    const participantCount = parseInt(document.getElementById('participant_count').value) || 0;
+    const participantListSection = document.getElementById('participant_list_section');
+    
+    if (participantCount >= 5) {
+        participantListSection.style.display = 'block';
+        document.getElementById('participant_list').required = true;
+    } else {
+        participantListSection.style.display = 'none';
+        document.getElementById('participant_list').required = false;
+    }
+}
+
+// Update training programs dropdown (enhanced version)
+function updateTrainingPrograms() {
+    const serviceType = document.getElementById('service_type').value;
+    const programSelect = document.getElementById('training_program');
+    const programDescription = document.getElementById('program_description');
+    const participantCount = document.getElementById('participant_count');
+    
+    // Clear program selection
+    programSelect.innerHTML = '<option value="">Select training program</option>';
+    programDescription.style.display = 'none';
+    
+    if (serviceType && trainingPrograms[serviceType]) {
+        // Enable program selection
+        programSelect.disabled = false;
+        
+        // Populate programs for selected service
+        trainingPrograms[serviceType].forEach(program => {
+            const option = document.createElement('option');
+            option.value = program.code;
+            option.textContent = program.name;
+            option.dataset.description = program.description;
+            option.dataset.duration = program.duration;
+            programSelect.appendChild(option);
+        });
+    } else {
+        // Disable program selection
+        programSelect.disabled = true;
+    }
+    
+    // Update organization section visibility
+    toggleOrganizationSection();
+}
+
+// Enhanced form validation
+function validateTrainingRequestForm() {
+    const form = document.getElementById('trainingRequestForm');
+    const formData = new FormData(form);
+    const errors = [];
+    
+    // Basic field validation
+    const requiredFields = {
+        'service_type': 'Service Type',
+        'training_program': 'Training Program',
+        'contact_person': 'Contact Person',
+        'contact_number': 'Contact Number',
+        'email': 'Email Address'
+    };
+    
+    Object.entries(requiredFields).forEach(([field, label]) => {
+        if (!formData.get(field) || formData.get(field).trim() === '') {
+            errors.push(`${label} is required.`);
+        }
+    });
+    
+    // Email validation
+    const email = formData.get('email');
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        errors.push('Please enter a valid email address.');
+    }
+    
+    // Phone validation
+    const phone = formData.get('contact_number');
+    if (phone && !/^\+?[\d\s\-\(\)]{10,}$/.test(phone)) {
+        errors.push('Please enter a valid contact number.');
+    }
+    
+    // Participant count validation
+    const participantCount = parseInt(formData.get('participant_count')) || 0;
+    if (participantCount < 1 || participantCount > 100) {
+        errors.push('Participant count must be between 1 and 100.');
+    }
+    
+    // Organization name required for large groups
+    if (participantCount >= 5 && !formData.get('organization_name')) {
+        errors.push('Organization name is required for groups of 5 or more participants.');
+    }
+    
+    // File validation
+    const validIdFile = document.getElementById('valid_id_request').files[0];
+    if (!validIdFile) {
+        errors.push('Valid ID upload is required.');
+    }
+    
+    const participantListFile = document.getElementById('participant_list').files[0];
+    if (participantCount >= 5 && !participantListFile) {
+        errors.push('Participant list is required for groups of 5 or more participants.');
+    }
+    
+    return errors;
+}
+
+// Form submission handler
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('trainingRequestForm');
+    
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            const errors = validateTrainingRequestForm();
+            
+            if (errors.length > 0) {
+                e.preventDefault();
+                alert('Please fix the following errors:\n\n' + errors.join('\n'));
+                return false;
+            }
+            
+            // Show loading state
+            const submitBtn = form.querySelector('.btn-submit');
+            if (submitBtn) {
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting Request...';
+                submitBtn.disabled = true;
+            }
+            
+            return true;
+        });
+    }
+    
+    // Initialize form state
+    toggleOrganizationSection();
+    
+    // Event listeners for dynamic sections
+    const participantCountInput = document.getElementById('participant_count');
+    if (participantCountInput) {
+        participantCountInput.addEventListener('input', toggleOrganizationSection);
+    }
+    
+    const trainingProgramSelect = document.getElementById('training_program');
+    if (trainingProgramSelect) {
+        trainingProgramSelect.addEventListener('change', function() {
+            const selectedOption = this.options[this.selectedIndex];
+            const programDescription = document.getElementById('program_description');
+            const descriptionText = programDescription.querySelector('small');
+            
+            if (selectedOption.dataset.description) {
+                descriptionText.textContent = selectedOption.dataset.description;
+                programDescription.style.display = 'block';
+            } else {
+                programDescription.style.display = 'none';
+            }
+        });
+    }
+});
 // Function to inject multi-day training styles
 function injectMultiDayTrainingStyles() {
     const multiDayTrainingStyles = `
