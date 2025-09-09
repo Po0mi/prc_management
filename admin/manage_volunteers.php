@@ -402,79 +402,85 @@ $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(functio
       </div>
     <?php endif; ?>
 
-    <!-- Enhanced Action Bar -->
-    <div class="action-bar">
-      <div class="action-bar-left">
-        <!-- Enhanced Search Box -->
-        <div class="search-box">
-          <i class="fas fa-search"></i>
-          <input type="text" id="volunteerSearch" placeholder="Search volunteers by name, location, or contact...">
-        </div>
-        
-        <!-- Service Filter -->
-        <?php if (count($accessible_services) > 1): ?>
-        <div class="role-filter">
-          <a href="?<?= http_build_query(array_merge($_GET, ['service' => ''])) ?>" 
-             class="<?= empty($service_filter) ? 'active' : '' ?>">
-            <i class="fas fa-layer-group"></i> All Services
-          </a>
-          <?php foreach ($accessible_services as $key => $name): ?>
-            <a href="?<?= http_build_query(array_merge($_GET, ['service' => $key])) ?>" 
-               class="<?= $service_filter === $key ? 'active' : '' ?>">
-              <i class="fas fa-<?= $key === 'first_aid' ? 'first-aid' : ($key === 'disaster_response' ? 'exclamation-triangle' : ($key === 'blood_services' ? 'tint' : ($key === 'safety_services' ? 'shield-alt' : ($key === 'youth_services' ? 'users' : 'heart')))) ?>"></i>
-              <?= $name ?>
-            </a>
-          <?php endforeach; ?>
-        </div>
-        <?php endif; ?>
-        
-        <!-- Status Filter -->
-        <div class="role-filter">
-          <a href="?<?= http_build_query(array_merge($_GET, ['status' => ''])) ?>" 
-             class="<?= empty($status_filter) ? 'active' : '' ?>">
-            <i class="fas fa-users"></i> All Status
-          </a>
-          <a href="?<?= http_build_query(array_merge($_GET, ['status' => 'current'])) ?>" 
-             class="<?= $status_filter === 'current' ? 'active' : '' ?>">
-            <i class="fas fa-user-check"></i> Current
-          </a>
-          <a href="?<?= http_build_query(array_merge($_GET, ['status' => 'graduated'])) ?>" 
-             class="<?= $status_filter === 'graduated' ? 'active' : '' ?>">
-            <i class="fas fa-graduation-cap"></i> Graduated
-          </a>
-        </div>
-        
-        <!-- Location Filter -->
-        <div class="role-filter">
-          <a href="?<?= http_build_query(array_merge($_GET, ['location' => ''])) ?>" 
-             class="<?= empty($location_filter) ? 'active' : '' ?>">
-            <i class="fas fa-map-marker-alt"></i> All Locations
-          </a>
-          <a href="?<?= http_build_query(array_merge($_GET, ['location' => 'no_location'])) ?>" 
-             class="<?= $location_filter === 'no_location' ? 'active' : '' ?>">
-            <i class="fas fa-map-marker"></i> No Location
-          </a>
-          <?php foreach ($unique_locations as $loc): ?>
-            <?php 
-            $location_key = $loc['barangay'] . '|' . $loc['municipality'] . '|' . $loc['city'];
-            $location_display = ($loc['barangay'] !== 'Not Specified' ? $loc['barangay'] . ', ' : '') . 
-                               ($loc['municipality'] !== 'Not Specified' ? $loc['municipality'] . ', ' : '') . 
-                               ($loc['city'] !== 'Not Specified' ? $loc['city'] : '');
-            $location_display = trim($location_display, ', ');
-            if (empty($location_display)) $location_display = 'Not Specified';
-            ?>
-            <a href="?<?= http_build_query(array_merge($_GET, ['location' => $location_key])) ?>" 
-               class="<?= $location_filter === $location_key ? 'active' : '' ?>">
-              <i class="fas fa-map-pin"></i> <?= htmlspecialchars($location_display) ?> (<?= $loc['volunteer_count'] ?>)
-            </a>
-          <?php endforeach; ?>
-        </div>
+<!-- Enhanced Action Bar with Dropdown Filters -->
+<div class="action-bar">
+  <div class="action-bar-left">
+    <!-- Search and Create Button Row -->
+    <div class="search-filter-row">
+      <div class="search-box">
+        <i class="fas fa-search"></i>
+        <input type="text" id="volunteerSearch" placeholder="Search volunteers by name, location, or contact...">
       </div>
       
       <button class="btn-create" onclick="openCreateModal()">
         <i class="fas fa-user-plus"></i> Add New Volunteer
       </button>
     </div>
+        
+       <!-- Filter Controls Row -->
+    <div class="filter-row">
+      <!-- Service Filter -->
+      <?php if (count($accessible_services) > 1): ?>
+      <div class="filter-group">
+        <label class="filter-label">Service:</label>
+        <select onchange="updateServiceFilter(this.value)">
+          <option value="">All Services</option>
+          <?php foreach ($accessible_services as $key => $name): ?>
+            <option value="<?= $key ?>" <?= $service_filter === $key ? 'selected' : '' ?>>
+              <?= $name ?>
+            </option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+      <?php endif; ?>
+        
+       <!-- Status Filter -->
+      <div class="filter-group">
+        <label class="filter-label">Status:</label>
+        <select onchange="updateStatusFilter(this.value)">
+          <option value="">All Status</option>
+          <option value="current" <?= $status_filter === 'current' ? 'selected' : '' ?>>Current</option>
+          <option value="graduated" <?= $status_filter === 'graduated' ? 'selected' : '' ?>>Graduated</option>
+        </select>
+      </div>
+        
+  <!-- Location Filter - Now as Dropdown -->
+      <div class="filter-group">
+        <label class="filter-label">Location:</label>
+        <div class="location-dropdown">
+          <select onchange="updateLocationFilter(this.value)">
+            <option value="">All Locations</option>
+            <option value="no_location" <?= $location_filter === 'no_location' ? 'selected' : '' ?>>
+              No Location Specified
+            </option>
+            <?php foreach ($unique_locations as $loc): ?>
+              <?php 
+              $location_key = $loc['barangay'] . '|' . $loc['municipality'] . '|' . $loc['city'];
+              $location_display = ($loc['barangay'] !== 'Not Specified' ? $loc['barangay'] . ', ' : '') . 
+                                 ($loc['municipality'] !== 'Not Specified' ? $loc['municipality'] . ', ' : '') . 
+                                 ($loc['city'] !== 'Not Specified' ? $loc['city'] : '');
+              $location_display = trim($location_display, ', ');
+              if (empty($location_display)) $location_display = 'Not Specified';
+              ?>
+              <option value="<?= $location_key ?>" <?= $location_filter === $location_key ? 'selected' : '' ?>>
+                <?= htmlspecialchars($location_display) ?> (<?= $loc['volunteer_count'] ?>)
+              </option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+      </div>
+      
+          <!-- Clear Filters Button -->
+      <?php if ($service_filter || $status_filter || $location_filter): ?>
+      <div class="filter-group">
+        <a href="?" class="btn-clear-filters">
+          <i class="fas fa-times-circle"></i> Clear Filters
+        </a>
+      </div>
+      <?php endif; ?>
+    </div>
+  </div>
+</div>
 
     <!-- Enhanced Statistics Overview -->
     <div class="stats-overview">
@@ -556,58 +562,42 @@ $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(functio
       </button>
     </div>
 
-    <!-- Service Statistics -->
-    <?php if (empty($service_filter) && count($accessible_services) > 1): ?>
-    <div class="users-table-wrapper">
-      <div class="table-header">
-        <h2 class="table-title">
-          <i class="fas fa-chart-bar"></i>
-          Service Statistics Overview
-        </h2>
+<!-- Enhanced Service Statistics Section -->
+<?php if (empty($service_filter) && count($accessible_services) > 1): ?>
+<div class="service-stats-section">
+  <div class="service-stats-title">
+    <h2>
+      <i class="fas fa-chart-pie"></i>
+      Service Distribution Overview
+    </h2>
+    <p>Volunteer breakdown across all PRC services</p>
+  </div>
+  
+  <div class="service-stats-compact">
+    <?php foreach ($accessible_services as $service_key => $service_name): ?>
+      <div class="service-stat-card">
+        <div class="service-stat-icon">
+          <i class="fas fa-<?= $service_key === 'first_aid' ? 'first-aid' : ($service_key === 'disaster_response' ? 'exclamation-triangle' : ($service_key === 'blood_services' ? 'tint' : ($service_key === 'safety_services' ? 'shield-alt' : ($service_key === 'youth_services' ? 'users' : 'heart')))) ?>"></i>
+        </div>
+        <div class="service-stat-name"><?= $service_name ?></div>
+        <div class="service-stat-numbers">
+          <div class="service-stat-item">
+            <span class="service-stat-value"><?= $stats[$service_key]['current'] ?></span>
+            <span class="service-stat-label">Current</span>
+          </div>
+          <div class="service-stat-item">
+            <span class="service-stat-value"><?= $stats[$service_key]['graduated'] ?></span>
+            <span class="service-stat-label">Graduated</span>
+          </div>
+        </div>
+        <a href="?service=<?= $service_key ?>" class="service-stat-view">
+          <i class="fas fa-eye"></i> View Details
+        </a>
       </div>
-      
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Service</th>
-            <th>Current Volunteers</th>
-            <th>Graduated</th>
-            <th>Total</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <?php foreach ($accessible_services as $service_key => $service_name): ?>
-            <tr>
-              <td>
-                <div class="user-info">
-                  <div class="user-avatar" style="background: var(--prc-red);">
-                    <?= strtoupper(substr($service_name, 0, 2)) ?>
-                  </div>
-                  <div class="user-details">
-                    <div class="user-name"><?= $service_name ?></div>
-                    <div class="user-email"><?= ucwords(str_replace('_', ' ', $service_key)) ?></div>
-                  </div>
-                </div>
-              </td>
-              <td>
-                <span class="role-badge admin"><?= $stats[$service_key]['current'] ?></span>
-              </td>
-              <td>
-                <span class="role-badge user"><?= $stats[$service_key]['graduated'] ?></span>
-              </td>
-              <td style="font-weight: 600; color: var(--dark);"><?= $stats[$service_key]['total'] ?></td>
-              <td class="action">
-                <a href="?service=<?= $service_key ?>" class="btn-action btn-view">
-                  <i class="fas fa-eye"></i> View
-                </a>
-              </td>
-            </tr>
-          <?php endforeach; ?>
-        </tbody>
-      </table>
-    </div>
-    <?php endif; ?>
+    <?php endforeach; ?>
+  </div>
+</div>
+<?php endif; ?>
 
     <!-- Volunteers Table -->
     <div class="users-table-wrapper">
@@ -1162,6 +1152,36 @@ $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(functio
         }, 5000);
       });
     });
+    // Filter update functions
+function updateServiceFilter(value) {
+  const url = new URL(window.location);
+  if (value) {
+    url.searchParams.set('service', value);
+  } else {
+    url.searchParams.delete('service');
+  }
+  window.location = url;
+}
+
+function updateStatusFilter(value) {
+  const url = new URL(window.location);
+  if (value) {
+    url.searchParams.set('status', value);
+  } else {
+    url.searchParams.delete('status');
+  }
+  window.location = url;
+}
+
+function updateLocationFilter(value) {
+  const url = new URL(window.location);
+  if (value) {
+    url.searchParams.set('location', value);
+  } else {
+    url.searchParams.delete('location');
+  }
+  window.location = url;
+}
   </script>
 </body>
 </html>

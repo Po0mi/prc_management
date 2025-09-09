@@ -2379,7 +2379,12 @@ function openRequestModal(request) {
             </div>
             <div class="info-item">
                 <div class="info-label">Preferred Time</div>
-                <div class="info-value">${request.preferred_time.charAt(0).toUpperCase() + request.preferred_time.slice(1)}</div>
+                <div class="info-value">
+        ${request.preferred_start_time && request.preferred_end_time ? 
+            `${formatTime(request.preferred_start_time)} - ${formatTime(request.preferred_end_time)}` : 
+            'Not specified'
+        }
+    </div>
             </div>
             <div class="info-item">
                 <div class="info-label">Participants</div>
@@ -2478,16 +2483,17 @@ function openCreateSessionModal(request) {
     document.getElementById('capacity').value = Math.max(request.participant_count, 10);
     
     // Set time based on preference
-    if (request.preferred_time === 'morning') {
-        document.getElementById('start_time').value = '08:00';
-        document.getElementById('end_time').value = '17:00';
-    } else if (request.preferred_time === 'afternoon') {
-        document.getElementById('start_time').value = '13:00';
-        document.getElementById('end_time').value = '17:00';
-    } else {
-        document.getElementById('start_time').value = '18:00';
-        document.getElementById('end_time').value = '20:00';
-    }
+if (request.preferred_start_time) {
+    document.getElementById('start_time').value = request.preferred_start_time;
+} else {
+    document.getElementById('start_time').value = '09:00';
+}
+
+if (request.preferred_end_time) {
+    document.getElementById('end_time').value = request.preferred_end_time;
+} else {
+    document.getElementById('end_time').value = '17:00';
+}
     
     // Set default venue if location preference provided
     if (request.location_preference) {
@@ -2764,6 +2770,12 @@ function closeDocumentModal() {
         }, 300);
     }
 }
+<div class="info-value">
+        ${request.preferred_start_time && request.preferred_end_time ? 
+            `${formatTime(request.preferred_start_time)} - ${formatTime(request.preferred_end_time)}` : 
+            'Not specified'
+        }
+    </div>
 // CSS Styles for Multi-Day Sessions
 const sessionStyles = `
 /* Enhanced styles for multi-day session display */

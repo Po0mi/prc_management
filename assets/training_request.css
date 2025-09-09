@@ -664,7 +664,220 @@
     animation: modalSlideIn 0.3s ease;
     border: 2px solid rgba(160, 0, 0, 0.1);
 }
+/* CRITICAL FIX: Add this CSS to force modal content to display properly */
 
+/* Override ALL existing modal styles with maximum specificity */
+#documentModal {
+    display: none !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    background-color: rgba(0, 0, 0, 0.7) !important;
+    z-index: 999999 !important;
+    backdrop-filter: blur(4px) !important;
+    -webkit-backdrop-filter: blur(4px) !important;
+    justify-content: center !important;
+    align-items: center !important;
+    padding: 20px !important;
+    box-sizing: border-box !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    transition: all 0.3s ease !important;
+}
+
+#documentModal.active {
+    display: flex !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+}
+
+/* Force modal content to be visible and properly positioned */
+#documentModal .modal-content {
+    background: white !important;
+    border-radius: 12px !important;
+    width: 100% !important;
+    max-width: 600px !important;
+    max-height: 85vh !important;
+    overflow: hidden !important;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3) !important;
+    transform: scale(0.9) translateY(20px) !important;
+    transition: all 0.3s ease !important;
+    display: flex !important;
+    flex-direction: column !important;
+    position: relative !important;
+    z-index: 1000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+#documentModal.active .modal-content {
+    transform: scale(1) translateY(0) !important;
+}
+
+/* Ensure modal header is visible */
+#documentModal .modal-header {
+    background: linear-gradient(135deg, #a00000 0%, #800000 100%) !important;
+    color: white !important;
+    padding: 24px !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    flex-shrink: 0 !important;
+    border-radius: 12px 12px 0 0 !important;
+    position: relative !important;
+    z-index: 1000001 !important;
+    width: 100% !important;
+}
+
+#documentModal .modal-title {
+    font-size: 24px !important;
+    font-weight: 700 !important;
+    margin: 0 !important;
+    color: white !important;
+     width: 100% !important;
+}
+
+#documentModal .close-modal {
+    background: rgba(255, 255, 255, 0.2) !important;
+    border: none !important;
+    color: white !important;
+    cursor: pointer !important;
+    font-size: 20px !important;
+    width: 36px !important;
+    height: 36px !important;
+    border-radius: 50% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transition: all 0.3s ease !important;
+}
+
+#documentModal .close-modal:hover {
+    background: rgba(255, 255, 255, 0.3) !important;
+    transform: scale(1.1) !important;
+}
+
+/* Ensure document details area is visible and scrollable */
+#documentModal .document-details {
+    flex: 1 !important;
+    overflow-y: auto !important;
+    padding: 24px !important;
+    background: white !important;
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+     width: 100% !important;
+}
+
+/* Ensure form section is visible */
+#documentModal form {
+    border-top: 2px solid #e5e7eb !important;
+    background: #f9fafb !important;
+    padding: 24px !important;
+    margin: 0 !important;
+    flex-shrink: 0 !important;
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+     width: 100% !important;
+     height: 48%;
+}
+
+/* Force all modal children to be visible */
+#documentModal * {
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+/* Document items styling */
+#documentModal .document-item {
+    background: white !important;
+    border: 2px solid #e5e7eb !important;
+    border-radius: 8px !important;
+    padding: 20px !important;
+    margin-bottom: 16px !important;
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+#documentModal .document-header {
+    display: flex !important;
+    align-items: center !important;
+    gap: 12px !important;
+    margin-bottom: 12px !important;
+}
+
+#documentModal .document-info {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 16px !important;
+    flex-wrap: wrap !important;
+}
+
+#documentModal .document-actions {
+    display: flex !important;
+    gap: 8px !important;
+}
+
+#documentModal .btn-view-doc,
+#documentModal .btn-download-doc {
+    padding: 8px 16px !important;
+    border: none !important;
+    border-radius: 6px !important;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    cursor: pointer !important;
+    transition: all 0.3s ease !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    text-decoration: none !important;
+}
+
+#documentModal .btn-view-doc {
+    background: #3b82f6 !important;
+    color: white !important;
+}
+
+#documentModal .btn-download-doc {
+    background: #10b981 !important;
+    color: white !important;
+}
+
+/* No documents state */
+#documentModal .no-documents {
+    text-align: center !important;
+    padding: 40px !important;
+    color: #6b7280 !important;
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    #documentModal {
+        padding: 10px !important;
+    }
+    
+    #documentModal .modal-content {
+        width: 95% !important;
+        max-height: 95vh !important;
+    }
+    
+    #documentModal .document-info {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+    }
+}
 .modal-header {
     background: linear-gradient(135deg, var(--prc-red) 0%, var(--prc-red-dark) 100%);
     color: var(--white);
