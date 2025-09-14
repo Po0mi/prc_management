@@ -462,6 +462,7 @@ $categories = [
     });
   </script>
     <script src="js/notifications.js?v=<?php echo time(); ?>"></script>
+      <?php include 'chat_widget.php'; ?>
     <script>
 console.log('=== PAGE DEBUG ===');
 console.log('Current page:', window.location.pathname);

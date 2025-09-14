@@ -99,13 +99,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_announcement']
         $successMessage = "Announcement deleted successfully.";
     }
 }
-
+// Handle announcement archiving (ADD this, keep existing delete code)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['archive_announcement'])) {
+    $announcement_id = (int)$_POST['announcement_id'];
+    if ($announcement_id) {
+        $stmt = $pdo->prepare("UPDATE announcements SET archived = 1 WHERE announcement_id = ?");
+        $stmt->execute([$announcement_id]);
+        $successMessage = "Announcement archived successfully.";
+    }
+}
 // Get announcements
 $stmt = $pdo->query("SELECT * FROM announcements ORDER BY posted_at DESC");
 $announcements = $stmt->fetchAll();
 
 // Get total announcements
-$total_announcements = $pdo->query("SELECT COUNT(*) FROM announcements")->fetchColumn();
+$total_announcements = $pdo->query("SELECT COUNT(*) FROM announcements WHERE archived = 0")->fetchColumn();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -134,6 +142,7 @@ $total_announcements = $pdo->query("SELECT COUNT(*) FROM announcements")->fetchC
   <?php include 'sidebar.php'; ?>
   <div class="admin-content">
     <div class="announcements-container">
+       <?php include 'header.php'; ?>
       <div class="page-header">
         <h1>Manage Announcements</h1>
         <p>Post public announcements visible to all users</p>
@@ -236,15 +245,23 @@ $total_announcements = $pdo->query("SELECT COUNT(*) FROM announcements")->fetchC
                     <?= nl2br(htmlspecialchars($a['content'])) ?>
                   </div>
                   
-                  <div class="announcement-actions">
-                    <form method="POST" onsubmit="return confirm('Are you sure you want to delete this announcement?')">
-                      <input type="hidden" name="delete_announcement" value="1">
-                      <input type="hidden" name="announcement_id" value="<?= $a['announcement_id'] ?>">
-                      <button type="submit" class="btn btn-sm btn-delete">
-                        <i class="fas fa-trash-alt"></i> Delete
-                      </button>
-                    </form>
-                  </div>
+                <div class="announcement-actions">
+    <form method="POST" onsubmit="return confirm('Are you sure you want to archive this announcement?')" style="display: inline-block;">
+        <input type="hidden" name="archive_announcement" value="1">
+        <input type="hidden" name="announcement_id" value="<?= $a['announcement_id'] ?>">
+        <button type="submit" class="btn btn-sm btn-archive">
+            <i class="fas fa-archive"></i> Archive
+        </button>
+    </form>
+    
+    <form method="POST" onsubmit="return confirm('Are you sure you want to delete this announcement?')" style="display: inline-block;">
+        <input type="hidden" name="delete_announcement" value="1">
+        <input type="hidden" name="announcement_id" value="<?= $a['announcement_id'] ?>">
+        <button type="submit" class="btn btn-sm btn-delete">
+            <i class="fas fa-trash-alt"></i> Delete
+        </button>
+    </form>
+</div>
                 </div>
               <?php endforeach; ?>
             </div>
@@ -256,6 +273,7 @@ $total_announcements = $pdo->query("SELECT COUNT(*) FROM announcements")->fetchC
   <script src="../admin/js/notification_frontend.js?v=<?php echo time(); ?>"></script>
   <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
   <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
+    <?php include 'chat_widget.php'; ?>
   <script>
     // Image upload preview
     document.getElementById('announcement_image').addEventListener('change', function(e) {

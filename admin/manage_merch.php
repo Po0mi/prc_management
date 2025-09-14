@@ -233,6 +233,7 @@ $stock_filters = [
 <body>
   <?php include 'sidebar.php'; ?>
   <div class="main-container">
+     <?php include 'header.php'; ?>
     <!-- Page Header -->
     <div class="page-header">
       <div class="header-content">
@@ -611,6 +612,7 @@ $stock_filters = [
   </div>
 <script src="../admin/js/notification_frontend.js?v=<?php echo time(); ?>"></script>
   <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
+    <?php include 'chat_widget.php'; ?>
   <script>
     // Merchandise Management JavaScript
     

@@ -52,16 +52,17 @@ function getAdminNotifications($pdo) {
         }
 
         // HIGH PRIORITY: Overdue registrations (48+ hours)
-        $stmt = $pdo->query("
+        $stmt = $pdo->prepare("
             SELECT COUNT(*) as count, 
                    MIN(registration_date) as oldest_date
             FROM registrations 
             WHERE status = 'pending' 
             AND registration_date < DATE_SUB(NOW(), INTERVAL 48 HOUR)
         ");
+        $stmt->execute();
         $urgentRegs = $stmt->fetch();
         
-        if ($urgentRegs['count'] > 0) {
+        if ($urgentRegs && $urgentRegs['count'] > 0) {
             $notifications[] = [
                 'priority' => 'high',
                 'type' => 'urgent_action',
@@ -73,16 +74,17 @@ function getAdminNotifications($pdo) {
             ];
         }
 
-        // HIGH PRIORITY: Critical inventory levels (≤5 items)
-        $stmt = $pdo->query("
+        // HIGH PRIORITY: Critical inventory levels (≤5 items) - Updated for new table structure
+        $stmt = $pdo->prepare("
             SELECT COUNT(*) as critical_count,
-                   GROUP_CONCAT(DISTINCT item_name ORDER BY quantity LIMIT 3) as items
+                   GROUP_CONCAT(DISTINCT item_name ORDER BY current_stock LIMIT 3) as items
             FROM inventory_items 
-            WHERE quantity <= 5 AND quantity > 0
+            WHERE current_stock <= 5 AND current_stock > 0
         ");
+        $stmt->execute();
         $criticalInventory = $stmt->fetch();
         
-        if ($criticalInventory['critical_count'] > 0) {
+        if ($criticalInventory && $criticalInventory['critical_count'] > 0) {
             $notifications[] = [
                 'priority' => 'high',
                 'type' => 'inventory',
@@ -95,16 +97,17 @@ function getAdminNotifications($pdo) {
         }
 
         // MEDIUM PRIORITY: All pending registrations (within 48 hours)
-        $stmt = $pdo->query("
+        $stmt = $pdo->prepare("
             SELECT COUNT(*) as count,
                    MAX(registration_date) as latest_date
             FROM registrations 
             WHERE status = 'pending' 
             AND registration_date >= DATE_SUB(NOW(), INTERVAL 48 HOUR)
         ");
+        $stmt->execute();
         $pendingRegs = $stmt->fetch();
         
-        if ($pendingRegs['count'] > 0) {
+        if ($pendingRegs && $pendingRegs['count'] > 0) {
             $notifications[] = [
                 'priority' => 'medium',
                 'type' => 'registration',
@@ -117,15 +120,16 @@ function getAdminNotifications($pdo) {
         }
 
         // MEDIUM PRIORITY: All training requests
-        $stmt = $pdo->query("
+        $stmt = $pdo->prepare("
             SELECT COUNT(*) as count,
                    MAX(created_at) as latest_date
             FROM training_requests 
             WHERE status = 'pending'
         ");
+        $stmt->execute();
         $pendingRequests = $stmt->fetch();
         
-        if ($pendingRequests['count'] > 0) {
+        if ($pendingRequests && $pendingRequests['count'] > 0) {
             $notifications[] = [
                 'priority' => 'medium',
                 'type' => 'requests',
@@ -138,16 +142,17 @@ function getAdminNotifications($pdo) {
         }
 
         // MEDIUM PRIORITY: New users registered recently
-        $stmt = $pdo->query("
+        $stmt = $pdo->prepare("
             SELECT COUNT(*) as count,
                    MAX(created_at) as latest_date
             FROM users 
             WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
             AND role = 'user'
         ");
+        $stmt->execute();
         $newUsers = $stmt->fetch();
         
-        if ($newUsers['count'] > 0) {
+        if ($newUsers && $newUsers['count'] > 0) {
             $notifications[] = [
                 'priority' => 'medium',
                 'type' => 'new_users',
@@ -160,16 +165,17 @@ function getAdminNotifications($pdo) {
         }
 
         // MEDIUM PRIORITY: Upcoming events needing attention
-        $stmt = $pdo->query("
+        $stmt = $pdo->prepare("
             SELECT COUNT(*) as count,
                    MIN(event_date) as next_date
             FROM events 
             WHERE event_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)
             AND event_date > CURDATE()
         ");
+        $stmt->execute();
         $upcomingEvents = $stmt->fetch();
         
-        if ($upcomingEvents['count'] > 0) {
+        if ($upcomingEvents && $upcomingEvents['count'] > 0) {
             $notifications[] = [
                 'priority' => 'medium',
                 'type' => 'upcoming',
@@ -182,16 +188,17 @@ function getAdminNotifications($pdo) {
         }
 
         // MEDIUM PRIORITY: Training sessions needing preparation
-        $stmt = $pdo->query("
+        $stmt = $pdo->prepare("
             SELECT COUNT(*) as count,
                    MIN(session_date) as next_date
             FROM training_sessions 
             WHERE session_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 3 DAY)
             AND session_date > CURDATE()
         ");
+        $stmt->execute();
         $upcomingSessions = $stmt->fetch();
         
-        if ($upcomingSessions['count'] > 0) {
+        if ($upcomingSessions && $upcomingSessions['count'] > 0) {
             $notifications[] = [
                 'priority' => 'medium',
                 'type' => 'training',
@@ -204,15 +211,16 @@ function getAdminNotifications($pdo) {
         }
 
         // MEDIUM PRIORITY: New donations needing approval
-        $stmt = $pdo->query("
+        $stmt = $pdo->prepare("
             SELECT COUNT(*) as count,
                    MAX(created_at) as latest_date
             FROM donations 
             WHERE status = 'pending'
         ");
+        $stmt->execute();
         $pendingDonations = $stmt->fetch();
         
-        if ($pendingDonations['count'] > 0) {
+        if ($pendingDonations && $pendingDonations['count'] > 0) {
             $notifications[] = [
                 'priority' => 'medium',
                 'type' => 'donations',
@@ -225,15 +233,16 @@ function getAdminNotifications($pdo) {
         }
 
         // MEDIUM PRIORITY: Recent volunteer applications
-        $stmt = $pdo->query("
+        $stmt = $pdo->prepare("
             SELECT COUNT(*) as count,
                    MAX(created_at) as latest_date
             FROM volunteers 
             WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
         ");
+        $stmt->execute();
         $newVolunteers = $stmt->fetch();
         
-        if ($newVolunteers['count'] > 0) {
+        if ($newVolunteers && $newVolunteers['count'] > 0) {
             $notifications[] = [
                 'priority' => 'medium',
                 'type' => 'volunteers',
@@ -245,16 +254,17 @@ function getAdminNotifications($pdo) {
             ];
         }
 
-        // LOW PRIORITY: Low inventory levels (6-15 items)
-        $stmt = $pdo->query("
+        // LOW PRIORITY: Low inventory levels (6-15 items) - Updated for new table structure
+        $stmt = $pdo->prepare("
             SELECT COUNT(*) as count,
-                   GROUP_CONCAT(DISTINCT item_name ORDER BY quantity LIMIT 3) as items
+                   GROUP_CONCAT(DISTINCT item_name ORDER BY current_stock LIMIT 3) as items
             FROM inventory_items 
-            WHERE quantity > 5 AND quantity <= 15
+            WHERE current_stock > 5 AND current_stock <= 15
         ");
+        $stmt->execute();
         $lowInventory = $stmt->fetch();
         
-        if ($lowInventory['count'] > 0) {
+        if ($lowInventory && $lowInventory['count'] > 0) {
             $notifications[] = [
                 'priority' => 'low',
                 'type' => 'inventory_low',
@@ -267,16 +277,17 @@ function getAdminNotifications($pdo) {
         }
 
         // LOW PRIORITY: Recent achievements/positive updates
-        $stmt = $pdo->query("
+        $stmt = $pdo->prepare("
             SELECT COUNT(*) as new_donations,
                    SUM(amount) as total_amount
             FROM donations 
             WHERE donation_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
             AND status = 'approved'
         ");
+        $stmt->execute();
         $recentDonations = $stmt->fetch();
         
-        if ($recentDonations['new_donations'] > 3) {
+        if ($recentDonations && $recentDonations['new_donations'] > 3) {
             $notifications[] = [
                 'priority' => 'low',
                 'type' => 'success',
@@ -289,15 +300,16 @@ function getAdminNotifications($pdo) {
         }
 
         // LOW PRIORITY: Recent announcements
-        $stmt = $pdo->query("
+        $stmt = $pdo->prepare("
             SELECT COUNT(*) as count,
                    MAX(created_at) as latest_date
             FROM announcements 
             WHERE created_at >= DATE_SUB(NOW(), INTERVAL 3 DAY)
         ");
+        $stmt->execute();
         $recentAnnouncements = $stmt->fetch();
         
-        if ($recentAnnouncements['count'] > 0) {
+        if ($recentAnnouncements && $recentAnnouncements['count'] > 0) {
             $notifications[] = [
                 'priority' => 'low',
                 'type' => 'announcements',
@@ -340,25 +352,30 @@ function checkSystemHealth($pdo) {
             ];
         }
 
-        // Check for failed operations
-        $stmt = $pdo->query("
-            SELECT COUNT(*) as failed_count 
-            FROM system_logs 
-            WHERE level = 'ERROR' 
-            AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)
-        ");
-        $result = $stmt->fetch();
-        
-        if ($result && $result['failed_count'] > 10) {
-            $issues[] = [
-                'title' => 'System Errors Detected',
-                'message' => "{$result['failed_count']} errors in the last hour.",
-                'action' => ['text' => 'View Logs', 'link' => '#']
-            ];
+        // Check for failed operations (only if system_logs table exists)
+        try {
+            $stmt = $pdo->prepare("
+                SELECT COUNT(*) as failed_count 
+                FROM system_logs 
+                WHERE level = 'ERROR' 
+                AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)
+            ");
+            $stmt->execute();
+            $result = $stmt->fetch();
+            
+            if ($result && $result['failed_count'] > 10) {
+                $issues[] = [
+                    'title' => 'System Errors Detected',
+                    'message' => "{$result['failed_count']} errors in the last hour.",
+                    'action' => ['text' => 'View Logs', 'link' => '#']
+                ];
+            }
+        } catch (Exception $e) {
+            // If system_logs table doesn't exist, skip this check
         }
 
     } catch (Exception $e) {
-        // If system_logs table doesn't exist, skip this check
+        error_log("Error checking system health: " . $e->getMessage());
     }
     
     return $issues;
@@ -370,7 +387,7 @@ function getRoleActivity($pdo, $role, $is_unrestricted) {
     
     try {
         // Recent Events with registration counts
-        $stmt = $pdo->query("
+        $stmt = $pdo->prepare("
             SELECT e.title, e.event_date, e.location, e.event_id, e.major_service,
                    COUNT(r.registration_id) as registration_count,
                    CASE 
@@ -385,10 +402,11 @@ function getRoleActivity($pdo, $role, $is_unrestricted) {
             ORDER BY e.event_date DESC 
             LIMIT 10
         ");
+        $stmt->execute();
         $activity['events'] = $stmt ? $stmt->fetchAll() : [];
         
         // Recent Training Sessions with participant counts
-        $stmt = $pdo->query("
+        $stmt = $pdo->prepare("
             SELECT ts.title, ts.major_service, ts.session_date, ts.start_time, ts.venue, ts.session_id,
                    COUNT(sr.registration_id) as participant_count,
                    CASE 
@@ -403,10 +421,11 @@ function getRoleActivity($pdo, $role, $is_unrestricted) {
             ORDER BY ts.session_date DESC 
             LIMIT 10
         ");
+        $stmt->execute();
         $activity['sessions'] = $stmt ? $stmt->fetchAll() : [];
         
         // Recent Training Requests
-        $stmt = $pdo->query("
+        $stmt = $pdo->prepare("
             SELECT tr.request_id, tr.training_program, tr.organization_name, tr.contact_person, 
                    tr.participant_count, tr.status, tr.service_type, tr.created_at,
                    u.full_name as requester_name
@@ -416,10 +435,11 @@ function getRoleActivity($pdo, $role, $is_unrestricted) {
             ORDER BY tr.created_at DESC 
             LIMIT 8
         ");
+        $stmt->execute();
         $activity['training_requests'] = $stmt ? $stmt->fetchAll() : [];
         
         // Recent Users with registration status
-        $stmt = $pdo->query("
+        $stmt = $pdo->prepare("
             SELECT u.username, u.created_at, u.email, u.full_name,
                    COUNT(r.registration_id) as total_registrations
             FROM users u
@@ -429,10 +449,11 @@ function getRoleActivity($pdo, $role, $is_unrestricted) {
             ORDER BY u.created_at DESC 
             LIMIT 8
         ");
+        $stmt->execute();
         $activity['users'] = $stmt ? $stmt->fetchAll() : [];
         
         // Recent Donations with approval status
-        $stmt = $pdo->query("
+        $stmt = $pdo->prepare("
             SELECT d.amount, donor.name AS donor_name, d.donation_date, d.status, d.payment_method
             FROM donations d 
             JOIN donors donor ON d.donor_id = donor.donor_id 
@@ -440,10 +461,11 @@ function getRoleActivity($pdo, $role, $is_unrestricted) {
             ORDER BY d.donation_date DESC 
             LIMIT 8
         ");
+        $stmt->execute();
         $activity['donations'] = $stmt ? $stmt->fetchAll() : [];
         
         // Recent Blood Donations
-        $stmt = $pdo->query("
+        $stmt = $pdo->prepare("
             SELECT bd.blood_type, donor.name AS donor_name, bd.donation_date, bd.status
             FROM blood_donations bd
             JOIN donors donor ON bd.donor_id = donor.donor_id 
@@ -451,37 +473,40 @@ function getRoleActivity($pdo, $role, $is_unrestricted) {
             ORDER BY bd.donation_date DESC 
             LIMIT 5
         ");
+        $stmt->execute();
         $activity['blood_donations'] = $stmt ? $stmt->fetchAll() : [];
         
         // Recent Volunteer Activities
-        $stmt = $pdo->query("
+        $stmt = $pdo->prepare("
             SELECT v.full_name, v.service, v.status, v.created_at, v.location
             FROM volunteers v
             WHERE v.created_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
             ORDER BY v.created_at DESC 
             LIMIT 6
         ");
+        $stmt->execute();
         $activity['volunteers'] = $stmt ? $stmt->fetchAll() : [];
         
-        // Critical Inventory Items
-        $stmt = $pdo->query("
-            SELECT i.item_name, i.quantity, i.expiry_date, c.category_name, i.location,
+        // Critical Inventory Items - Updated for new table structure
+        $stmt = $pdo->prepare("
+            SELECT i.item_name, i.current_stock, i.minimum_stock, c.category_name, i.location,
                    CASE 
-                       WHEN i.quantity = 0 THEN 'out_of_stock'
-                       WHEN i.quantity <= 5 THEN 'critical'
-                       WHEN i.quantity <= 10 THEN 'low'
+                       WHEN i.current_stock = 0 THEN 'out_of_stock'
+                       WHEN i.current_stock <= 5 THEN 'critical'
+                       WHEN i.current_stock <= i.minimum_stock THEN 'low'
                        ELSE 'normal'
                    END as stock_status
             FROM inventory_items i 
-            LEFT JOIN categories c ON i.category_id = c.category_id 
-            WHERE i.quantity <= 15
-            ORDER BY i.quantity ASC, i.expiry_date ASC 
+            LEFT JOIN inventory_categories c ON i.category_id = c.category_id 
+            WHERE i.current_stock <= 15
+            ORDER BY i.current_stock ASC 
             LIMIT 8
         ");
+        $stmt->execute();
         $activity['inventory'] = $stmt ? $stmt->fetchAll() : [];
         
         // Recent Announcements with engagement
-        $stmt = $pdo->query("
+        $stmt = $pdo->prepare("
             SELECT a.title, a.content, a.posted_at, a.created_at,
                    DATEDIFF(NOW(), a.posted_at) as days_ago
             FROM announcements a
@@ -489,6 +514,7 @@ function getRoleActivity($pdo, $role, $is_unrestricted) {
             ORDER BY a.posted_at DESC 
             LIMIT 5
         ");
+        $stmt->execute();
         $activity['announcements'] = $stmt ? $stmt->fetchAll() : [];
         
     } catch (PDOException $e) {
@@ -537,6 +563,7 @@ $role_display = $role_info['name'];
   <link rel="stylesheet" href="../assets/sidebar_admin.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/header.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/admin.css?v=<?php echo time(); ?>">
+  <link rel="stylesheet" href="../assets/calendar-enhanced.css?v=<?php echo time(); ?>">
 </head>
 <body class="admin-<?= htmlspecialchars($user_role) ?>">
   <?php include 'sidebar.php'; ?>
@@ -565,8 +592,7 @@ $role_display = $role_info['name'];
           </div>
         </div>
       </div>
-
-      <!-- Priority Notifications Section - Now Scrollable -->
+ <!-- Priority Notifications Section - Now Scrollable -->
       <?php if (!empty($adminNotifications)): ?>
       <div class="notifications-priority-section">
         <div class="notifications-header">
@@ -699,16 +725,18 @@ $role_display = $role_info['name'];
       </div>
       <?php endif; ?>
 
-
       <!-- Main Dashboard Content -->
       <div class="dashboard-main">
-        <!-- Recent Activity Section (Priority) - Now Scrollable -->
-        <div class="recent-activity-section priority-section">
+        <!-- Recent Activity Section -->
+        <div class="recent-activity-section">
           <div class="section-header">
             <h2><i class="fas fa-activity"></i> Recent Activity</h2>
             <div class="activity-controls">
               <button class="refresh-btn" onclick="refreshActivity()">
                 <i class="fas fa-sync-alt"></i>
+              </button>
+              <button class="calendar-btn" onclick="openCalendar()">
+                <i class="fas fa-calendar"></i>
               </button>
               <div class="auto-refresh-indicator">
                 <i class="fas fa-circle" id="activityIndicator"></i>
@@ -920,12 +948,10 @@ $role_display = $role_info['name'];
                         <div class="activity-main"><?= htmlspecialchars($item['item_name']) ?></div>
                         <div class="activity-meta">
                           <span class="quantity quantity-<?= $item['stock_status'] ?>">
-                            <i class="fas fa-cubes"></i> <?= $item['quantity'] ?> remaining
+                            <i class="fas fa-cubes"></i> <?= $item['current_stock'] ?> remaining
                           </span>
-                          <span class="location"><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($item['location']) ?></span>
-                          <?php if ($item['expiry_date']): ?>
-                            <span class="expiry"><i class="fas fa-calendar-times"></i> Expires <?= date('M d, Y', strtotime($item['expiry_date'])) ?></span>
-                          <?php endif; ?>
+                          <span class="location"><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($item['location'] ?? 'N/A') ?></span>
+                          <span class="minimum-stock"><i class="fas fa-level-down-alt"></i> Min: <?= $item['minimum_stock'] ?></span>
                         </div>
                       </div>
                       <div class="stock-status status-<?= $item['stock_status'] ?>">
@@ -1023,190 +1049,374 @@ $role_display = $role_info['name'];
           </div>
         </div>
 
-        <!-- Quick Actions & Management Hub -->
-        <div class="management-hub-section secondary-section">
+        <!-- Calendar Widget -->
+        <div class="calendar-widget-section">
           <div class="section-header">
-            <h2><i class="fas fa-tools"></i> Management Hub</h2>
+            <h2><i class="fas fa-calendar-alt"></i> Calendar</h2>
+            <button class="expand-calendar" onclick="openCalendar()">
+              <i class="fas fa-expand"></i>
+            </button>
           </div>
-
-          <!-- Primary Actions -->
-          <div class="action-group primary-actions">
-            <h3>Core Operations</h3>
-            <div class="action-buttons">
-              <a href="manage_events.php" class="action-btn primary">
-                <i class="fas fa-calendar-plus"></i>
-                <span>Manage Events</span>
-                <div class="action-desc">Create & manage events</div>
-              </a>
-
-              <a href="manage_sessions.php" class="action-btn">
-                <i class="fas fa-graduation-cap"></i>
-                <span>Training Sessions</span>
-                <div class="action-desc">Schedule training</div>
-              </a>
-
-              <a href="manage_training_requests.php" class="action-btn">
-                <i class="fas fa-clipboard-list"></i>
-                <span>Training Requests</span>
-                <div class="action-desc">Review requests</div>
-              </a>
-
-              <a href="manage_donations.php" class="action-btn">
-                <i class="fas fa-heart"></i>
-                <span>Donations</span>
-                <div class="action-desc">Process donations</div>
-              </a>
-
-              <a href="manage_users.php" class="action-btn">
-                <i class="fas fa-users-cog"></i>
-                <span>User Management</span>
-                <div class="action-desc">Manage users</div>
-              </a>
+          
+          <div class="mini-calendar">
+            <div class="calendar-header">
+              <button class="nav-btn" onclick="previousMonth()">&lt;</button>
+              <span class="month-year"><?= date('F Y') ?></span>
+              <button class="nav-btn" onclick="nextMonth()">&gt;</button>
+            </div>
+            
+            <div class="calendar-grid" id="miniCalendarGrid">
+              <div class="day-header">Sun</div>
+              <div class="day-header">Mon</div>
+              <div class="day-header">Tue</div>
+              <div class="day-header">Wed</div>
+              <div class="day-header">Thu</div>
+              <div class="day-header">Fri</div>
+              <div class="day-header">Sat</div>
+              <!-- Days will be generated by JavaScript -->
             </div>
           </div>
 
-          <!-- Secondary Actions -->
-          <div class="action-group secondary-actions">
-            <h3>Additional Tools</h3>
-            <div class="action-buttons">
-              <a href="manage_inventory.php" class="action-btn">
-                <i class="fas fa-boxes"></i>
-                <span>Inventory</span>
-                <div class="action-desc">Stock management</div>
-              </a>
-
-              <a href="manage_announcements.php" class="action-btn">
-                <i class="fas fa-bullhorn"></i>
-                <span>Announcements</span>
-                <div class="action-desc">Public notices</div>
-              </a>
-
-              <a href="manage_volunteers.php" class="action-btn">
-                <i class="fas fa-hands-helping"></i>
-                <span>Volunteers</span>
-                <div class="action-desc">Volunteer coordination</div>
-              </a>
-
-              <a href="manage_merch.php" class="action-btn">
-                <i class="fas fa-store"></i>
-                <span>Merchandise</span>
-                <div class="action-desc">Store management</div>
-              </a>
-            </div>
-          </div>
-
-          <!-- System Overview -->
-          <div class="system-overview">
-            <h3><i class="fas fa-chart-bar"></i> System Overview</h3>
-            <div class="overview-grid">
-              <div class="overview-item">
-                <div class="overview-label">Active Services</div>
-                <div class="overview-value">5</div>
-              </div>
-              <div class="overview-item">
-                <div class="overview-label">System Status</div>
-                <div class="overview-value status-operational">
-                  <i class="fas fa-check-circle"></i> Operational
-                </div>
-              </div>
-            </div>
-          </div>
+         <div class="upcoming-events">
+  <h4>Upcoming Events & Training</h4>
+  <div class="event-list">
+   <?php
+try {
+  // Get both events and training sessions with better type detection
+  $stmt = $pdo->prepare("
+    SELECT title, event_date as date, location, major_service, 'event' as type, description
+    FROM events 
+    WHERE event_date >= CURDATE()
+    UNION ALL
+    SELECT title, session_date as date, venue as location, major_service, 'training' as type, description
+    FROM training_sessions 
+    WHERE session_date >= CURDATE()
+    ORDER BY date ASC
+    LIMIT 6
+  ");
+  $stmt->execute();
+  $upcomingItems = $stmt->fetchAll();
+  
+  if (!empty($upcomingItems)):
+    foreach ($upcomingItems as $item):
+      // Better training detection
+      $isTraining = $item['type'] === 'training' || 
+                   (isset($item['major_service']) && (
+                     stripos($item['major_service'], 'training') !== false ||
+                     stripos($item['major_service'], 'safety') !== false ||
+                     stripos($item['major_service'], 'education') !== false
+                   ));
+?>
+<div class="event-item <?= $isTraining ? 'training-event' : '' ?>">
+  <div class="event-date <?= $isTraining ? 'training-date' : '' ?>">
+    <div class="day-number"><?= date('j', strtotime($item['date'])) ?></div>
+    <div class="month-abbr"><?= date('M', strtotime($item['date'])) ?></div>
+  </div>
+  <div class="event-details">
+    <div class="event-type <?= $isTraining ? 'training' : '' ?>">
+      <?= $isTraining ? 'Training' : 'Event' ?>
+    </div>
+    <div class="event-title"><?= htmlspecialchars($item['title']) ?></div>
+    <div class="event-location">
+      <i class="fas fa-map-marker-alt"></i> 
+      <?= htmlspecialchars($item['location']) ?>
+    </div>
+    <div class="event-time">
+      <i class="fas fa-clock"></i> 
+      <?= date('M j, Y', strtotime($item['date'])) ?>
+    </div>
+  </div>
+</div>
+<?php
+    endforeach;
+  else:
+?>
+<div class="no-upcoming-events">
+  <i class="fas fa-calendar-alt"></i>
+  <h5>No Upcoming Events</h5>
+  <p>Schedule new events or training to see them here</p>
+</div>
+<?php
+  endif;
+} catch (Exception $e) {
+  echo '<div class="no-upcoming-events"><h5>Unable to load events</h5></div>';
+}
+?>
+  </div>
+</div>
         </div>
       </div>
     </div>
   </div>
+
+  <!-- Calendar Modal -->
+  <div id="calendarModal" class="calendar-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2><i class="fas fa-calendar-alt"></i> Event Calendar</h2>
+        <button class="close-btn" onclick="closeCalendar()">&times;</button>
+      </div>
+      
+      <div class="modal-body">
+        <div class="calendar-controls">
+          <button class="nav-btn" onclick="previousMonthModal()">&lt;</button>
+          <h3 class="modal-month-year"><?= date('F Y') ?></h3>
+          <button class="nav-btn" onclick="nextMonthModal()">&gt;</button>
+        </div>
+        
+        <div class="full-calendar">
+          <div class="calendar-grid" id="modalCalendarGrid">
+            <div class="day-header">Sunday</div>
+            <div class="day-header">Monday</div>
+            <div class="day-header">Tuesday</div>
+            <div class="day-header">Wednesday</div>
+            <div class="day-header">Thursday</div>
+            <div class="day-header">Friday</div>
+            <div class="day-header">Saturday</div>
+            <!-- Full calendar days will be generated by JavaScript -->
+          </div>
+        </div>
+        
+        <div class="event-details-panel">
+          <h4>Event Details</h4>
+          <div id="selectedEventDetails">
+            <p>Click on a date with events to view details</p>
+          </div>
+        </div>
+      </div>
+      
+      <div class="modal-footer">
+        <button class="btn secondary" onclick="closeCalendar()">Close</button>
+        <button class="btn primary" onclick="addNewEvent()">Add Event</button>
+      </div>
+    </div>
+  </div>
+
   <script src="../admin/js/notification_frontend.js?v=<?php echo time(); ?>"></script>
   <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
   <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
   <script src="../user/js/sidebar.js?v=<?php echo time(); ?>"></script>
   <script src="../user/js/header.js?v=<?php echo time(); ?>"></script>
+  <?php include 'chat_widget.php'; ?>
 
   <script>
-    // Auto-refresh functionality
-    let refreshInterval;
-    let activityLastUpdated = Date.now();
-function initializeNotificationFilters() {
-    const filterButtons = document.querySelectorAll('.filter-btn');
-    const notificationCards = document.querySelectorAll('.notification-card');
+    // Calendar functionality
+    let currentMonth = <?= date('n') - 1 ?>; // JavaScript months are 0-indexed
+    let currentYear = <?= date('Y') ?>;
+    let events = []; // Will be populated with events from database
+
+    // Fetch events from database
+    async function fetchEvents() {
+      try {
+        const response = await fetch('get_calendar_events.php');
+        const data = await response.json();
+        events = data;
+        updateCalendars();
+      } catch (error) {
+        console.error('Error fetching events:', error);
+      }
+    }
+
+    function openCalendar() {
+      document.getElementById('calendarModal').style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+      updateModalCalendar();
+    }
+
+    function closeCalendar() {
+      document.getElementById('calendarModal').style.display = 'none';
+      document.body.style.overflow = 'auto';
+    }
+
+    function previousMonth() {
+      if (currentMonth === 0) {
+        currentMonth = 11;
+        currentYear--;
+      } else {
+        currentMonth--;
+      }
+      updateMiniCalendar();
+    }
+
+    function nextMonth() {
+      if (currentMonth === 11) {
+        currentMonth = 0;
+        currentYear++;
+      } else {
+        currentMonth++;
+      }
+      updateMiniCalendar();
+    }
+
+    function previousMonthModal() {
+      if (currentMonth === 0) {
+        currentMonth = 11;
+        currentYear--;
+      } else {
+        currentMonth--;
+      }
+      updateModalCalendar();
+    }
+
+    function nextMonthModal() {
+      if (currentMonth === 11) {
+        currentMonth = 0;
+        currentYear++;
+      } else {
+        currentMonth++;
+      }
+      updateModalCalendar();
+    }
+
+    function updateMiniCalendar() {
+      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'];
+      document.querySelector('.month-year').textContent = monthNames[currentMonth] + ' ' + currentYear;
+      
+      const grid = document.getElementById('miniCalendarGrid');
+      const dayHeaders = grid.querySelectorAll('.day-header');
+      
+      // Clear existing days
+      const existingDays = grid.querySelectorAll('.day');
+      existingDays.forEach(day => day.remove());
+      
+      generateCalendarDays(grid, true);
+    }
+
+    function updateModalCalendar() {
+      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'];
+      document.querySelector('.modal-month-year').textContent = monthNames[currentMonth] + ' ' + currentYear;
+      
+      const grid = document.getElementById('modalCalendarGrid');
+      const dayHeaders = grid.querySelectorAll('.day-header');
+      
+      // Clear existing days
+      const existingDays = grid.querySelectorAll('.day');
+      existingDays.forEach(day => day.remove());
+      
+      generateCalendarDays(grid, false);
+    }
+
+function generateCalendarDays(grid, isMini) {
+  const firstDay = new Date(currentYear, currentMonth, 1);
+  const startDate = new Date(firstDay);
+  startDate.setDate(startDate.getDate() - firstDay.getDay());
+  
+  const today = new Date();
+  
+  for (let i = 0; i < 42; i++) {
+    const cellDate = new Date(startDate);
+    cellDate.setDate(startDate.getDate() + i);
     
-    filterButtons.forEach(button => {
-        button.addEventListener('click', function() {
-            const priority = this.getAttribute('data-priority');
-            
-            // Update active button
-            filterButtons.forEach(btn => btn.classList.remove('active'));
-            this.classList.add('active');
-            
-            // Filter notification cards
-            notificationCards.forEach(card => {
-                if (priority === 'all' || card.classList.contains('priority-' + priority)) {
-                    card.style.display = 'block';
-                    card.style.animation = 'fadeIn 0.3s ease-in-out';
-                } else {
-                    card.style.display = 'none';
-                }
-            });
-            
-            // Update grid layout
-            const grid = document.querySelector('.notifications-grid');
-            if (grid) {
-                grid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(300px, 1fr))';
-            }
-        });
-    });
+    const day = document.createElement('div');
+    day.className = 'day';
+    day.textContent = cellDate.getDate();
+    
+    // Add classes based on date
+    if (cellDate.getMonth() !== currentMonth) {
+      day.className += ' other-month';
+    }
+    
+    if (cellDate.toDateString() === today.toDateString()) {
+      day.className += ' today';
+    }
+    
+    // Check for events and training on this date
+    const dateStr = cellDate.getFullYear() + '-' + 
+                   String(cellDate.getMonth() + 1).padStart(2, '0') + '-' + 
+                   String(cellDate.getDate()).padStart(2, '0');
+    
+    const dayEvents = events.filter(event => event.event_date === dateStr);
+    
+    if (dayEvents.length > 0) {
+      // Separate events and training
+      const regularEvents = dayEvents.filter(event => event.major_service && !event.major_service.includes('Training'));
+      const trainingSessions = dayEvents.filter(event => event.major_service && event.major_service.includes('Training'));
+      
+      // Apply appropriate classes
+      if (regularEvents.length > 0 && trainingSessions.length > 0) {
+        day.className += ' has-both';
+      } else if (trainingSessions.length > 0) {
+        day.className += ' has-training';
+      } else {
+        day.className += ' has-event';
+      }
+      
+      // Add count indicator for multiple items
+      if (dayEvents.length > 1) {
+        day.className += ' has-multiple';
+        day.setAttribute('data-count', dayEvents.length);
+      }
+      
+      day.setAttribute('data-events', JSON.stringify(dayEvents));
+      
+      // Add click event for event details
+      day.addEventListener('click', function() {
+        showEventDetails(dayEvents);
+      });
+    }
+    
+    grid.appendChild(day);
+  }
 }
 
-function refreshNotifications() {
-    // Show loading state
-    const refreshBtn = document.querySelector('.filter-actions .action-btn[onclick="refreshNotifications()"]');
-    if (refreshBtn) {
-        const originalContent = refreshBtn.innerHTML;
-        refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
-        refreshBtn.disabled = true;
-        
-        // Simulate refresh (in real implementation, make AJAX call)
-        setTimeout(() => {
-            window.location.reload();
-        }, 1000);
-    }
+
+function showEventDetails(dayEvents) {
+  const detailsPanel = document.getElementById('selectedEventDetails');
+  
+  if (!dayEvents || dayEvents.length === 0) {
+    detailsPanel.innerHTML = `
+      <div class="empty-details">
+        <i class="fas fa-calendar-alt"></i>
+        <h5>No Events Selected</h5>
+        <p>Click on a date with events to view details</p>
+      </div>
+    `;
+    return;
+  }
+  
+  let html = '';
+  
+  dayEvents.forEach(event => {
+    const isTraining = event.major_service && (
+      event.major_service.toLowerCase().includes('training') || 
+      event.major_service.toLowerCase().includes('safety') ||
+      event.major_service.toLowerCase().includes('education')
+    );
+    
+    const icon = isTraining ? 'graduation-cap' : 'calendar';
+    const typeClass = isTraining ? 'training-event' : 'regular-event';
+    const eventType = isTraining ? 'Training' : 'Event';
+    
+    html += `
+      <div class="selected-event ${typeClass}">
+        <div class="event-type ${isTraining ? 'training' : ''}">${eventType}</div>
+        <h5><i class="fas fa-${icon}"></i> ${event.title || 'Untitled Event'}</h5>
+        <p><i class="fas fa-calendar"></i> ${new Date(event.event_date).toLocaleDateString('en-US', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        })}</p>
+        <p><i class="fas fa-map-marker-alt"></i> ${event.location || event.venue || 'Location TBA'}</p>
+        <p><i class="fas fa-tags"></i> ${event.major_service || 'General Service'}</p>
+        ${event.description ? `<p class="event-description"><i class="fas fa-info-circle"></i> ${event.description.substring(0, 150)}${event.description.length > 150 ? '...' : ''}</p>` : ''}
+      </div>
+    `;
+  });
+  
+  detailsPanel.innerHTML = html;
 }
 
-function markAllNotificationsRead() {
-    if (confirm('Mark all notifications as read? This action cannot be undone.')) {
-        // In real implementation, make AJAX call to mark notifications as read
-        const cards = document.querySelectorAll('.notification-card');
-        cards.forEach(card => {
-            card.style.opacity = '0.6';
-            card.style.transform = 'scale(0.95)';
-        });
-        
-        setTimeout(() => {
-            cards.forEach(card => card.remove());
-            
-            // Show empty state
-            const notificationsSection = document.querySelector('.notifications-priority-section');
-            if (notificationsSection) {
-                notificationsSection.innerHTML = `
-                    <div class="notifications-header">
-                        <h2><i class="fas fa-bell"></i> System Notifications</h2>
-                        <div class="notification-summary">
-                            <span class="notification-count success">All Clear</span>
-                        </div>
-                    </div>
-                    <div class="notifications-empty">
-                        <div class="empty-state">
-                            <i class="fas fa-check-circle"></i>
-                            <h3>All Notifications Cleared</h3>
-                            <p>All notifications have been marked as read.</p>
-                        </div>
-                    </div>
-                `;
-            }
-        }, 500);
+    function updateCalendars() {
+      updateMiniCalendar();
+      if (document.getElementById('calendarModal').style.display === 'flex') {
+        updateModalCalendar();
+      }
     }
-}
+
     function refreshActivity() {
-      // Visual feedback for refresh
       const refreshBtn = document.querySelector('.refresh-btn i');
       const activityIndicator = document.getElementById('activityIndicator');
       
@@ -1217,10 +1427,6 @@ function markAllNotificationsRead() {
         }, 1000);
       }
       
-      // Update activity timestamp
-      activityLastUpdated = Date.now();
-      
-      // Flash activity indicator
       if (activityIndicator) {
         activityIndicator.style.color = '#28a745';
         setTimeout(() => {
@@ -1228,13 +1434,17 @@ function markAllNotificationsRead() {
         }, 500);
       }
       
-      // In a real implementation, you would make an AJAX call here
-      // For demo purposes, we'll just show the visual feedback
+      // Refresh events
+      fetchEvents();
+    }
+
+    function addNewEvent() {
+      window.location.href = 'manage_events.php?action=add';
     }
 
     function startAutoRefresh() {
       // Refresh every 30 seconds
-      refreshInterval = setInterval(() => {
+      setInterval(() => {
         refreshActivity();
       }, 30000);
       
@@ -1252,21 +1462,16 @@ function markAllNotificationsRead() {
       }, 2000);
     }
 
-    // Enhanced notification interactions
+    // Event listeners
     document.addEventListener('DOMContentLoaded', function() {
       startAutoRefresh();
-      initializeNotificationFilters();
+      fetchEvents();
       
-      // Notification animations
-      const notifications = document.querySelectorAll('.notification-card');
-      notifications.forEach((notification, index) => {
-        notification.style.opacity = '0';
-        notification.style.transform = 'translateY(20px)';
-        setTimeout(() => {
-          notification.style.transition = 'all 0.5s ease-out';
-          notification.style.opacity = '1';
-          notification.style.transform = 'translateY(0)';
-        }, 100 + (index * 100));
+      // Close modal on outside click
+      document.getElementById('calendarModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+          closeCalendar();
+        }
       });
       
       // Activity item interactions
@@ -1280,9 +1485,9 @@ function markAllNotificationsRead() {
       });
 
       // Action button enhancements
-      document.querySelectorAll('.action-btn').forEach(btn => {
+      document.querySelectorAll('.notification-action').forEach(btn => {
         btn.addEventListener('mouseenter', function() {
-          this.style.transform = 'translateY(-2px)';
+          this.style.transform = 'translateY(-1px)';
         });
         
         btn.addEventListener('mouseleave', function() {
@@ -1315,7 +1520,16 @@ function markAllNotificationsRead() {
             e.preventDefault();
             refreshActivity();
             break;
+          case 'c':
+            e.preventDefault();
+            openCalendar();
+            break;
         }
+      }
+      
+      // ESC to close modal
+      if (e.key === 'Escape') {
+        closeCalendar();
       }
     });
 
@@ -1325,21 +1539,6 @@ function markAllNotificationsRead() {
       @keyframes spin {
         from { transform: rotate(0deg); }
         to { transform: rotate(360deg); }
-      }
-      
-      .notification-card {
-        animation: slideInUp 0.5s ease-out;
-      }
-      
-      @keyframes slideInUp {
-        from {
-          opacity: 0;
-          transform: translateY(30px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
       }
     `;
     document.head.appendChild(style);

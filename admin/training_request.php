@@ -43,50 +43,86 @@ if (isset($_GET['path']) || isset($_GET['download'])) {
     }
     
     // Security: Verify this file belongs to a training request the user can access
-    try {
-        $pdo = $GLOBALS['pdo'];
-        $stmt = $pdo->prepare("
-            SELECT tr.request_id, tr.service_type, tr.user_id 
+try {
+    $pdo = $GLOBALS['pdo'];
+    
+    // Enhanced query to check all possible document columns
+    $stmt = $pdo->prepare("
+        SELECT tr.request_id, tr.service_type, tr.user_id,
+               tr.valid_id_path, tr.valid_id_request_path,
+               tr.participant_list_path,
+               tr.additional_docs_paths, tr.additional_docs_path
+        FROM training_requests tr 
+        WHERE tr.valid_id_path = ? 
+           OR tr.valid_id_request_path = ?
+           OR tr.participant_list_path = ? 
+           OR tr.additional_docs_paths LIKE ? 
+           OR tr.additional_docs_path LIKE ?
+           OR JSON_CONTAINS(tr.additional_docs_paths, JSON_QUOTE(?))
+           OR JSON_CONTAINS(tr.additional_docs_path, JSON_QUOTE(?))
+    ");
+    
+    $pathPattern = '%' . $filePath . '%';
+    $stmt->execute([
+        $filePath,      // exact match for valid_id_path
+        $filePath,      // exact match for valid_id_request_path  
+        $filePath,      // exact match for participant_list_path
+        $pathPattern,   // pattern match for additional_docs_paths
+        $pathPattern,   // pattern match for additional_docs_path
+        $filePath,      // JSON contains for additional_docs_paths
+        $filePath       // JSON contains for additional_docs_path
+    ]);
+    
+    $requestData = $stmt->fetch();
+    
+    // If no match found, try a more comprehensive search
+    if (!$requestData) {
+        // Fallback: Check if the file path contains any training request ID pattern
+        $stmt2 = $pdo->prepare("
+            SELECT tr.request_id, tr.service_type, tr.user_id
             FROM training_requests tr 
-            WHERE tr.valid_id_path = ? 
-               OR tr.participant_list_path = ? 
-               OR tr.additional_docs_paths LIKE ? 
-               OR tr.valid_id_request_path = ? 
-               OR tr.additional_docs_path LIKE ?
+            WHERE ? LIKE CONCAT('%user_', tr.user_id, '%')
+               OR ? LIKE CONCAT('%', tr.request_id, '%')
         ");
-        
-        $pathPattern = '%' . $filePath . '%';
-        $stmt->execute([$filePath, $filePath, $pathPattern, $filePath, $pathPattern]);
-        $requestData = $stmt->fetch();
-        
-        if (!$requestData) {
-            http_response_code(403);
-            die('File access denied - not associated with any training request');
-        }
-        
-        // Check if user has permission to view this service type's documents
-        $user_role = get_user_role();
-        $roleServiceMapping = [
-            'health' => ['Health Service'],
-            'safety' => ['Safety Service'],
-            'welfare' => ['Welfare Service'],
-            'disaster' => ['Disaster Management Service'],
-            'youth' => ['Red Cross Youth'],
-            'super' => ['Health Service', 'Safety Service', 'Welfare Service', 'Disaster Management Service', 'Red Cross Youth']
-        ];
-        $allowedServices = $roleServiceMapping[$user_role] ?? [];
-        $hasRestrictedAccess = $user_role !== 'super';
-        
-        if ($hasRestrictedAccess && !in_array($requestData['service_type'], $allowedServices)) {
-            http_response_code(403);
-            die('Access denied - insufficient permissions for this service type');
-        }
-        
-    } catch (PDOException $e) {
-        error_log("Document access check error: " . $e->getMessage());
-        http_response_code(500);
-        die('Database error');
+        $stmt2->execute([$filePath, $filePath]);
+        $requestData = $stmt2->fetch();
     }
+    
+    if (!$requestData) {
+        // Log the failed access attempt for debugging
+        error_log("Document access denied for file: $filePath");
+        error_log("User ID: " . $_SESSION['user_id'] . ", Role: " . get_user_role());
+        
+        http_response_code(403);
+        die('File access denied - not associated with any training request');
+    }
+    
+    // Check if user has permission to view this service type's documents
+    $user_role = get_user_role();
+    $roleServiceMapping = [
+        'health' => ['Health Service'],
+        'safety' => ['Safety Service'],
+        'welfare' => ['Welfare Service'],
+        'disaster' => ['Disaster Management Service'],
+        'youth' => ['Red Cross Youth'],
+        'super' => ['Health Service', 'Safety Service', 'Welfare Service', 'Disaster Management Service', 'Red Cross Youth']
+    ];
+    $allowedServices = $roleServiceMapping[$user_role] ?? [];
+    $hasRestrictedAccess = $user_role !== 'super';
+    
+    if ($hasRestrictedAccess && !in_array($requestData['service_type'], $allowedServices)) {
+        error_log("Access denied - insufficient permissions for service type: " . $requestData['service_type']);
+        http_response_code(403);
+        die('Access denied - insufficient permissions for this service type');
+    }
+    
+} catch (PDOException $e) {
+    error_log("Document access check error: " . $e->getMessage());
+    error_log("File path attempted: " . $filePath);
+    http_response_code(500);
+    die('Database error');
+}
+
     
     // Get file info
     $fileSize = filesize($fullPath);
@@ -243,28 +279,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_request_status
                                     $sessionTitle .= " - " . $request['organization_name'];
                                 }
                                 
-                                // Set default session date (preferred date or 2 weeks from now)
-                                $sessionDate = $request['preferred_date'] ?: date('Y-m-d', strtotime('+14 days'));
+                                // FIXED: Calculate proper dates and duration from the request
+                                $sessionStartDate = $request['preferred_start_date'] ?: date('Y-m-d', strtotime('+14 days'));
+                                $sessionEndDate = $request['preferred_end_date'] ?: $sessionStartDate;
                                 
-                                // Set default times based on preference
-                                $startTime = '09:00';
-                                $endTime = '17:00';
+                                // Calculate duration in days
+                                $startDateTime = new DateTime($sessionStartDate);
+                                $endDateTime = new DateTime($sessionEndDate);
+                                $durationDays = $startDateTime->diff($endDateTime)->days + 1;
                                 
-                                if ($request['preferred_time'] === 'morning') {
-                                    $startTime = '08:00';
-                                    $endTime = '12:00';
-                                } elseif ($request['preferred_time'] === 'afternoon') {
-                                    $startTime = '13:00';
-                                    $endTime = '17:00';
-                                } elseif ($request['preferred_time'] === 'evening') {
-                                    $startTime = '18:00';
-                                    $endTime = '21:00';
+                                // Ensure minimum 1 day duration
+                                $durationDays = max(1, $durationDays);
+                                
+                                // If request has duration_days field, use it as override
+                                if (!empty($request['duration_days']) && $request['duration_days'] > 0) {
+                                    $durationDays = $request['duration_days'];
+                                    // Recalculate end date based on duration
+                                    $endDateTime = clone $startDateTime;
+                                    $endDateTime->add(new DateInterval('P' . ($durationDays - 1) . 'D'));
+                                    $sessionEndDate = $endDateTime->format('Y-m-d');
                                 }
                                 
-                                // Extend session based on typical duration
-                                if ($program['typical_duration_hours'] && $program['typical_duration_hours'] > 8) {
-                                    $endTime = date('H:i', strtotime($startTime . ' + ' . $program['typical_duration_hours'] . ' hours'));
-                                }
+     // Set default times based on request preferences
+$startTime = '09:00';
+$endTime = '17:00';
+
+// FIXED: Use specific times from the request if provided
+if (!empty($request['preferred_start_time'])) {
+    $startTime = $request['preferred_start_time'];
+}
+
+if (!empty($request['preferred_end_time'])) {
+    $endTime = $request['preferred_end_time'];
+}
+
+// ONLY use typical duration if NO specific times were provided
+if (empty($request['preferred_start_time']) && empty($request['preferred_end_time'])) {
+    // Use typical duration to extend session time
+    if ($program['typical_duration_hours'] && $program['typical_duration_hours'] > 8) {
+        $endTime = date('H:i', strtotime($startTime . ' + ' . $program['typical_duration_hours'] . ' hours'));
+    }
+}
                                 
                                 // Set default venue based on location preference or generic
                                 $venue = $request['location_preference'] ?: 
@@ -279,7 +334,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_request_status
                                 // Default fee is free unless specified
                                 $fee = 0.00;
                                 
-                                // Create training session
+                                // Create training session with FIXED multi-day support
                                 $sessionStmt = $pdo->prepare("
                                     INSERT INTO training_sessions (
                                         title, major_service, session_date, session_end_date, duration_days,
@@ -290,9 +345,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_request_status
                                 $sessionResult = $sessionStmt->execute([
                                     $sessionTitle,
                                     $request['service_type'],
-                                    $sessionDate,
-                                    $sessionDate, // Single day by default
-                                    1, // Duration days
+                                    $sessionStartDate,        // FIXED: Use calculated start date
+                                    $sessionEndDate,          // FIXED: Use calculated end date
+                                    $durationDays,            // FIXED: Use calculated duration
                                     $startTime,
                                     $endTime,
                                     $venue,
@@ -312,11 +367,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_request_status
                                     ");
                                     $linkStmt->execute([$sessionId, $requestId]);
                                     
+                                    $durationText = $durationDays > 1 ? 
+                                        " ({$durationDays} days from {$sessionStartDate} to {$sessionEndDate})" : 
+                                        " (single day on {$sessionStartDate})";
+                                        
                                     $successMessage = "Training request approved and session created automatically! " .
-                                                    "Session ID: #" . $sessionId . ". " .
+                                                    "Session ID: #" . $sessionId . $durationText . " " .
                                                     "Please review and edit the session details as needed in the Training Sessions page.";
                                     
-                                    logDebug("Auto-created session $sessionId from approved request $requestId");
+                                    logDebug("Auto-created session $sessionId from approved request $requestId with duration: $durationDays days");
                                 } else {
                                     // If session creation fails, keep the request as approved
                                     $successMessage = "Training request approved successfully! " .
@@ -325,13 +384,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_request_status
                                     logDebug("Failed to auto-create session from request $requestId");
                                 }
                                 
-                            } catch (PDOException $e) {
+                            } catch (Exception $e) {
                                 // If session creation fails, keep the request as approved
                                 $successMessage = "Training request approved successfully! " .
-                                                "However, automatic session creation failed. " .
+                                                "However, automatic session creation failed: " . $e->getMessage() . " " .
                                                 "Please create the session manually.";
                                 error_log("Auto session creation error: " . $e->getMessage());
-                                logDebug("Database error auto-creating session from request $requestId: " . $e->getMessage());
+                                logDebug("Exception auto-creating session from request $requestId: " . $e->getMessage());
                             }
                         } else {
                             $successMessage = "Training request status updated successfully!";
@@ -670,6 +729,7 @@ if (!function_exists('get_role_color')) {
 <body class="admin-<?= htmlspecialchars($user_role) ?>">
   <?php include 'sidebar.php'; ?>
   <div class="sessions-container">
+     <?php include 'header.php'; ?>
     <div class="page-header">
       <div class="header-content">
         <h1><i class="fas fa-chalkboard-teacher"></i> Training Requests Management</h1>
@@ -863,18 +923,43 @@ if (!function_exists('get_role_color')) {
                   <small style="color: var(--gray);"><?= $req['typical_duration_hours'] ?> hours</small>
                 <?php endif; ?>
               </td>
-              <td>
-                <?php if ($req['preferred_date']): ?>
-                  <div style="font-weight: 600;">
-                    <?= date('M d, Y', strtotime($req['preferred_date'])) ?>
-                  </div>
-                <?php else: ?>
-                  <div style="color: var(--gray); font-style: italic;">Flexible</div>
-                <?php endif; ?>
-                <div style="font-size: 0.8rem; color: var(--gray);">
-                  <?= ucfirst($req['preferred_time']) ?>
-                </div>
-              </td>
+             <td>
+  <?php if ($req['preferred_start_date']): ?>
+    <div style="font-weight: 600;">
+      <?= date('M d, Y', strtotime($req['preferred_start_date'])) ?>
+      <?php if ($req['preferred_end_date'] && $req['preferred_end_date'] !== $req['preferred_start_date']): ?>
+        <div style="font-size: 0.8rem; color: var(--gray);">
+          to <?= date('M d, Y', strtotime($req['preferred_end_date'])) ?>
+        </div>
+      <?php endif; ?>
+    </div>
+  <?php else: ?>
+    <div style="color: var(--gray); font-style: italic;">Flexible</div>
+  <?php endif; ?>
+  
+  <!-- Show specific times if available -->
+  <?php if (!empty($req['preferred_start_time']) || !empty($req['preferred_end_time'])): ?>
+    <div style="font-size: 0.8rem; color: #2196F3; margin-top: 0.3rem; font-weight: 500;">
+      <i class="fas fa-clock"></i>
+      <?php if (!empty($req['preferred_start_time'])): ?>
+        <?= date('g:i A', strtotime($req['preferred_start_time'])) ?>
+      <?php endif; ?>
+      <?php if (!empty($req['preferred_end_time'])): ?>
+        <?php if (!empty($req['preferred_start_time'])): ?>
+          - <?= date('g:i A', strtotime($req['preferred_end_time'])) ?>
+        <?php else: ?>
+          End: <?= date('g:i A', strtotime($req['preferred_end_time'])) ?>
+        <?php endif; ?>
+      <?php endif; ?>
+    </div>
+  <?php endif; ?>
+  
+  <?php if ($req['location_preference']): ?>
+    <div style="font-size: 0.8rem; color: var(--gray); margin-top: 0.2rem;">
+      <i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($req['location_preference']) ?>
+    </div>
+  <?php endif; ?>
+</td>
               <td>
                 <div style="text-align: center;">
                   <div style="font-size: 1.2rem; font-weight: 600;"><?= $req['participant_count'] ?></div>
@@ -930,29 +1015,59 @@ if (!function_exists('get_role_color')) {
                 <?php endif; ?>
               </td>
               <td class="documents-column">
-                <?php
-                // Fixed document counting logic
-                $hasDocuments = !empty($req['valid_id_path']) || !empty($req['participant_list_path']) || !empty($req['additional_docs_paths']);
-                $docCount = 0;
-                
-                // Count valid ID
-                if (!empty($req['valid_id_path'])) $docCount++;
-                
-                // Count participant list
-                if (!empty($req['participant_list_path'])) $docCount++;
-                
-                // Count additional documents
-                if (!empty($req['additional_docs_paths'])) {
-                    try {
-                        $additionalDocs = json_decode($req['additional_docs_paths'], true);
-                        if (is_array($additionalDocs)) {
-                            $docCount += count($additionalDocs);
+    <?php
+    // FIXED: Comprehensive document counting logic that matches the modal
+    $hasDocuments = false;
+    $docCount = 0;
+    
+    // Count Valid ID (prioritize valid_id_request_path, then valid_id_path)
+    $validIdPath = $req['valid_id_request_path'] ?: $req['valid_id_path'];
+    if (!empty($validIdPath) && trim($validIdPath) !== '' && $validIdPath !== 'null') {
+        $hasDocuments = true;
+        $docCount++;
+    }
+    
+    // Count participant list
+    if (!empty($req['participant_list_path']) && trim($req['participant_list_path']) !== '' && $req['participant_list_path'] !== 'null') {
+        $hasDocuments = true;
+        $docCount++;
+    }
+    
+    // Count additional documents - handle both fields
+    $additionalFields = [
+        $req['additional_docs_paths'],
+        $req['additional_docs_path']
+    ];
+    
+    foreach ($additionalFields as $additionalField) {
+        if (!empty($additionalField) && trim($additionalField) !== '' && $additionalField !== 'null' && $additionalField !== '[]') {
+            $hasDocuments = true;
+            
+            try {
+                // Handle JSON array format
+                if (strpos($additionalField, '[') === 0 && strpos($additionalField, ']') === strlen($additionalField) - 1) {
+                    $additionalDocs = json_decode($additionalField, true);
+                    if (is_array($additionalDocs)) {
+                        // Count only non-empty, non-null entries
+                        foreach ($additionalDocs as $doc) {
+                            if (!empty($doc) && trim($doc) !== '' && $doc !== 'null') {
+                                $docCount++;
+                            }
                         }
-                    } catch (Exception $e) {
-                        // If JSON decode fails, assume 1 document
+                    } else {
+                        // JSON decode failed, assume 1 document
                         $docCount++;
                     }
+                } else {
+                    // Single document path
+                    $docCount++;
                 }
+            } catch (Exception $e) {
+                // If parsing fails, assume 1 document
+                $docCount++;
+            }
+        }
+    }
                 ?>
                 
                 <?php if ($hasDocuments): ?>
@@ -1035,12 +1150,7 @@ if (!function_exists('get_role_color')) {
           </select>
         </div>
         
-        <div class="form-group">
-          <label for="admin_notes">Admin Notes (Optional)</label>
-          <textarea id="admin_notes" name="admin_notes" rows="3" 
-                    placeholder="Add internal notes about this request..."></textarea>
-        </div>
-        
+
         <div class="modal-footer">
           <button type="button" class="btn-action btn-edit" onclick="closeRequestModal()">Cancel</button>
           <button type="submit" class="btn-submit">
@@ -1230,7 +1340,7 @@ function openRequestModal(request) {
     currentRequest = request;
     document.getElementById('updateRequestId').value = request.request_id;
     document.getElementById('new_status').value = request.status;
-    document.getElementById('admin_notes').value = request.admin_notes || '';
+
     
     // Check if documents are uploaded - updated to handle your table structure
     const hasDocuments = request.valid_id_path || 
@@ -1241,8 +1351,8 @@ function openRequestModal(request) {
     
     // Populate request details
     const requestDetails = document.getElementById('requestDetails');
-    const preferredDate = request.preferred_date ? 
-        new Date(request.preferred_date).toLocaleDateString('en-US', {
+    const preferredDate = request.preferred_start_date ? 
+        new Date(request.preferred_start_date).toLocaleDateString('en-US', {
             year: 'numeric', 
             month: 'long', 
             day: 'numeric'
@@ -1275,8 +1385,23 @@ function openRequestModal(request) {
                 <div class="info-value">${request.typical_duration_hours || 8} hours</div>
             </div>
             <div class="info-item">
-                <div class="info-label">Preferred Date</div>
-                <div class="info-value">${preferredDate}</div>
+                <div class="info-label">Preferred Dates</div>
+                <div class="info-value">
+                    ${request.preferred_start_date ? 
+                        (() => {
+                            const startDate = new Date(request.preferred_start_date).toLocaleDateString('en-US', {
+                                year: 'numeric', month: 'long', day: 'numeric'
+                            });
+                            if (request.preferred_end_date && request.preferred_end_date !== request.preferred_start_date) {
+                                const endDate = new Date(request.preferred_end_date).toLocaleDateString('en-US', {
+                                    year: 'numeric', month: 'long', day: 'numeric'
+                                });
+                                return `${startDate} to ${endDate} (${request.duration_days || 1} days)`;
+                            }
+                            return startDate;
+                        })() : 'Flexible'
+                    }
+                </div>
             </div>
             <div class="info-item">
                 <div class="info-label">Preferred Time</div>
@@ -1390,25 +1515,27 @@ function openCreateSessionModal(request) {
     document.getElementById('session_title').value = `${programName} Training`;
     
     // Set default dates (preferred date or 2 weeks from now)
-    const defaultDate = request.preferred_date || 
+    const defaultDate = request.preferred_start_date || 
         new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const defaultEndDate = request.preferred_end_date || defaultDate;
     document.getElementById('session_date').value = defaultDate;
-    document.getElementById('session_end_date').value = defaultDate;
+    document.getElementById('session_end_date').value = defaultEndDate;
     
     // Set capacity based on participant count
     document.getElementById('capacity').value = Math.max(request.participant_count, 10);
     
-    // Set time based on preference
-    if (request.preferred_time === 'morning') {
-        document.getElementById('start_time').value = '08:00';
-        document.getElementById('end_time').value = '12:00';
-    } else if (request.preferred_time === 'afternoon') {
-        document.getElementById('start_time').value = '13:00';
-        document.getElementById('end_time').value = '17:00';
-    } else if (request.preferred_time === 'evening') {
-        document.getElementById('start_time').value = '18:00';
-        document.getElementById('end_time').value = '21:00';
-    }
+// FIXED: Set times using JavaScript only
+if (request.preferred_start_time) {
+    document.getElementById('start_time').value = request.preferred_start_time;
+} else {
+    document.getElementById('start_time').value = '09:00';
+}
+
+if (request.preferred_end_time) {
+    document.getElementById('end_time').value = request.preferred_end_time;
+} else {
+    document.getElementById('end_time').value = '17:00';
+}
     
     // Set default venue with proper formatting
     let venueText = "Philippine Red Cross Training Center\n";
@@ -1473,13 +1600,20 @@ function closeCreateSessionModal() {
     currentRequest = null;
 }
 
-// UPDATED: Enhanced openDocumentModal function specifically for your table structure
+// FIXED: Enhanced openDocumentModal function
 function openDocumentModal(request) {
+    console.log('Opening document modal for request:', request.request_id);
     currentRequest = request;
     
+    // Get the modal element first
+    const modal = document.getElementById('documentModal');
+    if (!modal) {
+        console.error('Document modal element not found');
+        return;
+    }
+    
     // Debug the request object
-    console.log('Opening document modal for request:', request.request_id);
-    console.log('Document fields in request:', {
+  console.log('Document fields in request:', {
         valid_id_path: request.valid_id_path,
         valid_id_filename: request.valid_id_filename,
         valid_id_request_path: request.valid_id_request_path,
@@ -1491,9 +1625,16 @@ function openDocumentModal(request) {
         documents_verified: request.documents_verified,
         documents_uploaded_at: request.documents_uploaded_at
     });
+    // Get document details container
+   const documentDetails = document.getElementById('documentDetails');
+    if (!documentDetails) {
+        console.error('Document details container not found');
+        return;
+    }
+    // Reset modal state
+       modal.classList.remove('active');
+    modal.style.display = 'none';
     
-    // Populate document details
-    const documentDetails = document.getElementById('documentDetails');
     let documentsHtml = '';
     let docCount = 0;
     let hasAnyDocuments = false;
@@ -1530,7 +1671,7 @@ function openDocumentModal(request) {
     }
     
     // Check for Participant List Document
-    if (request.participant_list_path && request.participant_list_path.trim() && request.participant_list_path !== 'null') {
+   if (request.participant_list_path && request.participant_list_path.trim() && request.participant_list_path !== 'null') {
         hasAnyDocuments = true;
         const fileName = request.participant_list_filename || extractFilename(request.participant_list_path);
         const fileIcon = getFileIconClass(fileName);
@@ -1558,7 +1699,7 @@ function openDocumentModal(request) {
     }
     
     // Check for Additional Documents - handle both additional_docs_paths and additional_docs_path
-    const additionalDocsFields = [
+   const additionalDocsFields = [
         { 
             paths: request.additional_docs_paths, 
             filenames: request.additional_docs_filenames,
@@ -1571,7 +1712,7 @@ function openDocumentModal(request) {
         }
     ];
     
-    let additionalDocIndex = 1;
+   let additionalDocIndex = 1;
     
     additionalDocsFields.forEach(({ paths, filenames, label }) => {
         if (paths && paths.trim() && paths !== 'null' && paths !== '[]') {
@@ -1667,6 +1808,7 @@ function openDocumentModal(request) {
         }
     });
     
+    
     // If no documents found, show appropriate message
     if (!hasAnyDocuments) {
         documentsHtml = `
@@ -1674,26 +1816,6 @@ function openDocumentModal(request) {
                 <i class="fas fa-file-slash"></i>
                 <h3>No documents uploaded</h3>
                 <p>This training request was submitted without document uploads.</p>
-                <div class="request-info">
-                    <small style="color: var(--gray);">
-                        <strong>Request ID:</strong> #${request.request_id}<br>
-                        <strong>Submitted:</strong> ${formatDate(request.created_at)}<br>
-                        <strong>Requester:</strong> ${escapeHtml(request.user_full_name || 'Unknown')}<br>
-                        <strong>Email:</strong> ${escapeHtml(request.user_email || request.email || 'Unknown')}
-                    </small>
-                </div>
-                <div class="suggestion-box">
-                    <div class="suggestion-header">
-                        <i class="fas fa-lightbulb"></i>
-                        <strong>Suggestion</strong>
-                    </div>
-                    <p>Contact the requester to request necessary documents:</p>
-                    <ul>
-                        <li>Valid ID (required)</li>
-                        ${request.participant_count >= 5 ? '<li>Participant list (required for groups)</li>' : ''}
-                        <li>Supporting documents (optional)</li>
-                    </ul>
-                </div>
             </div>
         `;
     } else {
@@ -1730,37 +1852,24 @@ function openDocumentModal(request) {
     documentDetails.innerHTML = documentsHtml;
     
     // Set verification form values
-    document.getElementById('docRequestId').value = request.request_id;
-    document.getElementById('verification_status').value = request.documents_verified || 'pending';
-    document.getElementById('verification_notes').value = request.document_verification_notes || '';
+    const docRequestIdField = document.getElementById('docRequestId');
+    const verificationStatusField = document.getElementById('verification_status');
+    const verificationNotesField = document.getElementById('verification_notes');
     
-    // Show the modal with explicit display settings
-    const modal = document.getElementById('documentModal');
-    if (modal) {
-        // Force remove any existing blur effects
-        modal.style.filter = 'none';
-        modal.style.backdropFilter = 'none';
-        
-        // Set display properties
+    if (docRequestIdField) docRequestIdField.value = request.request_id;
+    if (verificationStatusField) verificationStatusField.value = request.documents_verified || 'pending';
+    if (verificationNotesField) verificationNotesField.value = request.document_verification_notes || '';
+    
+    // Show the modal with proper sequence
+    setTimeout(() => {
         modal.style.display = 'flex';
+        // Force reflow
+        modal.offsetHeight;
         modal.classList.add('active');
-        
-        // Prevent body scroll
         document.body.style.overflow = 'hidden';
         
-        // Ensure modal content is visible
-        const modalContent = modal.querySelector('.modal-content');
-        if (modalContent) {
-            modalContent.style.filter = 'none';
-            modalContent.style.backdropFilter = 'none';
-            modalContent.style.opacity = '1';
-            modalContent.style.visibility = 'visible';
-        }
-        
         console.log('Document modal opened successfully with', docCount, 'documents');
-    } else {
-        console.error('Document modal element not found');
-    }
+    }, 10);
 }
 
 // Helper function to capitalize first letter
@@ -1787,51 +1896,42 @@ function formatDate(dateString) {
     }
 }
 
-// Enhanced closeDocumentModal function
+// FIXED: Enhanced closeDocumentModal function
 function closeDocumentModal() {
     const modal = document.getElementById('documentModal');
     if (modal) {
         modal.classList.remove('active');
-        modal.style.display = 'none';
-        document.body.style.overflow = '';
         
-        // Reset verification form
-        document.getElementById('verification_status').value = 'pending';
-        document.getElementById('verification_notes').value = '';
-        
-        console.log('Document modal closed');
+        // Wait for transition to complete before hiding
+        setTimeout(() => {
+            modal.style.display = 'none';
+            document.body.style.overflow = '';
+            
+            // Reset verification form
+            const verificationStatusField = document.getElementById('verification_status');
+            const verificationNotesField = document.getElementById('verification_notes');
+            
+            if (verificationStatusField) verificationStatusField.value = 'pending';
+            if (verificationNotesField) verificationNotesField.value = '';
+            
+            console.log('Document modal closed');
+        }, 300);
     }
     currentRequest = null;
 }
 
 // Enhanced document viewing with your table structure
 function viewDocument(filePath) {
-    if (!filePath || filePath === 'null') {
+    if (!filePath || filePath === 'null' || filePath.trim() === '') {
         alert('Invalid file path');
         return;
     }
     
-    console.log('Attempting to view document:', filePath);
+    // Simple URL construction - let the server handle the rest
+    const viewUrl = window.location.pathname + '?path=' + encodeURIComponent(filePath);
     
-    // Create the view URL - adjust this path based on your server setup
-    const viewUrl = `${window.location.pathname}?path=${encodeURIComponent(filePath)}`;
-    
-    console.log('Document view URL:', viewUrl);
-    
-    // Open in new tab
-    const newWindow = window.open(viewUrl, '_blank', 'width=1000,height=800,scrollbars=yes,resizable=yes');
-    
-    if (!newWindow) {
-        // Fallback for popup blockers
-        const confirmed = confirm(
-            'Pop-up was blocked. Would you like to open the document in the current tab?\n\n' +
-            'Note: This will navigate away from the current page.'
-        );
-        
-        if (confirmed) {
-            window.location.href = viewUrl;
-        }
-    }
+    // Open in new tab - simple and reliable
+    window.open(viewUrl, '_blank');
 }
 
 // Enhanced document download with your table structure
@@ -1858,43 +1958,44 @@ function downloadDocument(filePath, filename) {
 }
 
 // Updated extractFilename function
-function extractFilename(path) {
-    if (!path || path === 'null') return 'Unknown File';
+function downloadDocument(filePath, filename) {
+    if (!filePath || filePath === 'null' || filePath.trim() === '') {
+        alert('Invalid file path');
+        return;
+    }
     
-    // Handle full paths and get just the filename
-    let filename = path.split('/').pop() || 'Unknown File';
+    const downloadFilename = filename || extractFilename(filePath);
+    const downloadUrl = window.location.pathname + '?download=true&path=' + encodeURIComponent(filePath) + '&filename=' + encodeURIComponent(downloadFilename);
     
-    // Remove query parameters
-    filename = filename.split('?')[0];
-    
-    return filename;
+    // Create temporary link and click it
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = downloadFilename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
 
-// Updated getFileIconClass function
+// Keep the existing helper functions but simplify them
+function extractFilename(path) {
+    if (!path || path === 'null') return 'Unknown File';
+    return path.split('/').pop().split('?')[0] || 'Unknown File';
+}
+
 function getFileIconClass(filename) {
     if (!filename || filename === 'null') return 'fa-file';
     
     const extension = filename.split('.').pop().toLowerCase();
-    const iconMap = {
+    const icons = {
         'pdf': 'fa-file-pdf',
-        'jpg': 'fa-file-image',
-        'jpeg': 'fa-file-image',
-        'png': 'fa-file-image',
-        'gif': 'fa-file-image',
-        'bmp': 'fa-file-image',
-        'webp': 'fa-file-image',
-        'doc': 'fa-file-word',
-        'docx': 'fa-file-word',
-        'xls': 'fa-file-excel',
-        'xlsx': 'fa-file-excel',
+        'jpg': 'fa-file-image', 'jpeg': 'fa-file-image', 'png': 'fa-file-image', 'gif': 'fa-file-image',
+        'doc': 'fa-file-word', 'docx': 'fa-file-word',
+        'xls': 'fa-file-excel', 'xlsx': 'fa-file-excel',
         'csv': 'fa-file-csv',
-        'txt': 'fa-file-alt',
-        'zip': 'fa-file-archive',
-        'rar': 'fa-file-archive',
-        '7z': 'fa-file-archive'
+        'txt': 'fa-file-alt'
     };
     
-    return iconMap[extension] || 'fa-file';
+    return icons[extension] || 'fa-file';
 }
 
 // Enhanced error handling for document operations
@@ -1927,8 +2028,10 @@ function escapeHtml(text) {
 
 // Form validation and submission
 document.addEventListener('DOMContentLoaded', function() {
-    const createSessionForm = document.getElementById('createSessionForm');
+    console.log('Initializing training requests page...');
     
+    // Create session form validation
+    const createSessionForm = document.getElementById('createSessionForm');
     if (createSessionForm) {
         createSessionForm.addEventListener('submit', function(e) {
             const sessionTitle = document.getElementById('session_title').value.trim();
@@ -1958,8 +2061,10 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Show loading state
             const submitBtn = this.querySelector('.btn-submit');
-            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating Session...';
-            submitBtn.disabled = true;
+            if (submitBtn) {
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating Session...';
+                submitBtn.disabled = true;
+            }
         });
     }
 
@@ -1999,26 +2104,50 @@ document.addEventListener('DOMContentLoaded', function() {
         updateVenueCharCount();
     }
 
-    // Close modals when clicking outside
+    // Enhanced modal event handling
     const requestModal = document.getElementById('requestModal');
     const createSessionModal = document.getElementById('createSessionModal');
     const documentModal = document.getElementById('documentModal');
 
+    // Request modal events
     if (requestModal) {
         requestModal.addEventListener('click', function(e) {
             if (e.target === this) closeRequestModal();
         });
+        
+        const requestCloseBtn = requestModal.querySelector('.close-modal');
+        if (requestCloseBtn) {
+            requestCloseBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                closeRequestModal();
+            });
+        }
     }
 
+    // Create session modal events
     if (createSessionModal) {
         createSessionModal.addEventListener('click', function(e) {
             if (e.target === this) closeCreateSessionModal();
         });
+        
+        const sessionCloseBtn = createSessionModal.querySelector('.close-modal');
+        if (sessionCloseBtn) {
+            sessionCloseBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                closeCreateSessionModal();
+            });
+        }
     }
 
+    // Document modal events - ENHANCED
     if (documentModal) {
+        // Close modal when clicking the backdrop
         documentModal.addEventListener('click', function(e) {
-            if (e.target === this) closeDocumentModal();
+            if (e.target === this) {
+                closeDocumentModal();
+            }
         });
         
         // Prevent modal content clicks from closing modal
@@ -2028,9 +2157,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 e.stopPropagation();
             });
         }
+        
+        // Close button event
+        const closeButton = documentModal.querySelector('.close-modal');
+        if (closeButton) {
+            closeButton.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                closeDocumentModal();
+            });
+        }
     }
 
-    // Keyboard navigation
+    // Enhanced keyboard navigation
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
             if (requestModal && requestModal.classList.contains('active')) {
@@ -2116,9 +2255,99 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
-    
-    console.log('Document modal event handlers initialized for your table structure');
+
+    // Initialize tooltips for status badges
+    const statusBadges = document.querySelectorAll('.status-badge');
+    statusBadges.forEach(badge => {
+        badge.addEventListener('mouseenter', function() {
+            const status = this.textContent.trim().toLowerCase();
+            let tooltip = '';
+            
+            switch(status) {
+                case 'pending':
+                    tooltip = 'Request submitted and awaiting admin review';
+                    break;
+                case 'under review':
+                    tooltip = 'Admin is currently reviewing this request';
+                    break;
+                case 'approved':
+                    tooltip = 'Request approved, session will be created';
+                    break;
+                case 'scheduled':
+                    tooltip = 'Training session has been scheduled';
+                    break;
+                case 'completed':
+                    tooltip = 'Training session completed successfully';
+                    break;
+                case 'rejected':
+                    tooltip = 'Request rejected - see admin notes';
+                    break;
+            }
+            
+            if (tooltip) {
+                this.title = tooltip;
+            }
+        });
+    });
+
+    // Add loading states for document actions
+    document.addEventListener('click', function(e) {
+        if (e.target.matches('.btn-view-doc, .btn-download-doc')) {
+            const btn = e.target;
+            const originalText = btn.innerHTML;
+            
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+            btn.disabled = true;
+            
+            // Reset button after 3 seconds (in case of slow response)
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }, 3000);
+        }
+    });
+
+    // Search form auto-submit
+    const searchInput = document.querySelector('.search-box input[name="search"]');
+    if (searchInput) {
+        let searchTimeout;
+        searchInput.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                if (this.value.length >= 3 || this.value.length === 0) {
+                    this.form.submit();
+                }
+            }, 500);
+        });
+    }
+
+    // Table sorting (if needed in future)
+    const tableHeaders = document.querySelectorAll('.data-table th');
+    tableHeaders.forEach(header => {
+        header.style.cursor = 'pointer';
+        header.addEventListener('click', function() {
+            // Future implementation for table sorting
+            console.log('Header clicked:', this.textContent);
+        });
+    });
+
+    console.log('Training requests page initialized successfully');
+    console.log('Document modal handlers ready');
 });
+// Add this helper function
+function formatTime(timeString) {
+    if (!timeString) return '';
+    try {
+        const time = new Date('1970-01-01T' + timeString + 'Z');
+        return time.toLocaleTimeString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+        });
+    } catch (e) {
+        return timeString;
+    }
+}
 </script>
 
 <!-- Enhanced CSS for admin training requests -->
@@ -2128,5 +2357,6 @@ document.addEventListener('DOMContentLoaded', function() {
 <script src="../admin/js/notification_frontend.js?v=<?php echo time(); ?>"></script>
   <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
 <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
+  <?php include 'chat_widget.php'; ?>
 </body>
 </html>

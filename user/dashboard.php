@@ -549,6 +549,7 @@ if ($userType === 'rcy_member' && $isNewUser && !empty($userServices)) {
   <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
   <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
   <script src="js/header.js?v=<?php echo time(); ?>"></script>
+  <?php include 'chat_widget.php'; ?>
   <script>
     // Live indicator animation
     document.addEventListener('DOMContentLoaded', function() {

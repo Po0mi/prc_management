@@ -1,355 +1,384 @@
 // notifications_admin.js - Complete Enhanced Admin Real-time Notification System
 class AdminNotificationSystem {
-    constructor(options = {}) {
-        this.options = {
-            apiUrl: 'notifications_api_admin.php',
-            checkInterval: 20000, // Check more frequently for admins
-            toastDuration: 10000, // Longer duration for admin notifications
-            maxToasts: 5,
-            soundEnabled: true,
-            ...options
-        };
-        
-        this.notifications = [];
-        this.unreadCount = 0;
-        this.isOpen = false;
-        this.checkTimer = null;
-        this.toastContainer = null;
-        this.bellElement = null;
-        this.panelElement = null;
-        this.badgeElement = null;
-        
-        // Track shown notifications to prevent duplicates
-        this.shownNotificationIds = new Set();
-        this.lastCheckTimestamp = null;
-        
-        this.init();
+  constructor(options = {}) {
+    this.options = {
+      apiUrl: "notifications_api_admin.php",
+      checkInterval: 90000, // Check more frequently for admins
+      toastDuration: 10000, // Longer duration for admin notifications
+      maxToasts: 0,
+      soundEnabled: true,
+      ...options,
+    };
+
+    this.notifications = [];
+    this.unreadCount = 0;
+    this.isOpen = false;
+    this.checkTimer = null;
+    this.toastContainer = null;
+    this.bellElement = null;
+    this.panelElement = null;
+    this.badgeElement = null;
+
+    // Track shown notifications to prevent duplicates
+    this.shownNotificationIds = new Set();
+    this.lastCheckTimestamp = null;
+
+    this.init();
+  }
+
+  init() {
+    this.loadShownNotifications();
+    this.createElements();
+    this.bindEvents();
+    this.startPolling();
+
+    // Check immediately on load
+    this.checkForNotifications();
+
+    console.log("Admin notification system initialized");
+  }
+
+  // Load previously shown notifications from localStorage
+  loadShownNotifications() {
+    try {
+      const stored = localStorage.getItem("admin_notification_shown_ids");
+      if (stored) {
+        const ids = JSON.parse(stored);
+        // Only keep IDs from the last 24 hours to prevent unlimited growth
+        const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+        this.shownNotificationIds = new Set(
+          ids
+            .filter((item) => item.timestamp > oneDayAgo)
+            .map((item) => item.id)
+        );
+        this.saveShownNotifications();
+      }
+    } catch (error) {
+      console.warn("Could not load shown notifications:", error);
+      this.shownNotificationIds = new Set();
     }
-    
-    init() {
-        this.loadShownNotifications();
-        this.createElements();
-        this.bindEvents();
+  }
+
+  // Save shown notification IDs to localStorage
+  saveShownNotifications() {
+    try {
+      const idsWithTimestamp = Array.from(this.shownNotificationIds).map(
+        (id) => ({
+          id: id,
+          timestamp: Date.now(),
+        })
+      );
+      localStorage.setItem(
+        "admin_notification_shown_ids",
+        JSON.stringify(idsWithTimestamp)
+      );
+    } catch (error) {
+      console.warn("Could not save shown notifications:", error);
+    }
+  }
+
+  createElements() {
+    // Create toast container
+    this.toastContainer = document.createElement("div");
+    this.toastContainer.className = "toast-container";
+    document.body.appendChild(this.toastContainer);
+
+    // Find notification bell in header
+    this.bellElement = document.querySelector(".notification-bell");
+    if (!this.bellElement) {
+      console.warn("Notification bell not found in header");
+      return;
+    }
+
+    // Find or create badge
+    this.badgeElement = this.bellElement.querySelector(".notification-badge");
+    if (!this.badgeElement) {
+      this.badgeElement = document.createElement("span");
+      this.badgeElement.className = "notification-badge hidden";
+      this.bellElement.appendChild(this.badgeElement);
+    }
+
+    // Find notification panel
+    this.panelElement = this.bellElement.querySelector(".notification-panel");
+    if (!this.panelElement) {
+      console.warn("Notification panel not found");
+      return;
+    }
+
+    // Bind mark all read button
+    const markAllReadBtn = this.panelElement.querySelector(".mark-all-read");
+    if (markAllReadBtn) {
+      markAllReadBtn.addEventListener("click", () => {
+        this.markAllAsRead();
+      });
+    }
+  }
+
+  bindEvents() {
+    if (!this.bellElement) return;
+
+    this.bellElement.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.togglePanel();
+    });
+
+    this.bellElement.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        this.togglePanel();
+      }
+    });
+
+    document.addEventListener("click", (e) => {
+      if (
+        this.isOpen &&
+        this.panelElement &&
+        !this.panelElement.contains(e.target) &&
+        !this.bellElement.contains(e.target)
+      ) {
+        this.closePanel();
+      }
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && this.isOpen) {
+        this.closePanel();
+        this.bellElement.focus();
+      }
+    });
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        this.stopPolling();
+      } else {
         this.startPolling();
-        
-        // Check immediately on load
         this.checkForNotifications();
-        
-        console.log('Admin notification system initialized');
+      }
+    });
+  }
+
+  startPolling() {
+    if (this.checkTimer) {
+      clearInterval(this.checkTimer);
     }
-    
-    // Load previously shown notifications from localStorage
-    loadShownNotifications() {
-        try {
-            const stored = localStorage.getItem('admin_notification_shown_ids');
-            if (stored) {
-                const ids = JSON.parse(stored);
-                // Only keep IDs from the last 24 hours to prevent unlimited growth
-                const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
-                this.shownNotificationIds = new Set(
-                    ids.filter(item => item.timestamp > oneDayAgo).map(item => item.id)
-                );
-                this.saveShownNotifications();
-            }
-        } catch (error) {
-            console.warn('Could not load shown notifications:', error);
-            this.shownNotificationIds = new Set();
-        }
+
+    this.checkTimer = setInterval(() => {
+      this.checkForNotifications();
+    }, this.options.checkInterval);
+  }
+
+  stopPolling() {
+    if (this.checkTimer) {
+      clearInterval(this.checkTimer);
+      this.checkTimer = null;
     }
-    
-    // Save shown notification IDs to localStorage
-    saveShownNotifications() {
-        try {
-            const idsWithTimestamp = Array.from(this.shownNotificationIds).map(id => ({
-                id: id,
-                timestamp: Date.now()
-            }));
-            localStorage.setItem('admin_notification_shown_ids', JSON.stringify(idsWithTimestamp));
-        } catch (error) {
-            console.warn('Could not save shown notifications:', error);
-        }
+  }
+
+  async checkForNotifications() {
+    try {
+      // Add timestamp to prevent caching and get only new notifications
+      const url = `${this.options.apiUrl}?action=check&since=${
+        this.lastCheckTimestamp || 0
+      }&t=${Date.now()}`;
+
+      const response = await fetch(url, {
+        method: "GET",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-cache",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      if (data.success) {
+        this.updateNotifications(data.notifications);
+        this.lastCheckTimestamp = Date.now();
+      } else {
+        console.error("Failed to fetch admin notifications:", data.message);
+      }
+    } catch (error) {
+      console.error("Error checking admin notifications:", error);
+      // Retry after 60 seconds on error
+      setTimeout(() => {
+        this.checkForNotifications();
+      }, 60000);
     }
-    
-    createElements() {
-        // Create toast container
-        this.toastContainer = document.createElement('div');
-        this.toastContainer.className = 'toast-container';
-        document.body.appendChild(this.toastContainer);
-        
-        // Find notification bell in header
-        this.bellElement = document.querySelector('.notification-bell');
-        if (!this.bellElement) {
-            console.warn('Notification bell not found in header');
-            return;
-        }
-        
-        // Find or create badge
-        this.badgeElement = this.bellElement.querySelector('.notification-badge');
-        if (!this.badgeElement) {
-            this.badgeElement = document.createElement('span');
-            this.badgeElement.className = 'notification-badge hidden';
-            this.bellElement.appendChild(this.badgeElement);
-        }
-        
-        // Find notification panel
-        this.panelElement = this.bellElement.querySelector('.notification-panel');
-        if (!this.panelElement) {
-            console.warn('Notification panel not found');
-            return;
-        }
-        
-        // Bind mark all read button
-        const markAllReadBtn = this.panelElement.querySelector('.mark-all-read');
-        if (markAllReadBtn) {
-            markAllReadBtn.addEventListener('click', () => {
-                this.markAllAsRead();
-            });
-        }
+  }
+
+  updateNotifications(newNotifications) {
+    if (!Array.isArray(newNotifications)) {
+      console.warn("Invalid notifications data received");
+      return;
     }
-    
-    bindEvents() {
-        if (!this.bellElement) return;
-        
-        this.bellElement.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.togglePanel();
-        });
-        
-        this.bellElement.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                this.togglePanel();
-            }
-        });
-        
-        document.addEventListener('click', (e) => {
-            if (this.isOpen && this.panelElement && 
-                !this.panelElement.contains(e.target) && 
-                !this.bellElement.contains(e.target)) {
-                this.closePanel();
-            }
-        });
-        
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && this.isOpen) {
-                this.closePanel();
-                this.bellElement.focus();
-            }
-        });
-        
-        document.addEventListener('visibilitychange', () => {
-            if (document.hidden) {
-                this.stopPolling();
-            } else {
-                this.startPolling();
-                this.checkForNotifications();
-            }
-        });
+
+    const previousIds = new Set(this.notifications.map((n) => n.id));
+
+    // Filter out notifications we've already shown as toasts
+    const reallyNewNotifications = newNotifications.filter((n) => {
+      return !previousIds.has(n.id) && !this.shownNotificationIds.has(n.id);
+    });
+
+    // Update notifications array
+    this.notifications = newNotifications;
+    this.unreadCount = newNotifications.length;
+
+    // Update badge
+    this.updateBadge();
+
+    // Update panel if open
+    if (this.isOpen) {
+      this.renderNotifications();
     }
-    
-    startPolling() {
-        if (this.checkTimer) {
-            clearInterval(this.checkTimer);
-        }
-        
-        this.checkTimer = setInterval(() => {
-            this.checkForNotifications();
-        }, this.options.checkInterval);
-    }
-    
-    stopPolling() {
-        if (this.checkTimer) {
-            clearInterval(this.checkTimer);
-            this.checkTimer = null;
-        }
-    }
-    
-    async checkForNotifications() {
-        try {
-            // Add timestamp to prevent caching and get only new notifications
-            const url = `${this.options.apiUrl}?action=check&since=${this.lastCheckTimestamp || 0}&t=${Date.now()}`;
-            
-            const response = await fetch(url, {
-                method: 'GET',
-                credentials: 'same-origin',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Cache-Control': 'no-cache'
-                }
-            });
-            
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                this.updateNotifications(data.notifications);
-                this.lastCheckTimestamp = Date.now();
-            } else {
-                console.error('Failed to fetch admin notifications:', data.message);
-            }
-        } catch (error) {
-            console.error('Error checking admin notifications:', error);
-            // Retry after 60 seconds on error
-            setTimeout(() => {
-                this.checkForNotifications();
-            }, 60000);
-        }
-    }
-    
-    updateNotifications(newNotifications) {
-        if (!Array.isArray(newNotifications)) {
-            console.warn('Invalid notifications data received');
-            return;
-        }
-        
-        const previousIds = new Set(this.notifications.map(n => n.id));
-        
-        // Filter out notifications we've already shown as toasts
-        const reallyNewNotifications = newNotifications.filter(n => {
-            return !previousIds.has(n.id) && !this.shownNotificationIds.has(n.id);
-        });
-        
-        // Update notifications array
-        this.notifications = newNotifications;
-        this.unreadCount = newNotifications.length;
-        
-        // Update badge
-        this.updateBadge();
-        
-        // Update panel if open
-        if (this.isOpen) {
-            this.renderNotifications();
-        }
-        
-        // Show toasts for truly new notifications only
-        if (reallyNewNotifications.length > 0) {
-            console.log(`Showing ${reallyNewNotifications.length} new admin notifications`);
-            
-            // Mark these notifications as shown
-            reallyNewNotifications.forEach(n => {
-                this.shownNotificationIds.add(n.id);
-            });
-            this.saveShownNotifications();
-            
-            // Ring the bell with admin-specific animation
-            if (this.bellElement) {
-                this.bellElement.classList.add('has-new');
-                setTimeout(() => {
-                    this.bellElement.classList.remove('has-new');
-                }, 1000);
-            }
-            
-            // Show toast notifications for new items (limit to prevent spam)
-            // Prioritize critical and high priority notifications
-            const sortedNewNotifications = reallyNewNotifications.sort((a, b) => {
-                const priorityOrder = { critical: 1, high: 2, medium: 3, low: 4 };
-                return priorityOrder[a.priority] - priorityOrder[b.priority];
-            });
-            
-            sortedNewNotifications.slice(0, this.options.maxToasts).forEach((notification, index) => {
-                setTimeout(() => {
-                    this.showToast(notification);
-                }, index * 400); // Slightly longer delay for admin notifications
-            });
-            
-            // Play notification sound (different for critical notifications)
-            if (this.options.soundEnabled) {
-                const hasCritical = reallyNewNotifications.some(n => n.priority === 'critical');
-                this.playNotificationSound(hasCritical);
-            }
-        }
-    }
-    
-    updateBadge() {
-        if (!this.badgeElement) return;
-        
-        if (this.unreadCount > 0) {
-            this.badgeElement.textContent = this.unreadCount > 99 ? '99+' : this.unreadCount;
-            this.badgeElement.classList.remove('hidden');
-            
-            // Add urgency indicator for critical notifications
-            const hasCritical = this.notifications.some(n => n.priority === 'critical');
-            if (hasCritical) {
-                this.badgeElement.classList.add('critical');
-            } else {
-                this.badgeElement.classList.remove('critical');
-            }
-        } else {
-            this.badgeElement.classList.add('hidden');
-            this.badgeElement.classList.remove('critical');
-        }
-        
-        if (this.panelElement) {
-            const countElement = this.panelElement.querySelector('.notification-count');
-            if (countElement) {
-                countElement.textContent = this.unreadCount;
-            }
-        }
-    }
-    
-    togglePanel() {
-        if (this.isOpen) {
-            this.closePanel();
-        } else {
-            this.openPanel();
-        }
-    }
-    
-    openPanel() {
-        if (!this.panelElement || !this.bellElement) return;
-        
-        this.isOpen = true;
-        this.panelElement.classList.add('active');
-        this.panelElement.setAttribute('aria-hidden', 'false');
-        this.bellElement.setAttribute('aria-expanded', 'true');
-        
-        this.renderNotifications();
-        
+
+    // Show toasts for truly new notifications only
+    if (reallyNewNotifications.length > 0) {
+      console.log(
+        `Showing ${reallyNewNotifications.length} new admin notifications`
+      );
+
+      // Mark these notifications as shown
+      reallyNewNotifications.forEach((n) => {
+        this.shownNotificationIds.add(n.id);
+      });
+      this.saveShownNotifications();
+
+      // Ring the bell with admin-specific animation
+      if (this.bellElement) {
+        this.bellElement.classList.add("has-new");
         setTimeout(() => {
-            const firstItem = this.panelElement.querySelector('.notification-item');
-            if (firstItem) {
-                firstItem.focus();
-            }
-        }, 100);
+          this.bellElement.classList.remove("has-new");
+        }, 1000);
+      }
+
+      // Show toast notifications for new items (limit to prevent spam)
+      // Prioritize critical and high priority notifications
+      const sortedNewNotifications = reallyNewNotifications.sort((a, b) => {
+        const priorityOrder = { critical: 1, high: 2, medium: 3, low: 4 };
+        return priorityOrder[a.priority] - priorityOrder[b.priority];
+      });
+
+      sortedNewNotifications
+        .slice(0, this.options.maxToasts)
+        .forEach((notification, index) => {
+          setTimeout(() => {
+            this.showToast(notification);
+          }, index * 400); // Slightly longer delay for admin notifications
+        });
+
+      // Play notification sound (different for critical notifications)
+      if (this.options.soundEnabled) {
+        const hasCritical = reallyNewNotifications.some(
+          (n) => n.priority === "critical"
+        );
+        this.playNotificationSound(hasCritical);
+      }
     }
-    
-    closePanel() {
-        if (!this.panelElement || !this.bellElement) return;
-        
-        this.isOpen = false;
-        this.panelElement.classList.remove('active');
-        this.panelElement.setAttribute('aria-hidden', 'true');
-        this.bellElement.setAttribute('aria-expanded', 'false');
+  }
+
+  updateBadge() {
+    if (!this.badgeElement) return;
+
+    if (this.unreadCount > 0) {
+      this.badgeElement.textContent =
+        this.unreadCount > 99 ? "99+" : this.unreadCount;
+      this.badgeElement.classList.remove("hidden");
+
+      // Add urgency indicator for critical notifications
+      const hasCritical = this.notifications.some(
+        (n) => n.priority === "critical"
+      );
+      if (hasCritical) {
+        this.badgeElement.classList.add("critical");
+      } else {
+        this.badgeElement.classList.remove("critical");
+      }
+    } else {
+      this.badgeElement.classList.add("hidden");
+      this.badgeElement.classList.remove("critical");
     }
-    
-    renderNotifications() {
-        if (!this.panelElement) return;
-        
-        const listContainer = this.panelElement.querySelector('.notification-list');
-        
-        if (this.notifications.length === 0) {
-            listContainer.innerHTML = `
+
+    if (this.panelElement) {
+      const countElement = this.panelElement.querySelector(
+        ".notification-count"
+      );
+      if (countElement) {
+        countElement.textContent = this.unreadCount;
+      }
+    }
+  }
+
+  togglePanel() {
+    if (this.isOpen) {
+      this.closePanel();
+    } else {
+      this.openPanel();
+    }
+  }
+
+  openPanel() {
+    if (!this.panelElement || !this.bellElement) return;
+
+    this.isOpen = true;
+    this.panelElement.classList.add("active");
+    this.panelElement.setAttribute("aria-hidden", "false");
+    this.bellElement.setAttribute("aria-expanded", "true");
+
+    this.renderNotifications();
+
+    setTimeout(() => {
+      const firstItem = this.panelElement.querySelector(".notification-item");
+      if (firstItem) {
+        firstItem.focus();
+      }
+    }, 100);
+  }
+
+  closePanel() {
+    if (!this.panelElement || !this.bellElement) return;
+
+    this.isOpen = false;
+    this.panelElement.classList.remove("active");
+    this.panelElement.setAttribute("aria-hidden", "true");
+    this.bellElement.setAttribute("aria-expanded", "false");
+  }
+
+  renderNotifications() {
+    if (!this.panelElement) return;
+
+    const listContainer = this.panelElement.querySelector(".notification-list");
+
+    if (this.notifications.length === 0) {
+      listContainer.innerHTML = `
                 <div class="notification-empty">
                     <i class="fas fa-shield-check"></i>
                     <h4>All systems normal</h4>
                     <p>No pending notifications. System running smoothly.</p>
                 </div>
             `;
-            return;
-        }
-        
-        listContainer.innerHTML = this.notifications.map(notification => {
-            const priorityClass = notification.priority === 'critical' ? 'critical' : 
-                                notification.priority === 'high' ? 'high' : 
-                                notification.priority === 'medium' ? 'medium' : 'low';
-            
-            return `
+      return;
+    }
+
+    listContainer.innerHTML = this.notifications
+      .map((notification) => {
+        const priorityClass =
+          notification.priority === "critical"
+            ? "critical"
+            : notification.priority === "high"
+            ? "high"
+            : notification.priority === "medium"
+            ? "medium"
+            : "low";
+
+        return `
                 <div class="notification-item unread ${priorityClass}" 
                      data-id="${notification.id}"
-                     data-url="${notification.url || '#'}"
+                     data-url="${notification.url || "#"}"
                      role="menuitem"
                      tabindex="0">
                     <div class="notification-priority ${priorityClass}"></div>
@@ -358,8 +387,12 @@ class AdminNotificationSystem {
                             <i class="${notification.icon}"></i>
                         </div>
                         <div class="notification-text">
-                            <div class="notification-title">${this.escapeHtml(notification.title)}</div>
-                            <div class="notification-message">${this.escapeHtml(notification.message)}</div>
+                            <div class="notification-title">${this.escapeHtml(
+                              notification.title
+                            )}</div>
+                            <div class="notification-message">${this.escapeHtml(
+                              notification.message
+                            )}</div>
                             <div class="notification-time">
                                 <i class="fas fa-clock"></i>
                                 ${this.formatTime(notification.created_at)}
@@ -367,84 +400,103 @@ class AdminNotificationSystem {
                         </div>
                     </div>
                     <div class="notification-actions">
-                        <button class="mark-read-btn" data-id="${notification.id}" title="Mark as read">
+                        <button class="mark-read-btn" data-id="${
+                          notification.id
+                        }" title="Mark as read">
                             <i class="fas fa-check"></i>
                         </button>
                     </div>
                 </div>
             `;
-        }).join('');
-        
-        // Bind event listeners
-        listContainer.querySelectorAll('.notification-item').forEach(item => {
-            item.addEventListener('click', (e) => {
-                if (!e.target.closest('.notification-actions')) {
-                    this.handleNotificationClick(item);
-                }
-            });
-            
-            item.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    if (!e.target.closest('.notification-actions')) {
-                        this.handleNotificationClick(item);
-                    }
-                }
-            });
-        });
-        
-        // Bind mark as read buttons
-        listContainer.querySelectorAll('.mark-read-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const notificationId = btn.dataset.id;
-                this.markAsRead(notificationId);
-            });
-        });
-    }
-    
-    // Enhanced notification panel click handler
-    handleNotificationClick(item) {
-        const notificationId = item.dataset.id;
-        const notification = this.notifications.find(n => n.id === notificationId);
-        
-        if (!notification) {
-            console.warn('Notification not found:', notificationId);
-            return;
+      })
+      .join("");
+
+    // Bind event listeners
+    listContainer.querySelectorAll(".notification-item").forEach((item) => {
+      item.addEventListener("click", (e) => {
+        if (!e.target.closest(".notification-actions")) {
+          this.handleNotificationClick(item);
         }
-        
-        const actionConfig = this.getNotificationActionConfig(notification);
-        
-        this.closePanel();
-        this.navigateToNotificationPage(notification, actionConfig.url);
+      });
+
+      item.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          if (!e.target.closest(".notification-actions")) {
+            this.handleNotificationClick(item);
+          }
+        }
+      });
+    });
+
+    // Bind mark as read buttons
+    listContainer.querySelectorAll(".mark-read-btn").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const notificationId = btn.dataset.id;
+        this.markAsRead(notificationId);
+      });
+    });
+  }
+
+  // Enhanced notification panel click handler
+  handleNotificationClick(item) {
+    const notificationId = item.dataset.id;
+    const notification = this.notifications.find(
+      (n) => n.id === notificationId
+    );
+
+    if (!notification) {
+      console.warn("Notification not found:", notificationId);
+      return;
     }
-    
-    // Enhanced showToast with proper routing
-    showToast(notification) {
-        const toast = document.createElement('div');
-        const priorityClass = notification.priority === 'critical' ? 'critical' : 
-                            notification.priority === 'high' ? 'high' : 
-                            notification.priority === 'medium' ? 'medium' : 'low';
-        
-        toast.className = `toast-notification admin-toast ${notification.type} ${priorityClass}`;
-        toast.setAttribute('role', 'alert');
-        toast.setAttribute('aria-live', notification.priority === 'critical' ? 'assertive' : 'polite');
-        
-        // Determine the action URL and button text based on notification type
-        const actionConfig = this.getNotificationActionConfig(notification);
-        
-        toast.innerHTML = `
+
+    const actionConfig = this.getNotificationActionConfig(notification);
+
+    this.closePanel();
+    this.navigateToNotificationPage(notification, actionConfig.url);
+  }
+
+  // Enhanced showToast with proper routing
+  showToast(notification) {
+    const toast = document.createElement("div");
+    const priorityClass =
+      notification.priority === "critical"
+        ? "critical"
+        : notification.priority === "high"
+        ? "high"
+        : notification.priority === "medium"
+        ? "medium"
+        : "low";
+
+    toast.className = `toast-notification admin-toast ${notification.type} ${priorityClass}`;
+    toast.setAttribute("role", "alert");
+    toast.setAttribute(
+      "aria-live",
+      notification.priority === "critical" ? "assertive" : "polite"
+    );
+
+    // Determine the action URL and button text based on notification type
+    const actionConfig = this.getNotificationActionConfig(notification);
+
+    toast.innerHTML = `
             <div class="toast-priority ${priorityClass}"></div>
             <div class="toast-icon">
                 <i class="${notification.icon}"></i>
             </div>
             <div class="toast-content">
-                <div class="toast-title">${this.escapeHtml(notification.title)}</div>
-                <div class="toast-message">${this.escapeHtml(notification.message)}</div>
+                <div class="toast-title">${this.escapeHtml(
+                  notification.title
+                )}</div>
+                <div class="toast-message">${this.escapeHtml(
+                  notification.message
+                )}</div>
                 <div class="toast-priority-label">${notification.priority.toUpperCase()}</div>
             </div>
             <div class="toast-actions">
-                <button class="toast-action" aria-label="${actionConfig.label}" title="${actionConfig.label}">
+                <button class="toast-action" aria-label="${
+                  actionConfig.label
+                }" title="${actionConfig.label}">
                     <i class="${actionConfig.icon}"></i>
                 </button>
                 <button class="toast-close" aria-label="Close notification">
@@ -452,472 +504,512 @@ class AdminNotificationSystem {
                 </button>
             </div>
         `;
-        
-        this.toastContainer.appendChild(toast);
-        
-        setTimeout(() => {
-            toast.classList.add('show');
-        }, 100);
-        
-        // Auto-hide after duration (longer for critical notifications)
-        const duration = notification.priority === 'critical' ? 
-                        this.options.toastDuration * 2 : this.options.toastDuration;
-        
-        const hideTimeout = setTimeout(() => {
-            this.hideToast(toast);
-        }, duration);
-        
-        // Enhanced action button click with proper routing
-        toast.querySelector('.toast-action').addEventListener('click', (e) => {
-            e.stopPropagation();
-            clearTimeout(hideTimeout);
-            this.hideToast(toast);
-            
-            // Navigate to the appropriate page
-            this.navigateToNotificationPage(notification, actionConfig.url);
-        });
-        
-        // Close button click
-        toast.querySelector('.toast-close').addEventListener('click', () => {
-            clearTimeout(hideTimeout);
-            this.hideToast(toast);
-            
-            // Mark as read when closed
-            this.markAsRead(notification.id);
-        });
-        
-        // Toast click (excluding buttons) - also navigate
-        toast.addEventListener('click', (e) => {
-            if (e.target.closest('.toast-actions')) return;
-            
-            clearTimeout(hideTimeout);
-            this.hideToast(toast);
-            
-            // Navigate to the appropriate page
-            this.navigateToNotificationPage(notification, actionConfig.url);
-        });
-    }
-    
-    // New method to determine action configuration based on notification type
-    getNotificationActionConfig(notification) {
+
+    this.toastContainer.appendChild(toast);
+
+    setTimeout(() => {
+      toast.classList.add("show");
+    }, 100);
+
+    // Auto-hide after duration (longer for critical notifications)
+    const duration =
+      notification.priority === "critical"
+        ? this.options.toastDuration * 2
+        : this.options.toastDuration;
+
+    const hideTimeout = setTimeout(() => {
+      this.hideToast(toast);
+    }, duration);
+
+    // Enhanced action button click with proper routing
+    toast.querySelector(".toast-action").addEventListener("click", (e) => {
+      e.stopPropagation();
+      clearTimeout(hideTimeout);
+      this.hideToast(toast);
+
+      // Navigate to the appropriate page
+      this.navigateToNotificationPage(notification, actionConfig.url);
+    });
+
+    // Close button click
+    toast.querySelector(".toast-close").addEventListener("click", () => {
+      clearTimeout(hideTimeout);
+      this.hideToast(toast);
+
+      // Mark as read when closed
+      this.markAsRead(notification.id);
+    });
+
+    // Toast click (excluding buttons) - also navigate
+    toast.addEventListener("click", (e) => {
+      if (e.target.closest(".toast-actions")) return;
+
+      clearTimeout(hideTimeout);
+      this.hideToast(toast);
+
+      // Navigate to the appropriate page
+      this.navigateToNotificationPage(notification, actionConfig.url);
+    });
+  }
+
+  // New method to determine action configuration based on notification type
+  getNotificationActionConfig(notification) {
     const configs = {
-        'new_user': {
-            label: 'View User',
-            icon: 'fas fa-user',
-            url: notification.url || 'prc_management/admin/manage_users.php'
-        },
-        'inventory_low': {
-            label: 'Check Inventory',
-            icon: 'fas fa-boxes',
-            url: notification.url || 'prc_management/admin/manage_inventory.php'
-        },
-        'inventory_critical': {
-            label: 'Urgent: Check Stock',
-            icon: 'fas fa-exclamation-triangle',
-            url: notification.url || 'prc_management/admin/manage_inventory.php?filter=critical'
-        },
-        'new_donation': {
-            label: 'View Donation',
-            icon: 'fas fa-hand-holding-heart',
-            url: notification.url || 'prc_management/admin/manage_donations.php'
-        },
-        'donation_approved': {
-            label: 'View Details',
-            icon: 'fas fa-check-circle',
-            url: notification.url || 'prc_management/admin/manage_donations.php'
-        },
-        'training_scheduled': {
-            label: 'View Training',
-            icon: 'fas fa-calendar-check',
-            url: notification.url || 'prc_management/admin/manage_sessions.php'
-        },
-        'training_reminder': {
-            label: 'Join Training',
-            icon: 'fas fa-play-circle',
-            url: notification.url || 'prc_management/admin/manage_sessions.php'
-        },
-        'document_uploaded': {
-            label: 'View Document',
-            icon: 'fas fa-file-alt',
-            url: notification.url || 'prc_management/admin/manage_users.php'
-        },
-        'system_alert': {
-            label: 'View System',
-            icon: 'fas fa-cog',
-            url: notification.url || 'prc_management/admin/dashboard.php'
-        },
-        'announcement': {
-            label: 'Read More',
-            icon: 'fas fa-bullhorn',
-            url: notification.url || 'prc_management/admin/manage_announcements.php'
-        },
-        'volunteer_application': {
-            label: 'Review Application',
-            icon: 'fas fa-user-plus',
-            url: notification.url || 'prc_management/admin/manage_volunteers.php'
-        },
-        'event_reminder': {
-            label: 'View Event',
-            icon: 'fas fa-calendar-alt',
-            url: notification.url || 'prc_management/admin/manage_events.php'
-        },
-        'maintenance_due': {
-            label: 'Schedule Maintenance',
-            icon: 'fas fa-wrench',
-            url: notification.url || 'prc_management/admin/manage_inventory.php'
-        },
-        'approval_required': {
-            label: 'Review & Approve',
-            icon: 'fas fa-check-double',
-            url: notification.url || 'prc_management/admin/training_request.php'
-        }
+      new_user: {
+        label: "View User",
+        icon: "fas fa-user",
+        url: notification.url || "./admin/manage_users.php",
+      },
+      inventory_low: {
+        label: "Check Inventory",
+        icon: "fas fa-boxes",
+        url: notification.url || "manage_inventory.php",
+      },
+      inventory_critical: {
+        label: "Urgent: Check Stock",
+        icon: "fas fa-exclamation-triangle",
+        url: notification.url || "manage_inventory.php?filter=critical",
+      },
+      new_donation: {
+        label: "View Donation",
+        icon: "fas fa-hand-holding-heart",
+        url: notification.url || "manage_donations.php",
+      },
+      donation_approved: {
+        label: "View Details",
+        icon: "fas fa-check-circle",
+        url: notification.url || "manage_donations.php",
+      },
+      training_scheduled: {
+        label: "View Training",
+        icon: "fas fa-calendar-check",
+        url: notification.url || "manage_sessions.php",
+      },
+      training_reminder: {
+        label: "Join Training",
+        icon: "fas fa-play-circle",
+        url: notification.url || "manage_sessions.php",
+      },
+      document_uploaded: {
+        label: "View Document",
+        icon: "fas fa-file-alt",
+        url: notification.url || "manage_users.php",
+      },
+      system_alert: {
+        label: "View System",
+        icon: "fas fa-cog",
+        url: notification.url || "dashboard.php",
+      },
+      announcement: {
+        label: "Read More",
+        icon: "fas fa-bullhorn",
+        url: notification.url || "manage_announcements.php",
+      },
+      volunteer_application: {
+        label: "Review Application",
+        icon: "fas fa-user-plus",
+        url: notification.url || "manage_volunteers.php",
+      },
+      event_reminder: {
+        label: "View Event",
+        icon: "fas fa-calendar-alt",
+        url: notification.url || "manage_events.php",
+      },
+      maintenance_due: {
+        label: "Schedule Maintenance",
+        icon: "fas fa-wrench",
+        url: notification.url || "manage_inventory.php",
+      },
+      approval_required: {
+        label: "Review & Approve",
+        icon: "fas fa-check-double",
+        url: notification.url || "training_request.php",
+      },
     };
-    
-    return configs[notification.type] || {
-        label: 'View Details',
-        icon: 'fas fa-eye',
-        url: notification.url || '#'
-    };
-}
-    
-    // Enhanced navigation method with proper URL handling
-    navigateToNotificationPage(notification, targetUrl) {
+
+    return (
+      configs[notification.type] || {
+        label: "View Details",
+        icon: "fas fa-eye",
+        url: notification.url || "#",
+      }
+    );
+  }
+
+  // Enhanced navigation method with proper URL handling
+  navigateToNotificationPage(notification, targetUrl) {
     // Mark notification as read
     this.markAsRead(notification.id);
-    
+
     // Handle different URL types
-    if (!targetUrl || targetUrl === '#') {
-        console.warn('No valid URL for notification:', notification);
-        return;
+    if (!targetUrl || targetUrl === "#") {
+      console.warn("No valid URL for notification:", notification);
+      return;
     }
-    
+
     // Since your admin files are in the admin directory,
     // ensure the URL includes the admin path if not already present
-    if (!targetUrl.startsWith('http') && !targetUrl.startsWith('/') && !targetUrl.includes('admin/')) {
-        targetUrl = 'prc_management/admin/' + targetUrl;
+    if (
+      !targetUrl.startsWith("http") &&
+      !targetUrl.startsWith("/") &&
+      !targetUrl.includes("admin/")
+    ) {
+      targetUrl = "admin/" + targetUrl;
     }
-    
+
     // Handle special notification parameters
     targetUrl = this.addNotificationParameters(notification, targetUrl);
-    
+
     // Navigate with a small delay
     setTimeout(() => {
-        window.location.href = targetUrl;
+      window.location.href = targetUrl;
     }, 150);
-}
-    
-    // Add notification-specific parameters to URLs
-    addNotificationParameters(notification, url) {
-        const urlObj = new URL(url, window.location.origin);
-        
-        // Add notification ID for tracking
-        urlObj.searchParams.set('notification_id', notification.id);
-        
-        // Add notification-specific parameters
-        switch (notification.type) {
-            case 'new_user':
-                if (notification.user_id) {
-                    urlObj.searchParams.set('highlight_user', notification.user_id);
-                }
-                break;
-                
-            case 'inventory_low':
-            case 'inventory_critical':
-                if (notification.item_id) {
-                    urlObj.searchParams.set('highlight_item', notification.item_id);
-                }
-                if (notification.priority === 'critical') {
-                    urlObj.searchParams.set('filter', 'critical');
-                }
-                break;
-                
-            case 'new_donation':
-            case 'donation_approved':
-                if (notification.donation_id) {
-                    urlObj.searchParams.set('highlight_donation', notification.donation_id);
-                }
-                break;
-                
-            case 'training_scheduled':
-            case 'training_reminder':
-                if (notification.training_id) {
-                    urlObj.searchParams.set('highlight_training', notification.training_id);
-                }
-                break;
-                
-            case 'document_uploaded':
-                if (notification.document_id) {
-                    urlObj.searchParams.set('highlight_document', notification.document_id);
-                }
-                break;
-                
-            case 'volunteer_application':
-                if (notification.application_id) {
-                    urlObj.searchParams.set('highlight_application', notification.application_id);
-                }
-                break;
-                
-            case 'event_reminder':
-                if (notification.event_id) {
-                    urlObj.searchParams.set('highlight_event', notification.event_id);
-                }
-                break;
+  }
+
+  // Add notification-specific parameters to URLs
+  addNotificationParameters(notification, url) {
+    const urlObj = new URL(url, window.location.origin);
+
+    // Add notification ID for tracking
+    urlObj.searchParams.set("notification_id", notification.id);
+
+    // Add notification-specific parameters
+    switch (notification.type) {
+      case "new_user":
+        if (notification.user_id) {
+          urlObj.searchParams.set("highlight_user", notification.user_id);
         }
-        
-        return urlObj.toString();
-    }
-    
-    hideToast(toast) {
-        toast.classList.add('hide');
-        setTimeout(() => {
-            if (toast.parentNode) {
-                toast.parentNode.removeChild(toast);
-            }
-        }, 300);
-    }
-    
-    async markAsRead(notificationId) {
-        try {
-            const response = await fetch(this.options.apiUrl, {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    action: 'mark_read',
-                    notification_id: notificationId
-                })
-            });
-            
-            if (response.ok) {
-                // Remove from current notifications
-                this.notifications = this.notifications.filter(n => n.id !== notificationId);
-                this.unreadCount = this.notifications.length;
-                this.updateBadge();
-                
-                if (this.isOpen) {
-                    this.renderNotifications();
-                }
-            }
-        } catch (error) {
-            console.error('Error marking notification as read:', error);
+        break;
+
+      case "inventory_low":
+      case "inventory_critical":
+        if (notification.item_id) {
+          urlObj.searchParams.set("highlight_item", notification.item_id);
         }
-    }
-    
-    async markAllAsRead() {
-        try {
-            const response = await fetch(this.options.apiUrl, {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    action: 'mark_all_read'
-                })
-            });
-            
-            if (response.ok) {
-                this.notifications = [];
-                this.unreadCount = 0;
-                this.updateBadge();
-                this.renderNotifications();
-            }
-        } catch (error) {
-            console.error('Error marking all notifications as read:', error);
+        if (notification.priority === "critical") {
+          urlObj.searchParams.set("filter", "critical");
         }
-    }
-    
-    playNotificationSound(isCritical = false) {
-        if (!this.options.soundEnabled) return;
-        
-        try {
-            // Create audio context if needed
-            if (!this.audioContext) {
-                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            }
-            
-            // Play different sound for critical notifications
-            if (isCritical) {
-                this.playUrgentSound();
-            } else {
-                this.playRegularSound();
-            }
-        } catch (error) {
-            console.warn('Could not play notification sound:', error);
+        break;
+
+      case "new_donation":
+      case "donation_approved":
+        if (notification.donation_id) {
+          urlObj.searchParams.set(
+            "highlight_donation",
+            notification.donation_id
+          );
         }
+        break;
+
+      case "training_scheduled":
+      case "training_reminder":
+        if (notification.training_id) {
+          urlObj.searchParams.set(
+            "highlight_training",
+            notification.training_id
+          );
+        }
+        break;
+
+      case "document_uploaded":
+        if (notification.document_id) {
+          urlObj.searchParams.set(
+            "highlight_document",
+            notification.document_id
+          );
+        }
+        break;
+
+      case "volunteer_application":
+        if (notification.application_id) {
+          urlObj.searchParams.set(
+            "highlight_application",
+            notification.application_id
+          );
+        }
+        break;
+
+      case "event_reminder":
+        if (notification.event_id) {
+          urlObj.searchParams.set("highlight_event", notification.event_id);
+        }
+        break;
     }
-    
-    playRegularSound() {
-        const frequency = 800;
-        const duration = 200;
-        
+
+    return urlObj.toString();
+  }
+
+  hideToast(toast) {
+    toast.classList.add("hide");
+    setTimeout(() => {
+      if (toast.parentNode) {
+        toast.parentNode.removeChild(toast);
+      }
+    }, 300);
+  }
+
+  async markAsRead(notificationId) {
+    try {
+      const response = await fetch(this.options.apiUrl, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "mark_read",
+          notification_id: notificationId,
+        }),
+      });
+
+      if (response.ok) {
+        // Remove from current notifications
+        this.notifications = this.notifications.filter(
+          (n) => n.id !== notificationId
+        );
+        this.unreadCount = this.notifications.length;
+        this.updateBadge();
+
+        if (this.isOpen) {
+          this.renderNotifications();
+        }
+      }
+    } catch (error) {
+      console.error("Error marking notification as read:", error);
+    }
+  }
+
+  async markAllAsRead() {
+    try {
+      const response = await fetch(this.options.apiUrl, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "mark_all_read",
+        }),
+      });
+
+      if (response.ok) {
+        this.notifications = [];
+        this.unreadCount = 0;
+        this.updateBadge();
+        this.renderNotifications();
+      }
+    } catch (error) {
+      console.error("Error marking all notifications as read:", error);
+    }
+  }
+
+  playNotificationSound(isCritical = false) {
+    if (!this.options.soundEnabled) return;
+
+    try {
+      // Create audio context if needed
+      if (!this.audioContext) {
+        this.audioContext = new (window.AudioContext ||
+          window.webkitAudioContext)();
+      }
+
+      // Play different sound for critical notifications
+      if (isCritical) {
+        this.playUrgentSound();
+      } else {
+        this.playRegularSound();
+      }
+    } catch (error) {
+      console.warn("Could not play notification sound:", error);
+    }
+  }
+
+  playRegularSound() {
+    const frequency = 800;
+    const duration = 200;
+
+    const oscillator = this.audioContext.createOscillator();
+    const gainNode = this.audioContext.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(this.audioContext.destination);
+
+    oscillator.frequency.setValueAtTime(
+      frequency,
+      this.audioContext.currentTime
+    );
+    oscillator.type = "sine";
+
+    gainNode.gain.setValueAtTime(0.1, this.audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(
+      0.01,
+      this.audioContext.currentTime + duration / 1000
+    );
+
+    oscillator.start(this.audioContext.currentTime);
+    oscillator.stop(this.audioContext.currentTime + duration / 1000);
+  }
+
+  playUrgentSound() {
+    // Play a more urgent sound pattern for critical notifications
+    const frequencies = [1000, 800, 1000];
+    const duration = 150;
+
+    frequencies.forEach((freq, index) => {
+      setTimeout(() => {
         const oscillator = this.audioContext.createOscillator();
         const gainNode = this.audioContext.createGain();
-        
+
         oscillator.connect(gainNode);
         gainNode.connect(this.audioContext.destination);
-        
-        oscillator.frequency.setValueAtTime(frequency, this.audioContext.currentTime);
-        oscillator.type = 'sine';
-        
-        gainNode.gain.setValueAtTime(0.1, this.audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + duration / 1000);
-        
+
+        oscillator.frequency.setValueAtTime(
+          freq,
+          this.audioContext.currentTime
+        );
+        oscillator.type = "square";
+
+        gainNode.gain.setValueAtTime(0.15, this.audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(
+          0.01,
+          this.audioContext.currentTime + duration / 1000
+        );
+
         oscillator.start(this.audioContext.currentTime);
         oscillator.stop(this.audioContext.currentTime + duration / 1000);
+      }, index * (duration + 50));
+    });
+  }
+
+  formatTime(timestamp) {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diff = now - date;
+
+    if (diff < 60000) {
+      // Less than 1 minute
+      return "Just now";
+    } else if (diff < 3600000) {
+      // Less than 1 hour
+      const minutes = Math.floor(diff / 60000);
+      return `${minutes}m ago`;
+    } else if (diff < 86400000) {
+      // Less than 1 day
+      const hours = Math.floor(diff / 3600000);
+      return `${hours}h ago`;
+    } else {
+      return date.toLocaleDateString();
     }
-    
-    playUrgentSound() {
-        // Play a more urgent sound pattern for critical notifications
-        const frequencies = [1000, 800, 1000];
-        const duration = 150;
-        
-        frequencies.forEach((freq, index) => {
-            setTimeout(() => {
-                const oscillator = this.audioContext.createOscillator();
-                const gainNode = this.audioContext.createGain();
-                
-                oscillator.connect(gainNode);
-                gainNode.connect(this.audioContext.destination);
-                
-                oscillator.frequency.setValueAtTime(freq, this.audioContext.currentTime);
-                oscillator.type = 'square';
-                
-                gainNode.gain.setValueAtTime(0.15, this.audioContext.currentTime);
-                gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + duration / 1000);
-                
-                oscillator.start(this.audioContext.currentTime);
-                oscillator.stop(this.audioContext.currentTime + duration / 1000);
-            }, index * (duration + 50));
+  }
+
+  escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Public method to manually refresh notifications
+  refresh() {
+    this.checkForNotifications();
+  }
+
+  // Public method to enable/disable sounds
+  setSoundEnabled(enabled) {
+    this.options.soundEnabled = enabled;
+    localStorage.setItem("admin_notifications_sound", enabled.toString());
+  }
+
+  // Public method to get current notification count
+  getUnreadCount() {
+    return this.unreadCount;
+  }
+
+  // Cleanup method
+  destroy() {
+    this.stopPolling();
+
+    if (this.toastContainer && this.toastContainer.parentNode) {
+      this.toastContainer.parentNode.removeChild(this.toastContainer);
+    }
+
+    if (this.audioContext) {
+      this.audioContext.close();
+    }
+  }
+
+  // Page-specific highlighting functionality
+  static highlightPageElement(type, id) {
+    // This should be called on the target page to highlight specific elements
+    setTimeout(() => {
+      let targetElement = null;
+
+      switch (type) {
+        case "highlight_user":
+          targetElement = document.querySelector(`[data-user-id="${id}"]`);
+          break;
+
+        case "highlight_item":
+          targetElement = document.querySelector(`[data-item-id="${id}"]`);
+          break;
+
+        case "highlight_donation":
+          targetElement = document.querySelector(`[data-donation-id="${id}"]`);
+          break;
+
+        case "highlight_training":
+          targetElement = document.querySelector(`[data-training-id="${id}"]`);
+          break;
+
+        case "highlight_document":
+          targetElement = document.querySelector(`[data-document-id="${id}"]`);
+          break;
+
+        case "highlight_application":
+          targetElement = document.querySelector(
+            `[data-application-id="${id}"]`
+          );
+          break;
+
+        case "highlight_event":
+          targetElement = document.querySelector(`[data-event-id="${id}"]`);
+          break;
+      }
+
+      if (targetElement) {
+        // Scroll to element
+        targetElement.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
         });
-    }
-    
-    formatTime(timestamp) {
-        const date = new Date(timestamp);
-        const now = new Date();
-        const diff = now - date;
-        
-        if (diff < 60000) { // Less than 1 minute
-            return 'Just now';
-        } else if (diff < 3600000) { // Less than 1 hour
-            const minutes = Math.floor(diff / 60000);
-            return `${minutes}m ago`;
-        } else if (diff < 86400000) { // Less than 1 day
-            const hours = Math.floor(diff / 3600000);
-            return `${hours}h ago`;
-        } else {
-            return date.toLocaleDateString();
-        }
-    }
-    
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-    
-    // Public method to manually refresh notifications
-    refresh() {
-        this.checkForNotifications();
-    }
-    
-    // Public method to enable/disable sounds
-    setSoundEnabled(enabled) {
-        this.options.soundEnabled = enabled;
-        localStorage.setItem('admin_notifications_sound', enabled.toString());
-    }
-    
-    // Public method to get current notification count
-    getUnreadCount() {
-        return this.unreadCount;
-    }
-    
-    // Cleanup method
-    destroy() {
-        this.stopPolling();
-        
-        if (this.toastContainer && this.toastContainer.parentNode) {
-            this.toastContainer.parentNode.removeChild(this.toastContainer);
-        }
-        
-        if (this.audioContext) {
-            this.audioContext.close();
-        }
-    }
-    
-    // Page-specific highlighting functionality
-    static highlightPageElement(type, id) {
-        // This should be called on the target page to highlight specific elements
+
+        // Add highlight effect
+        targetElement.classList.add("notification-highlight");
+
+        // Remove highlight after 3 seconds
         setTimeout(() => {
-            let targetElement = null;
-            
-            switch (type) {
-                case 'highlight_user':
-                    targetElement = document.querySelector(`[data-user-id="${id}"]`);
-                    break;
-                    
-                case 'highlight_item':
-                    targetElement = document.querySelector(`[data-item-id="${id}"]`);
-                    break;
-                    
-                case 'highlight_donation':
-                    targetElement = document.querySelector(`[data-donation-id="${id}"]`);
-                    break;
-                    
-                case 'highlight_training':
-                    targetElement = document.querySelector(`[data-training-id="${id}"]`);
-                    break;
-                    
-                case 'highlight_document':
-                    targetElement = document.querySelector(`[data-document-id="${id}"]`);
-                    break;
-                    
-                case 'highlight_application':
-                    targetElement = document.querySelector(`[data-application-id="${id}"]`);
-                    break;
-                    
-                case 'highlight_event':
-                    targetElement = document.querySelector(`[data-event-id="${id}"]`);
-                    break;
-            }
-            
-            if (targetElement) {
-                // Scroll to element
-                targetElement.scrollIntoView({ 
-                    behavior: 'smooth', 
-                    block: 'center' 
-                });
-                
-                // Add highlight effect
-                targetElement.classList.add('notification-highlight');
-                
-                // Remove highlight after 3 seconds
-                setTimeout(() => {
-                    targetElement.classList.remove('notification-highlight');
-                }, 3000);
-            }
-        }, 500);
-    }
+          targetElement.classList.remove("notification-highlight");
+        }, 3000);
+      }
+    }, 500);
+  }
 }
 
 // Initialize page highlighting on page load
 function initializePageHighlighting() {
-    const urlParams = new URLSearchParams(window.location.search);
-    
-    // Check for highlight parameters
-    for (const [key, value] of urlParams) {
-        if (key.startsWith('highlight_')) {
-            AdminNotificationSystem.highlightPageElement(key, value);
-        }
+  const urlParams = new URLSearchParams(window.location.search);
+
+  // Check for highlight parameters
+  for (const [key, value] of urlParams) {
+    if (key.startsWith("highlight_")) {
+      AdminNotificationSystem.highlightPageElement(key, value);
     }
-    
-    // Mark notification as handled if notification_id is present
-    const notificationId = urlParams.get('notification_id');
-    if (notificationId && window.adminNotifications) {
-        window.adminNotifications.markAsRead(notificationId);
-    }
+  }
+
+  // Mark notification as handled if notification_id is present
+  const notificationId = urlParams.get("notification_id");
+  if (notificationId && window.adminNotifications) {
+    window.adminNotifications.markAsRead(notificationId);
+  }
 }
 
 // CSS styles for notification toasts and items + highlighting
@@ -1378,25 +1470,25 @@ const notificationStyles = `
 `;
 
 // Inject styles into the document
-if (typeof document !== 'undefined') {
-    document.head.insertAdjacentHTML('beforeend', notificationStyles);
+if (typeof document !== "undefined") {
+  document.head.insertAdjacentHTML("beforeend", notificationStyles);
 }
 
 // Initialize the admin notification system when DOM is ready
-if (typeof document !== 'undefined') {
-    // Initialize page highlighting
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => {
-            window.adminNotifications = new AdminNotificationSystem();
-            initializePageHighlighting();
-        });
-    } else {
-        window.adminNotifications = new AdminNotificationSystem();
-        initializePageHighlighting();
-    }
+if (typeof document !== "undefined") {
+  // Initialize page highlighting
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => {
+      window.adminNotifications = new AdminNotificationSystem();
+      initializePageHighlighting();
+    });
+  } else {
+    window.adminNotifications = new AdminNotificationSystem();
+    initializePageHighlighting();
+  }
 }
 
 // Export for module systems
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = AdminNotificationSystem;
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = AdminNotificationSystem;
 }

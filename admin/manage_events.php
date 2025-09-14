@@ -11,7 +11,13 @@ if (session_status() === PHP_SESSION_NONE) {
     ]);
     session_start();
 }
-
+if (isset($_GET['show_archived']) && $_GET['show_archived'] === '1') {
+    // Show archived events
+    $whereConditions[] = "e.archived = 1";
+} else {
+    // Default: show only active events
+    $whereConditions[] = "e.archived = 0";
+}
 require_once __DIR__ . '/../config.php';
 ensure_logged_in();
 ensure_admin();
@@ -404,7 +410,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_event'])) {
         }
     }
 }
-
+// Add this handler after your existing POST handlers in admin events.php
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_archive'])) {
+    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        $errorMessage = "Security error: Invalid form submission.";
+    } else {
+        $event_id = (int)($_POST['event_id'] ?? 0);
+        $archive_status = (int)($_POST['archive_status'] ?? 0);
+        
+        if (!checkEventAccess($pdo, $event_id, $allowedServices, $hasRestrictedAccess, $current_user_id)) {
+            $errorMessage = "You don't have permission to archive this event.";
+        } else if ($event_id > 0) {
+            try {
+                $stmt = $pdo->prepare("UPDATE events SET archived = ? WHERE event_id = ?");
+                $result = $stmt->execute([$archive_status, $event_id]);
+                
+                if ($result) {
+                    $action = $archive_status ? 'archived' : 'unarchived';
+                    $successMessage = "Event successfully {$action}.";
+                    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+                } else {
+                    $errorMessage = "Failed to update event status.";
+                }
+            } catch (PDOException $e) {
+                $errorMessage = handleDatabaseError($e);
+            }
+        } else {
+            $errorMessage = "Invalid event ID";
+        }
+    }
+}
 // Handle REGISTRATION ACTIONS (unchanged from original)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_registration_status'])) {
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
@@ -501,6 +536,43 @@ $page = max(1, isset($_GET['page']) ? (int)$_GET['page'] : 1);
 $limit = 20;
 $offset = ($page - 1) * $limit;
 
+// NEW: Add sorting parameter handling
+$sortParam = $_GET['sort'] ?? 'date_desc';
+$allowedSorts = ['date_asc', 'date_desc', 'title_asc', 'title_desc', 'service_asc', 'registrations_desc', 'fee_asc', 'fee_desc'];
+if (!in_array($sortParam, $allowedSorts)) {
+    $sortParam = 'date_desc';
+}
+
+// NEW: Build ORDER BY clause based on sort parameter
+switch ($sortParam) {
+    case 'date_asc':
+        $orderByClause = 'ORDER BY e.event_date ASC, e.start_time ASC';
+        break;
+    case 'date_desc':
+        $orderByClause = 'ORDER BY e.event_date DESC, e.start_time DESC';
+        break;
+    case 'title_asc':
+        $orderByClause = 'ORDER BY e.title ASC';
+        break;
+    case 'title_desc':
+        $orderByClause = 'ORDER BY e.title DESC';
+        break;
+    case 'service_asc':
+        $orderByClause = 'ORDER BY e.major_service ASC, e.event_date ASC';
+        break;
+    case 'registrations_desc':
+        $orderByClause = 'ORDER BY registrations_count DESC, e.event_date ASC';
+        break;
+    case 'fee_asc':
+        $orderByClause = 'ORDER BY e.fee ASC, e.event_date ASC';
+        break;
+    case 'fee_desc':
+        $orderByClause = 'ORDER BY e.fee DESC, e.event_date ASC';
+        break;
+    default:
+        $orderByClause = 'ORDER BY e.event_date DESC, e.start_time DESC';
+}
+
 try {
     $whereConditions = [];
     $params = [];
@@ -552,7 +624,7 @@ try {
     
     $whereClause = $whereConditions ? 'WHERE ' . implode(' AND ', $whereConditions) : '';
     
-    // UPDATED: Main SELECT query with time fields and time-aware status
+    // UPDATED: Main SELECT query with time fields, time-aware status, and new event detection
     $query = "
         SELECT SQL_CALC_FOUND_ROWS 
                e.event_id,
@@ -563,6 +635,7 @@ try {
                e.duration_days,
                e.start_time,
                e.end_time,
+               e.archived,
                e.location,
                e.major_service,
                e.capacity,
@@ -580,14 +653,18 @@ try {
                    WHEN NOW() > CONCAT(COALESCE(e.event_end_date, e.event_date), ' ', e.end_time) THEN 'past'
                    WHEN NOW() BETWEEN CONCAT(e.event_date, ' ', e.start_time) AND CONCAT(COALESCE(e.event_end_date, e.event_date), ' ', e.end_time) THEN 'ongoing'
                    ELSE 'upcoming'
-               END as event_status
+               END as event_status,
+               CASE 
+                   WHEN e.created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR) THEN 1 
+                   ELSE 0 
+               END as is_new_event
         FROM events e
         LEFT JOIN registrations r ON e.event_id = r.event_id
         LEFT JOIN users u ON e.created_by = u.user_id
         $whereClause
         GROUP BY e.event_id, e.title, e.description, e.event_date, e.event_end_date, e.duration_days, 
                  e.start_time, e.end_time, e.location, e.major_service, e.capacity, e.fee, e.created_at, e.created_by, u.email
-        ORDER BY e.event_date ASC, e.start_time ASC
+        $orderByClause
         LIMIT ? OFFSET ?
     ";
     
@@ -765,6 +842,7 @@ if (!function_exists('get_role_color')) {
 <body class="admin-<?= htmlspecialchars($user_role) ?>">
   <?php include 'sidebar.php'; ?>
   <div class="events-container">
+     <?php include 'header.php'; ?>
     <div class="page-header">
       <h1><i class="fas fa-calendar-alt"></i> Event Management</h1>
       <p>
@@ -1038,7 +1116,14 @@ if (!function_exists('get_role_color')) {
             <button onclick="filterStatus('past')" class="<?= $statusFilter === 'past' ? 'active' : '' ?>">Past</button>
           </div>
         </div>
-        
+        <!-- Add this to your action bar in admin events.php -->
+<div class="archive-toggle">
+    <label class="toggle-switch">
+        <input type="checkbox" id="showArchived" <?= isset($_GET['show_archived']) && $_GET['show_archived'] === '1' ? 'checked' : '' ?>>
+        <span class="toggle-slider"></span>
+        Show Archived
+    </label>
+</div>
         <div class="view-toggle">
           <button class="btn-create" onclick="openCreateModal()">
             <i class="fas fa-plus-circle"></i> Create New Event
@@ -1090,7 +1175,7 @@ if (!function_exists('get_role_color')) {
       </div>
 
 <!-- Events Table -->
-<div class="events-table-wrapper">
+  <div class="events-table-wrapper">
     <div class="table-header">
         <h2 class="table-title">
             <?php if ($serviceFilter): ?>
@@ -1129,12 +1214,13 @@ if (!function_exists('get_role_color')) {
                 </tr>
             </thead>
             <tbody>
-                <?php foreach ($events as $event): 
+                 <?php foreach ($events as $event): 
                     $eventStartDate = strtotime($event['event_date']);
                     $eventEndDate = strtotime($event['event_end_date'] ?? $event['event_date']);
                     $durationDays = $event['duration_days'] ?? 1;
+                    $isNewEvent = $event['is_new_event'] ?? 0;
                     
-                    // NEW: Use time-aware status calculation
+                    // Your existing event status calculation code...
                     $now = time();
                     $eventStartDateTime = strtotime($event['event_date'] . ' ' . ($event['start_time'] ?? '09:00:00'));
                     $eventEndDateTime = strtotime(($event['event_end_date'] ?? $event['event_date']) . ' ' . ($event['end_time'] ?? '17:00:00'));
@@ -1149,10 +1235,13 @@ if (!function_exists('get_role_color')) {
                     
                     $isFull = $event['capacity'] > 0 && $event['registrations_count'] >= $event['capacity'];
                 ?>
-                <tr>
+                 <tr class="event-row <?= $isNewEvent ? 'new-event' : '' ?>" data-event-id="<?= $event['event_id'] ?>">
                     <td>
                         <div class="event-title"><?= htmlspecialchars($event['title']) ?></div>
-                        <div style="font-size: 0.75rem; color: var(--gray); margin-top: 0.2rem;">ID: #<?= $event['event_id'] ?></div>
+                        <!-- MODIFIED: Add data-event-id attribute -->
+                        <div style="font-size: 0.75rem; color: var(--gray); margin-top: 0.2rem;" data-event-id="<?= $event['event_id'] ?>">
+                            ID: #<?= $event['event_id'] ?>
+                        </div>
                         <?php if ($event['description']): ?>
                             <div style="font-size: 0.85rem; color: var(--gray); margin-top: 0.2rem;">
                                 <?= htmlspecialchars(substr($event['description'], 0, 80)) ?><?= strlen($event['description']) > 80 ? '...' : '' ?>
@@ -1170,35 +1259,35 @@ if (!function_exists('get_role_color')) {
                             <?php if ($durationDays == 1): ?>
                                 <div class="event-date-single">
                                     <span class="event-date"><?= date('M d, Y', $eventStartDate) ?></span>
-                                    <span class="event-time">
+                                    <span class="event-time"><i class="fas fa-clock" style="padding-right: 3px;"></i>
                                         <?= date('g:i A', strtotime($event['start_time'] ?? '09:00')) ?> - <?= date('g:i A', strtotime($event['end_time'] ?? '17:00')) ?>
                                     </span>
                                     <div class="event-duration">Single Day</div>
                                 </div>
-<?php else: ?>
-    <div class="event-date-start"><?= date('M d, Y', $eventStartDate) ?></div>
-    <div class="event-date-end">to <?= date('M d, Y', $eventEndDate) ?></div>
-    <div class="event-time">
-        <?= date('g:i A', strtotime($event['start_time'] ?? '09:00')) ?> - <?= date('g:i A', strtotime($event['end_time'] ?? '17:00')) ?>
-    </div>
-    <div class="event-duration"><?= $durationDays ?> days</div>
-<?php endif; ?>
+                            <?php else: ?>
+                                <div class="event-date-start"><?= date('M d, Y', $eventStartDate) ?></div>
+                                <div class="event-date-end">to <?= date('M d, Y', $eventEndDate) ?></div>
+                                <div class="event-time"><i class="fas fa-clock" style="padding-right: 3px;"></i>
+                                    <?= date('g:i A', strtotime($event['start_time'] ?? '09:00')) ?> - <?= date('g:i A', strtotime($event['end_time'] ?? '17:00')) ?>
+                                </div>
+                                <div class="event-duration"><?= $durationDays ?> days</div>
+                            <?php endif; ?>
                         </div>
                     </td>
                     <td>
-    <div class="location-display">
-        <div class="location-address">
-            <?= htmlspecialchars(strlen($event['location']) > 80 ? 
-                substr($event['location'], 0, 80) . '...' : 
-                $event['location']) ?>
-        </div>
-        <?php if (strlen($event['location']) > 80): ?>
-            <button type="button" class="btn-expand-location" onclick="showFullLocation(<?= htmlspecialchars(json_encode($event['location']), ENT_QUOTES) ?>)">
-                <i class="fas fa-expand-alt"></i> View Full
-            </button>
-        <?php endif; ?>
-    </div>
-</td>
+                        <div class="location-display">
+                            <div class="location-address">
+                                <?= htmlspecialchars(strlen($event['location']) > 80 ? 
+                                    substr($event['location'], 0, 80) . '...' : 
+                                    $event['location']) ?>
+                            </div>
+                            <?php if (strlen($event['location']) > 80): ?>
+                                <button type="button" class="btn-expand-location" onclick="showFullLocation(<?= htmlspecialchars(json_encode($event['location']), ENT_QUOTES) ?>)">
+                                    <i class="fas fa-expand-alt"></i> View Full
+                                </button>
+                            <?php endif; ?>
+                        </div>
+                    </td>
                     <td>
                         <div class="fee-display">
                             <?php if ($event['fee'] > 0): ?>
@@ -1209,7 +1298,7 @@ if (!function_exists('get_role_color')) {
                         </div>
                     </td>
                     <td>
-                        <a href="?view_event=<?= $event['event_id'] ?>&<?= http_build_query(array_filter(['search' => $search, 'service' => $serviceFilter, 'status' => $statusFilter])) ?>" 
+                        <a href="?view_event=<?= $event['event_id'] ?>&<?= http_build_query(array_filter(['search' => $search, 'service' => $serviceFilter, 'status' => $statusFilter, 'sort' => $sortParam])) ?>" 
                            class="registrations-badge <?= $isFull ? 'full' : '' ?>">
                             <i class="fas fa-users"></i>
                             <?= $event['registrations_count'] ?> / <?= $event['capacity'] ?: '∞' ?>
@@ -1230,13 +1319,18 @@ if (!function_exists('get_role_color')) {
                         </span>
                     </td>
                     <td class="actions">
-                        <a href="?view_event=<?= $event['event_id'] ?>&<?= http_build_query(array_filter(['search' => $search, 'service' => $serviceFilter, 'status' => $statusFilter])) ?>" 
+                        <a href="?view_event=<?= $event['event_id'] ?>&<?= http_build_query(array_filter(['search' => $search, 'service' => $serviceFilter, 'status' => $statusFilter, 'sort' => $sortParam])) ?>" 
                            class="btn-action btn-view">
                             <i class="fas fa-users"></i> View Registrations
                         </a>
                         <button class="btn-action btn-edit" onclick='openEditModal(<?= json_encode($event, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
                             <i class="fas fa-edit"></i> Edit
                         </button>
+                        <!-- Add this button next to the delete button in your admin events table -->
+<button class="btn-action btn-archive" onclick="toggleArchive(<?= $event['event_id'] ?>, <?= $event['archived'] ?>)">
+    <i class="fas fa-<?= $event['archived'] ? 'undo' : 'archive' ?>"></i> 
+    <?= $event['archived'] ? 'Unarchive' : 'Archive' ?>
+</button>
                         <form method="POST" style="display: inline;" onsubmit="return confirmDelete('<?= htmlspecialchars($event['title'], ENT_QUOTES) ?>', <?= $event['registrations_count'] ?>);">
                             <input type="hidden" name="delete_event" value="1">
                             <input type="hidden" name="event_id" value="<?= $event['event_id'] ?>">
@@ -1251,10 +1345,10 @@ if (!function_exists('get_role_color')) {
             </tbody>
         </table>
           
-        <?php if ($totalPages > 1): ?>
+    <?php if ($totalPages > 1): ?>
             <div class="pagination">
                 <?php if ($page > 1): ?>
-                    <a href="?page=<?= $page-1 ?>&service=<?= urlencode($serviceFilter) ?>&status=<?= htmlspecialchars($statusFilter) ?>&search=<?= urlencode($search) ?>" class="page-link">
+                    <a href="?page=<?= $page-1 ?>&service=<?= urlencode($serviceFilter) ?>&status=<?= htmlspecialchars($statusFilter) ?>&search=<?= urlencode($search) ?>&sort=<?= urlencode($sortParam) ?>" class="page-link">
                         <i class="fas fa-chevron-left"></i> Previous
                     </a>
                 <?php endif; ?>
@@ -1262,14 +1356,14 @@ if (!function_exists('get_role_color')) {
                 <span class="page-info">Page <?= $page ?> of <?= $totalPages ?> (<?= $totalEvents ?> total events)</span>
               
                 <?php if ($page < $totalPages): ?>
-                    <a href="?page=<?= $page+1 ?>&service=<?= urlencode($serviceFilter) ?>&status=<?= htmlspecialchars($statusFilter) ?>&search=<?= urlencode($search) ?>" class="page-link">
+                    <a href="?page=<?= $page+1 ?>&service=<?= urlencode($serviceFilter) ?>&status=<?= htmlspecialchars($statusFilter) ?>&search=<?= urlencode($search) ?>&sort=<?= urlencode($sortParam) ?>" class="page-link">
                         Next <i class="fas fa-chevron-right"></i>
                     </a>
                 <?php endif; ?>
             </div>
         <?php endif; ?>
     <?php endif; ?>
-</div>
+  </div>
     <?php endif; ?>
   </div>
 
@@ -1676,28 +1770,32 @@ function closeModal() {
     document.getElementById('eventModal').classList.remove('active');
 }
 
-function filterStatus(status) {
-    const urlParams = new URLSearchParams(window.location.search);
-    
-    // Preserve service filter when changing status
-    const currentService = urlParams.get('service');
-    
-    if (status === 'all') {
-        urlParams.delete('status');
-    } else {
-        urlParams.set('status', status);
+ function filterStatus(status) {
+        const urlParams = new URLSearchParams(window.location.search);
+        
+        // Preserve service and sort filters when changing status
+        const currentService = urlParams.get('service');
+        const currentSort = urlParams.get('sort');
+        
+        if (status === 'all') {
+            urlParams.delete('status');
+        } else {
+            urlParams.set('status', status);
+        }
+        
+        // Keep existing filters
+        if (currentService) {
+            urlParams.set('service', currentService);
+        }
+        if (currentSort) {
+            urlParams.set('sort', currentSort);
+        }
+        
+        // Reset to page 1 when filtering
+        urlParams.delete('page');
+        
+        window.location.search = urlParams.toString();
     }
-    
-    // Keep the service filter if it exists
-    if (currentService) {
-        urlParams.set('service', currentService);
-    }
-    
-    // Reset to page 1 when filtering
-    urlParams.delete('page');
-    
-    window.location.search = urlParams.toString();
-}
 
 function confirmDelete(title, registrationCount) {
     if (registrationCount > 0) {
@@ -2043,7 +2141,20 @@ if ('ontouchstart' in window) {
         });
     });
 }
-
+    // Initialize notification system when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        // Only initialize for admin pages (this page is admin)
+        document.body.classList.add('admin-page');
+        
+        // Your existing DOMContentLoaded code continues here...
+        
+        // Initialize notification managers for admin users too
+        if (typeof EventNotificationManager !== 'undefined') {
+            window.eventNotificationManager = new EventNotificationManager();
+            window.eventSortManager = new EventSortManager();
+            // Don't initialize RegistrationStatusManager for admin pages
+        }
+    });
 // Enhanced status filtering with ongoing events
 function filterStatus(status) {
     const urlParams = new URLSearchParams(window.location.search);
@@ -2219,11 +2330,79 @@ document.addEventListener('keydown', function(e) {
         closeDocumentModal();
     }
 });
+ function applySort(sortValue) {
+        const urlParams = new URLSearchParams(window.location.search);
+        
+        if (sortValue === 'date_desc') {
+            urlParams.delete('sort'); // Default sort
+        } else {
+            urlParams.set('sort', sortValue);
+        }
+        
+        // Reset to first page when sorting
+        urlParams.delete('page');
+        
+        window.location.search = urlParams.toString();
+    }
+// NEW: Function to show full location details
+    function showFullLocation(fullLocation) {
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.display = 'block';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 600px;">
+                <div class="modal-header">
+                    <h3><i class="fas fa-map-marker-alt"></i> Event Location</h3>
+                    <button class="close-modal" onclick="this.closest('.modal').remove()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div style="padding: 20px; white-space: pre-line; font-family: inherit; line-height: 1.6;">
+                    ${fullLocation.replace(/\n/g, '<br>')}
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) modal.remove();
+        });
+    }
+    // Add to your existing JavaScript in admin events.php
+function toggleArchive(eventId, currentStatus) {
+    const action = currentStatus ? 'unarchive' : 'archive';
+    const confirmMsg = `Are you sure you want to ${action} this event?`;
+    
+    if (confirm(confirmMsg)) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.innerHTML = `
+            <input type="hidden" name="toggle_archive" value="1">
+            <input type="hidden" name="event_id" value="${eventId}">
+            <input type="hidden" name="archive_status" value="${currentStatus ? 0 : 1}">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+        `;
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+// Archive filter toggle
+document.getElementById('showArchived')?.addEventListener('change', function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (this.checked) {
+        urlParams.set('show_archived', '1');
+    } else {
+        urlParams.delete('show_archived');
+    }
+    window.location.search = urlParams.toString();
+});
 </script>
 
-
+<script src="./js/event-notifications.js?v=<?= time() ?>"></script>
   <script src="../admin/js/notification_frontend.js?v=<?php echo time(); ?>"></script>
   <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
   <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
+    <?php include 'chat_widget.php'; ?>
 </body>
 </html>

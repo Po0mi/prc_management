@@ -10,7 +10,8 @@ if ($user_role) {
 }
 
 $pdo = $GLOBALS['pdo'];
-$stmt = $pdo->query("SELECT * FROM announcements ORDER BY posted_at DESC");
+$stmt = $pdo->query("SELECT * FROM announcements WHERE archived = 0 ORDER BY posted_at DESC");
+
 $announcements = $stmt->fetchAll();
 ?>
 <!DOCTYPE html>
@@ -25,6 +26,7 @@ $announcements = $stmt->fetchAll();
   <link rel="stylesheet" href="../assets/announcements.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/dashboard.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/header.css?v=<?php echo time(); ?>">
+  
 
 </head>
 <body>
@@ -107,5 +109,6 @@ $announcements = $stmt->fetchAll();
     <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
     <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
     <script src="js/header.js?v=<?php echo time(); ?>"></script>
+      <?php include 'chat_widget.php'; ?>
 </body>
 </html>

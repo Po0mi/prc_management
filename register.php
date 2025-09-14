@@ -559,38 +559,53 @@ function sendWelcomeEmailWithDocuments($email, $firstName, $userType, $documentC
     return true; // Simplified for brevity
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Register | PRC Management System</title>
+  <title>Register | Philippine Red Cross</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="assets/styles.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="assets/register.css?v=<?php echo time(); ?>">
   <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 </head>
 <body>
-  <header class="system-header">
-    <div class="logo-title">
-      <a href="index.php">
-        <img src="./assets/images/logo.png" alt="PRC Logo" class="prc-logo">
-      </a>
-      <div>
-        <h1>Philippine Red Cross</h1>
-        <p>Management System Portal</p>
-      </div>
-    </div>
-    <div class="system-info">
-      <span class="tag">User Registration</span>
-      <span class="tag">Create Your PRC Account</span>
-    </div>
-  </header>
+    <!-- Navigation Header -->
+    <nav class="login-nav">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="index.php">
+                    <img src="./assets/images/logo.png" alt="PRC Logo" class="nav-logo">
+                    <div class="brand-text">
+                        <h1>Philippine Red Cross</h1>
+                        <span>Management System Portal</span>
+                    </div>
+                </a>
+            </div>
+            <div class="nav-actions">
+                <div class="nav-tags">
+                    <span class="nav-tag">Unified Access Portal</span>
+                    <span class="nav-tag">Register for Users</span>
+                </div>
+                <a href="login.php" class="nav-btn back-btn">
+                    <i class="fas fa-arrow-left"></i>
+                    <span>Back to login</span>
+                </a>
+            </div>
+        </div>
+    </nav>
 
-  <div class="register-container">
+  <!-- Register Section -->
+  <section class="register-container">
     <div class="register-box">
-      <h2><i class="fas fa-user-plus"></i> Create Your Account</h2>
-      <p>Join the Philippine Red Cross community. All fields marked with <span style="color: #a00000;">*</span> are required.</p>
+      <div class="register-header">
+        <h2>
+          <i class="fas fa-user-plus"></i>
+          Create Your Account
+        </h2>
+        <p>Join the Philippine Red Cross community. All fields marked with <span style="color: var(--prc-red); font-weight: 600;">*</span> are required.</p>
+      </div>
 
       <?php if (!empty($error)): ?>
       <div class="alert error" id="errorAlert">
@@ -607,9 +622,13 @@ function sendWelcomeEmailWithDocuments($email, $firstName, $userType, $documentC
       <?php endif; ?>
 
       <form method="POST" action="register.php" class="register-form" id="registerForm" enctype="multipart/form-data">
-        <!-- Account Type Section -->
+        
+        <!-- Account Type Selection -->
         <div class="form-group account-type-section">
-          <label><i class="fas fa-user-tag"></i> Account Type <span style="color: #a00000;">*</span></label>
+          <label>
+            <i class="fas fa-user-tag"></i>
+            Account Type <span style="color: var(--prc-red);">*</span>
+          </label>
           
           <div class="account-option">
             <input type="radio" name="user_type" value="non_rcy_member" id="nonRcyMember" checked>
@@ -619,12 +638,8 @@ function sendWelcomeEmailWithDocuments($email, $firstName, $userType, $documentC
               </div>
               <div class="account-details">
                 <div class="account-title">Non-RCY Member</div>
-                <div class="account-description">General public access with basic features</div>
+                <div class="account-description"></div>
                 <ul class="account-benefits">
-                  <li>Event registration and participation</li>
-                  <li>Training session enrollment</li>
-                  <li>Donation tracking and history</li>
-                  <li>Basic profile management</li>
                 </ul>
               </div>
             </label>
@@ -651,7 +666,7 @@ function sendWelcomeEmailWithDocuments($email, $firstName, $userType, $documentC
           </div>
         </div>
 
-        <!-- Non-RCY Member Notice -->
+        <!-- Notice for Non-RCY Members -->
         <div class="notice-section" id="nonRcyNotice" style="display: none;">
           <div class="notice-box">
             <div class="notice-icon">
@@ -674,12 +689,13 @@ function sendWelcomeEmailWithDocuments($email, $firstName, $userType, $documentC
           </div>
         </div>
 
-        <!-- RCY Roles Selection -->
+        <!-- RCY Role Selection -->
         <div class="roles-section" id="rolesSection">
-          <h3><i class="fas fa-user-tag"></i> Select Your RCY Role <span style="color: #a00000;">*</span></h3>
-          <p style="margin: 0 0 1rem 0; color: #666; font-size: 0.9rem;">
-            Choose your role within the Red Cross Youth organization.
-          </p>
+          <h3>
+            <i class="fas fa-user-tag"></i>
+            Select Your RCY Role <span style="color: var(--prc-red);">*</span>
+          </h3>
+          <p>Choose your role within the Red Cross Youth organization.</p>
 
           <div class="role-option">
             <input type="radio" name="rcy_role" value="adviser" id="adviserRole">
@@ -725,21 +741,44 @@ function sendWelcomeEmailWithDocuments($email, $firstName, $userType, $documentC
           </div>
         </div>
 
-        <!-- Personal Information -->
+        <!-- Personal Information Form -->
         <div class="form-section" id="personalInfoSection">
           <div class="form-row">
             <div class="form-group">
-              <label><i class="fas fa-user"></i> First Name <span style="color: #a00000;">*</span></label>
-              <input type="text" name="first_name" required pattern="[A-Za-z\s]+" title="Only letters and spaces allowed">
+              <label>
+                <i class="fas fa-user"></i>
+                First Name <span style="color: var(--prc-red);">*</span>
+              </label>
+              <input 
+                type="text" 
+                name="first_name" 
+                required 
+                pattern="[A-Za-z\s]+" 
+                title="Only letters and spaces allowed"
+                placeholder="Enter your first name"
+              >
             </div>
             <div class="form-group">
-              <label><i class="fas fa-user"></i> Last Name <span style="color: #a00000;">*</span></label>
-              <input type="text" name="last_name" required pattern="[A-Za-z\s]+" title="Only letters and spaces allowed">
+              <label>
+                <i class="fas fa-user"></i>
+                Last Name <span style="color: var(--prc-red);">*</span>
+              </label>
+              <input 
+                type="text" 
+                name="last_name" 
+                required 
+                pattern="[A-Za-z\s]+" 
+                title="Only letters and spaces allowed"
+                placeholder="Enter your last name"
+              >
             </div>
           </div>
 
           <div class="form-group">
-            <label><i class="fas fa-venus-mars"></i> Gender <span style="color: #a00000;">*</span></label>
+            <label>
+              <i class="fas fa-venus-mars"></i>
+              Gender <span style="color: var(--prc-red);">*</span>
+            </label>
             <select name="gender" required>
               <option value="">Select Gender</option>
               <option value="male">Male</option>
@@ -750,30 +789,70 @@ function sendWelcomeEmailWithDocuments($email, $firstName, $userType, $documentC
           </div>
 
           <div class="form-group">
-            <label><i class="fas fa-at"></i> Username <span style="color: #a00000;">*</span></label>
-            <input type="text" name="username" required minlength="4" maxlength="20" 
-                   pattern="[A-Za-z0-9_]+" title="Only letters, numbers, and underscores allowed" id="username">
+            <label>
+              <i class="fas fa-at"></i>
+              Username <span style="color: var(--prc-red);">*</span>
+            </label>
+            <input 
+              type="text" 
+              name="username" 
+              required 
+              minlength="4" 
+              maxlength="20" 
+              pattern="[A-Za-z0-9_]+" 
+              title="Only letters, numbers, and underscores allowed" 
+              id="username"
+              placeholder="Choose a unique username"
+            >
             <p class="input-hint">4-20 characters. Letters, numbers, and underscores only.</p>
             <div id="username-status" class="validation-status"></div>
           </div>
 
           <div class="form-group">
-            <label><i class="fas fa-envelope"></i> Email Address <span style="color: #a00000;">*</span></label>
-            <input type="email" name="email" required id="email">
+            <label>
+              <i class="fas fa-envelope"></i>
+              Email Address <span style="color: var(--prc-red);">*</span>
+            </label>
+            <input 
+              type="email" 
+              name="email" 
+              required 
+              id="email"
+              placeholder="Enter your email address"
+            >
             <p class="input-hint">We'll send a confirmation email to this address</p>
             <div id="email-status" class="validation-status"></div>
           </div>
 
           <div class="form-group">
-            <label><i class="fas fa-phone"></i> Phone Number <span style="color: #a00000;">*</span></label>
-            <input type="tel" name="phone" pattern="[0-9]{10,11}" required placeholder="09XXXXXXXXX or 02XXXXXXXX">
+            <label>
+              <i class="fas fa-phone"></i>
+              Phone Number <span style="color: var(--prc-red);">*</span>
+            </label>
+            <input 
+              type="tel" 
+              name="phone" 
+              pattern="[0-9]{10,11}" 
+              required 
+              placeholder="09XXXXXXXXX or 02XXXXXXXX"
+            >
             <p class="input-hint">10 or 11 digits only (mobile or landline)</p>
           </div>
 
           <div class="form-row">
             <div class="form-group">
-              <label><i class="fas fa-lock"></i> Password <span style="color: #a00000;">*</span></label>
-              <input type="password" name="password" required minlength="8" id="password">
+              <label>
+                <i class="fas fa-lock"></i>
+                Password <span style="color: var(--prc-red);">*</span>
+              </label>
+              <input 
+                type="password" 
+                name="password" 
+                required 
+                minlength="8" 
+                id="password"
+                placeholder="Create a strong password"
+              >
               <p class="input-hint">At least 8 characters</p>
               <div class="password-strength">
                 <div class="strength-meter" id="strengthMeter"></div>
@@ -781,8 +860,18 @@ function sendWelcomeEmailWithDocuments($email, $firstName, $userType, $documentC
               </div>
             </div>
             <div class="form-group">
-              <label><i class="fas fa-lock"></i> Confirm Password <span style="color: #a00000;">*</span></label>
-              <input type="password" name="confirm_password" required minlength="8" id="confirmPassword">
+              <label>
+                <i class="fas fa-lock"></i>
+                Confirm Password <span style="color: var(--prc-red);">*</span>
+              </label>
+              <input 
+                type="password" 
+                name="confirm_password" 
+                required 
+                minlength="8" 
+                id="confirmPassword"
+                placeholder="Confirm your password"
+              >
               <div id="password-match" class="validation-status"></div>
             </div>
           </div>
@@ -790,19 +879,23 @@ function sendWelcomeEmailWithDocuments($email, $firstName, $userType, $documentC
           <!-- Document Upload Section -->
           <div class="form-group" id="documentSection">
             <label>
-              <i class="fas fa-paperclip"></i> 
-              Upload Required Documents <span style="color: #a00000;">*</span>
+              <i class="fas fa-paperclip"></i>
+              Upload Required Documents <span style="color: var(--prc-red);">*</span>
             </label>
             
             <div class="document-upload-grid">
               <div class="upload-field">
                 <label for="maabId" class="upload-label">
                   <i class="fas fa-id-card"></i>
-                  MAAB ID <span style="color: #a00000;">*</span>
+                  MAAB ID <span style="color: var(--prc-red);">*</span>
                 </label>
-                <input type="file" name="maab_id" id="maabId" 
-                       accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" 
-                       required>
+                <input 
+                  type="file" 
+                  name="maab_id" 
+                  id="maabId" 
+                  accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" 
+                  required
+                >
                 <p class="upload-hint">Upload your MAAB ID document</p>
                 <div id="maabPreview" class="file-preview"></div>
               </div>
@@ -810,11 +903,15 @@ function sendWelcomeEmailWithDocuments($email, $firstName, $userType, $documentC
               <div class="upload-field">
                 <label for="supportingDoc" class="upload-label">
                   <i class="fas fa-file-alt"></i>
-                  Supporting Document <span style="color: #a00000;">*</span>
+                  Supporting Document <span style="color: var(--prc-red);">*</span>
                 </label>
-                <input type="file" name="supporting_doc" id="supportingDoc" 
-                       accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" 
-                       required>
+                <input 
+                  type="file" 
+                  name="supporting_doc" 
+                  id="supportingDoc" 
+                  accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" 
+                  required
+                >
                 <p class="upload-hint">Additional verification document</p>
                 <div id="supportingPreview" class="file-preview"></div>
               </div>
@@ -827,30 +924,44 @@ function sendWelcomeEmailWithDocuments($email, $firstName, $userType, $documentC
             </p>
           </div>
 
+          <!-- reCAPTCHA -->
           <div class="form-group recaptcha-group">
             <div class="g-recaptcha" data-sitekey="6LelZWMrAAAAAJdF8yehKwL8dUvL1zAjXFA3Foih"></div>
             <p class="input-hint">Please verify that you're not a robot</p>
           </div>
 
+          <!-- Submit Button -->
           <div class="form-actions">
             <button type="submit" class="btn btn-primary" id="submitBtn">
-              <i class="fas fa-user-plus"></i> Create Account
+              <span>Create Account</span>
+              <i class="fas fa-arrow-right"></i>
             </button>
           </div>
         </div>
       </form>
 
-      <div class="login-link">
-        Already have an account? <a href="login.php"><i class="fas fa-sign-in-alt"></i> Log in here</a>
+      <!-- Footer Links -->
+      <div class="register-footer">
+        <div class="divider">
+        </div>
+        <div class="login-link">
+          <span>Already have an account?</span>
+          <a href="login.php">
+            <i class="fas fa-sign-in-alt"></i>
+            Sign In
+          </a>
+        </div>
       </div>
       
       <div class="help-section">
-        <p><i class="fas fa-info-circle"></i> 
-        Need help? Contact us at <a href="mailto:support@prc-system.com">support@prc-system.com</a> 
-        or call <strong>(02) 8527-0864</strong></p>
+        <p>
+          <i class="fas fa-info-circle"></i>
+          Need help? Contact us at <a href="mailto:support@prc-system.com">support@prc-system.com</a> 
+          or call <strong>(02) 8527-0864</strong>
+        </p>
       </div>
     </div>
-  </div>
+  </section>
 
   <!-- Success Modal -->
   <div class="modal-overlay" id="successModal" <?php echo $showModal ? 'style="display: flex;"' : ''; ?>>
@@ -866,15 +977,15 @@ function sendWelcomeEmailWithDocuments($email, $firstName, $userType, $documentC
           <h4>What's Next?</h4>
           <div class="success-steps">
             <div class="success-step">
-              <i class="fas fa-envelope" style="color: #28a745;"></i>
+              <i class="fas fa-envelope"></i>
               <span>Check your email for a confirmation message</span>
             </div>
             <div class="success-step">
-              <i class="fas fa-sign-in-alt" style="color: #28a745;"></i>
+              <i class="fas fa-sign-in-alt"></i>
               <span>Log in with your username and password</span>
             </div>
             <div class="success-step">
-              <i class="fas fa-explore" style="color: #28a745;"></i>
+              <i class="fas fa-explore"></i>
               <span>Explore available services and features</span>
             </div>
           </div>
@@ -882,10 +993,12 @@ function sendWelcomeEmailWithDocuments($email, $firstName, $userType, $documentC
         
         <div class="modal-actions">
           <a href="login.php" class="modal-btn btn-primary">
-            <i class="fas fa-sign-in-alt"></i> Log In Now
+            <i class="fas fa-sign-in-alt"></i>
+            Log In Now
           </a>
           <button class="modal-btn btn-secondary" onclick="closeModal()">
-            <i class="fas fa-home"></i> Return Home
+            <i class="fas fa-home"></i>
+            Return Home
           </button>
         </div>
       </div>

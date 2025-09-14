@@ -230,7 +230,8 @@ $whereConditions = [];
 $params = [];
 
 // Changed from event_date >= CURDATE() to check event_end_date instead
-$whereConditions[] = "e.event_end_date >= CURDATE()";
+// Update line 137 in user registration.php
+$whereConditions[] = "e.event_end_date >= CURDATE() AND e.archived = 0";
 
 if ($search) {
     $whereConditions[] = "(e.title LIKE :search OR e.location LIKE :search OR e.description LIKE :search)";
@@ -1162,6 +1163,7 @@ $userRegistrations = $userRegistrationsStmt->fetchAll();
     <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
     <script src="js/darkmode.js?v=<?php echo time(); ?>"></script>
     <script src="js/header.js?v=<?php echo time(); ?>"></script>
+      <?php include 'chat_widget.php'; ?>
 <script>
 // Global variable to store current event data
 let currentEventData = null;

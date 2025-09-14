@@ -512,7 +512,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_registration']
         }
     }
 }
-
+// Handle TOGGLE ARCHIVE for training sessions
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_archive'])) {
+    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        $errorMessage = "Security error: Invalid form submission.";
+    } else {
+        $session_id = (int)($_POST['session_id'] ?? 0);
+        $archive_status = (int)($_POST['archive_status'] ?? 0);
+        
+        if (!checkSessionAccess($pdo, $session_id, $allowedServices, $hasRestrictedAccess, $current_user_id)) {
+            $errorMessage = "You don't have permission to archive this session.";
+        } else if ($session_id > 0) {
+            try {
+                $stmt = $pdo->prepare("UPDATE training_sessions SET archived = ? WHERE session_id = ?");
+                $result = $stmt->execute([$archive_status, $session_id]);
+                
+                if ($result) {
+                    $action = $archive_status ? 'archived' : 'unarchived';
+                    $successMessage = "Session successfully {$action}.";
+                    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+                } else {
+                    $errorMessage = "Failed to update session status.";
+                }
+            } catch (PDOException $e) {
+                $errorMessage = handleDatabaseError($e);
+            }
+        } else {
+            $errorMessage = "Invalid session ID";
+        }
+    }
+}
 // Get filter parameters
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 $serviceFilter = isset($_GET['service']) ? trim($_GET['service']) : '';
@@ -588,6 +617,7 @@ try {
            ts.instructor_credentials,
            ts.capacity,
            ts.fee,
+           ts.archived,
            ts.created_at,
            ts.created_by,
            COUNT(sr.registration_id) AS registrations_count,
@@ -666,7 +696,7 @@ try {
                     SUM(CASE WHEN session_end_date < CURDATE() THEN 1 ELSE 0 END) as past,
                     SUM(CASE WHEN session_date <= CURDATE() AND session_end_date >= CURDATE() THEN 1 ELSE 0 END) as ongoing
                 FROM training_sessions
-                WHERE major_service = ?
+                    WHERE archived = 0 AND major_service = ?
             ");
             $stmt->execute([$service]);
             $stats[$service] = $stmt->fetch(PDO::FETCH_ASSOC) ?: ['total' => 0, 'upcoming' => 0, 'past' => 0, 'ongoing' => 0];
@@ -836,6 +866,7 @@ if (!function_exists('get_role_color')) {
 <body class="admin-<?= htmlspecialchars($user_role) ?>">
   <?php include 'sidebar.php'; ?>
   <div class="sessions-container">
+     <?php include 'header.php'; ?>
     <div class="page-header">
       <h1><i class="fas fa-graduation-cap"></i> Training Sessions Management</h1>
       <p>
@@ -1217,7 +1248,14 @@ if (!function_exists('get_role_color')) {
             <button onclick="filterStatus('past')" class="<?= $statusFilter === 'past' ? 'active' : '' ?>">Past</button>
           </div>
         </div>
-        
+        <!-- Add this to your action bar in admin sessions.php -->
+<div class="archive-toggle">
+    <label class="toggle-switch">
+        <input type="checkbox" id="showArchived" <?= isset($_GET['show_archived']) && $_GET['show_archived'] === '1' ? 'checked' : '' ?>>
+        <span class="toggle-slider"></span>
+        Show Archived
+    </label>
+</div>
         <div class="view-toggle">
           <button class="btn-create" onclick="openCreateModal()">
             <i class="fas fa-plus-circle"></i> Create New Session
@@ -1337,15 +1375,15 @@ if (!function_exists('get_role_color')) {
                     <div class="session-datetime">
                         <?php if ($durationDays == 1): ?>
                             <div class="session-date-single">
-                                <span class="session-date"><?= date('M d, Y', $sessionStartDate) ?></span>
-                                <span class="session-time"><?= date('g:i A', strtotime($session['start_time'])) ?> - <?= date('g:i A', strtotime($session['end_time'])) ?></span>
+                                <span class="session-date" ><?= date('M d, Y', $sessionStartDate) ?></span>
+                                <span class="session-time"style="font-size: 0.8rem; color: #2196F3; margin-top: 0.3rem; font-weight: 500;"><i class="fas fa-clock" style="padding-right: 3px;"></i><?= date('g:i A', strtotime($session['start_time'])) ?> - <?= date('g:i A', strtotime($session['end_time'])) ?></span>
                                 <div class="session-duration">Single Day</div>
                             </div>
                         <?php else: ?>
                             <div class="session-date-range">
                                 <div class="session-date-start"><?= date('M d, Y', $sessionStartDate) ?></div>
                                 <div class="session-date-end">to <?= date('M d, Y', $sessionEndDate) ?></div>
-                                <span class="session-time"><?= date('g:i A', strtotime($session['start_time'])) ?> - <?= date('g:i A', strtotime($session['end_time'])) ?></span>
+                                <span class="session-time" style="font-size: 0.8rem; color: #2196F3; margin-top: 0.3rem; font-weight: 500;"><i class="fas fa-clock" style="padding-right: 3px;"></i><?= date('g:i A', strtotime($session['start_time'])) ?> - <?= date('g:i A', strtotime($session['end_time'])) ?></span>
                                 <div class="session-duration"><?= $durationDays ?> days</div>
                             </div>
                         <?php endif; ?>
@@ -1409,7 +1447,7 @@ if (!function_exists('get_role_color')) {
                         <?php endif; ?>
                     </span>
                 </td>
-        <td class="actions">
+<td class="actions">
     <a href="?view_session=<?= $session['session_id'] ?><?= $search ? '&search=' . urlencode($search) : '' ?><?= $serviceFilter ? '&service=' . urlencode($serviceFilter) : '' ?><?= $statusFilter ? '&status=' . urlencode($statusFilter) : '' ?>" 
        class="btn-action btn-view">
         <i class="fas fa-users"></i> View Registrations
@@ -1419,6 +1457,13 @@ if (!function_exists('get_role_color')) {
         <i class="fas fa-edit"></i> Edit
     </button>
     
+    <!-- Archive button - moved outside the delete form -->
+    <button class="btn-action btn-archive" onclick="toggleArchive(<?= $session['session_id'] ?>, <?= $session['archived'] ?>)">
+        <i class="fas fa-<?= $session['archived'] ? 'undo' : 'archive' ?>"></i> 
+        <?= $session['archived'] ? 'Unarchive' : 'Archive' ?>
+    </button>
+    
+    <!-- Delete form - separate -->
     <form method="POST" style="display: inline;" onsubmit="return confirmDelete('<?= htmlspecialchars($session['title'], ENT_QUOTES) ?>', <?= $session['registrations_count'] ?>);">
         <input type="hidden" name="delete_session" value="1">
         <input type="hidden" name="session_id" value="<?= $session['session_id'] ?>">
@@ -1628,7 +1673,11 @@ if (!function_exists('get_role_color')) {
         </form>
     </div>
 </div>
-
+<script src="./js/event-notifications.js?v=<?= time() ?>"></script>
+<script src="../admin/js/notification_frontend.js?v=<?php echo time(); ?>"></script>
+  <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
+<script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
+  <?php include 'chat_widget.php'; ?>
 <script>
 // COMPLETE JAVASCRIPT FIX FOR manage_sessions.php
 // Replace all your existing JavaScript with this cleaned-up version
@@ -2085,107 +2134,108 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
     // Form validation
-   if (sessionForm) {
-    sessionForm.addEventListener('submit', function(e) {
-        const startDate = document.getElementById('session_date')?.value;
-        const endDate = document.getElementById('session_end_date_input')?.value;
-        const startTime = document.getElementById('start_time')?.value;
-        const endTime = document.getElementById('end_time')?.value;
-        const title = document.getElementById('title')?.value.trim();
-        const venue = document.getElementById('venue')?.value.trim();
-        const majorService = document.getElementById('major_service')?.value;
-        const formAction = document.getElementById('formAction');
-        const isCreating = formAction ? formAction.name === 'create_session' : false;
-        
-        if (!title) {
-            e.preventDefault();
-            alert('Please enter a session title.');
-            return;
-        }
-        
-        if (!venue) {
-            e.preventDefault();
-            alert('Please enter a venue.');
-            return;
-        }
-        
-        if (!majorService) {
-            e.preventDefault();
-            alert('Please select a major service.');
-            return;
-        }
-        
-        if (!startDate) {
-            e.preventDefault();
-            alert('Please select a start date.');
-            return;
-        }
-        
-        if (!endDate) {
-            e.preventDefault();
-            alert('Please select an end date.');
-            return;
-        }
-        
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-        
-        if (end < start) {
-            e.preventDefault();
-            alert('End date cannot be before start date.');
-            return;
-        }
-        
-        const finalDuration = calculateSessionDurationDays();
-        if (finalDuration > 365) {
-            e.preventDefault();
-            alert('Session duration cannot exceed 365 days.');
-            return;
-        }
-        
-        if (endTime <= startTime) {
-            e.preventDefault();
-            alert('End time must be after start time');
-            return;
-        }
-        
-        const startDateTime = new Date(`2000-01-01T${startTime}`);
-        const endDateTime = new Date(`2000-01-01T${endTime}`);
-        const timeDuration = (endDateTime - startDateTime) / (1000 * 60 * 60);
-        
-        if (timeDuration < 1) {
-            e.preventDefault();
-            alert('Session must be at least 1 hour long');
-            return;
-        }
-        
-        if (isCreating && typeof hasRestrictedAccess !== 'undefined' && hasRestrictedAccess && typeof allowedServices !== 'undefined' && allowedServices && allowedServices.length > 0) {
-            if (!allowedServices.includes(majorService)) {
+    const sessionForm = document.getElementById('sessionForm');
+    if (sessionForm) {
+        sessionForm.addEventListener('submit', function(e) {
+            const startDate = document.getElementById('session_date')?.value;
+            const endDate = document.getElementById('session_end_date_input')?.value;
+            const startTime = document.getElementById('start_time')?.value;
+            const endTime = document.getElementById('end_time')?.value;
+            const title = document.getElementById('title')?.value.trim();
+            const venue = document.getElementById('venue')?.value.trim();
+            const majorService = document.getElementById('major_service')?.value;
+            const formAction = document.getElementById('formAction');
+            const isCreating = formAction ? formAction.name === 'create_session' : false;
+            
+            if (!title) {
                 e.preventDefault();
-                alert("You don't have permission to create sessions for " + majorService + 
-                      "\n\nYou can only create sessions for: " + allowedServices.join(', '));
+                alert('Please enter a session title.');
                 return;
             }
-        }
-        
-        const selectedDate = new Date(startDate);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
-        if (selectedDate < today && isCreating) {
-            e.preventDefault();
-            alert('Session date cannot be in the past for new sessions');
-            return;
-        }
-        
-        const submitBtn = this.querySelector('.btn-submit');
-        if (submitBtn) {
-            const originalText = submitBtn.innerHTML;
-            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-            submitBtn.disabled = true;
-        }
-    });
-}
+            
+            if (!venue) {
+                e.preventDefault();
+                alert('Please enter a venue.');
+                return;
+            }
+            
+            if (!majorService) {
+                e.preventDefault();
+                alert('Please select a major service.');
+                return;
+            }
+            
+            if (!startDate) {
+                e.preventDefault();
+                alert('Please select a start date.');
+                return;
+            }
+            
+            if (!endDate) {
+                e.preventDefault();
+                alert('Please select an end date.');
+                return;
+            }
+            
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            
+            if (end < start) {
+                e.preventDefault();
+                alert('End date cannot be before start date.');
+                return;
+            }
+            
+            const finalDuration = calculateSessionDurationDays();
+            if (finalDuration > 365) {
+                e.preventDefault();
+                alert('Session duration cannot exceed 365 days.');
+                return;
+            }
+            
+            if (endTime <= startTime) {
+                e.preventDefault();
+                alert('End time must be after start time');
+                return;
+            }
+            
+            const startDateTime = new Date(`2000-01-01T${startTime}`);
+            const endDateTime = new Date(`2000-01-01T${endTime}`);
+            const timeDuration = (endDateTime - startDateTime) / (1000 * 60 * 60);
+            
+            if (timeDuration < 1) {
+                e.preventDefault();
+                alert('Session must be at least 1 hour long');
+                return;
+            }
+            
+            if (isCreating && typeof hasRestrictedAccess !== 'undefined' && hasRestrictedAccess && typeof allowedServices !== 'undefined' && allowedServices && allowedServices.length > 0) {
+                if (!allowedServices.includes(majorService)) {
+                    e.preventDefault();
+                    alert("You don't have permission to create sessions for " + majorService + 
+                          "\n\nYou can only create sessions for: " + allowedServices.join(', '));
+                    return;
+                }
+            }
+            
+            const selectedDate = new Date(startDate);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            if (selectedDate < today && isCreating) {
+                e.preventDefault();
+                alert('Session date cannot be in the past for new sessions');
+                return;
+            }
+            
+            const submitBtn = this.querySelector('.btn-submit');
+            if (submitBtn) {
+                const originalText = submitBtn.innerHTML;
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+                submitBtn.disabled = true;
+            }
+        });
+    }
     
     // Modal close on outside click
     const sessionModal = document.getElementById('sessionModal');
@@ -2608,15 +2658,7 @@ document.addEventListener('keydown', function(e) {
         }
     }
 });
-
-// Helper function for HTML escaping
-function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-// Document viewer function
+// Document viewer function for events
 function viewDocument(filePath) {
     if (!filePath) {
         alert('No document path provided');
@@ -2764,6 +2806,63 @@ function closeDocumentModal() {
         }, 300);
     }
 }
+
+// Add keyboard support for document modal in events
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && window.currentDocumentModal) {
+        closeDocumentModal();
+    }
+});
+// Helper function for HTML escaping
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+// Add to your existing JavaScript in admin sessions.php
+// Replace your existing toggleArchive function in sessions.php with this simplified version
+// that matches the events.php implementation
+
+function toggleArchive(sessionId, currentStatus) {
+    const action = currentStatus ? 'unarchive' : 'archive';
+    const confirmMsg = `Are you sure you want to ${action} this training session?`;
+    
+    if (confirm(confirmMsg)) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.innerHTML = `
+            <input type="hidden" name="toggle_archive" value="1">
+            <input type="hidden" name="session_id" value="${sessionId}">
+            <input type="hidden" name="archive_status" value="${currentStatus ? 0 : 1}">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+        `;
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+// Archive filter toggle
+document.getElementById('showArchived')?.addEventListener('change', function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (this.checked) {
+        urlParams.set('show_archived', '1');
+    } else {
+        urlParams.delete('show_archived');
+    }
+    window.location.search = urlParams.toString();
+});
+
+// Archive filter toggle for user view (if needed)
+document.getElementById('showArchivedSessions')?.addEventListener('change', function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (this.checked) {
+        urlParams.set('show_archived', '1');
+    } else {
+        urlParams.delete('show_archived');
+    }
+    window.location.search = urlParams.toString();
+});
 // CSS Styles for Multi-Day Sessions
 const sessionStyles = `
 /* Enhanced styles for multi-day session display */
@@ -3011,8 +3110,5 @@ document.head.appendChild(styleSheet);
     font-size: 0.75rem;
 }
 </style>
-<script src="../admin/js/notification_frontend.js?v=<?php echo time(); ?>"></script>
-  <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
-<script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
 </body>
 </html>

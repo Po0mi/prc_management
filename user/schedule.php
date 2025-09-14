@@ -12,6 +12,14 @@ if ($user_role) {
 if (!isset($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
+// Add archive filter logic
+if (isset($_GET['show_archived']) && $_GET['show_archived'] === '1') {
+    // Show archived sessions
+    $whereConditions[] = "ts.archived = 1";
+} else {
+    // Default: show only active sessions
+    $whereConditions[] = "ts.archived = 0";
+}
 $userEmail = $_SESSION['email'] ?? '';
 $username = current_username();
 $userId = current_user_id();
@@ -230,6 +238,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_training']))
 // Get filter parameters
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 $serviceFilter = isset($_GET['service']) ? trim($_GET['service']) : '';
+$showArchived = isset($_GET['show_archived']) && $_GET['show_archived'] === '1';
 
 // Define the major services in the same order as admin panel
 $majorServices = [
@@ -257,6 +266,14 @@ $params = [];
 // FIXED: Only show upcoming sessions - check session_end_date instead of session_date
 $whereConditions[] = "ts.session_end_date >= CURDATE()";
 
+if ($showArchived) {
+    $whereConditions[] = "ts.archived = 1";  // Show only archived
+} else {
+    $whereConditions[] = "ts.archived = 0";  // Show only non-archived (default)
+    // FIXED: Only show upcoming sessions when not viewing archived
+    $whereConditions[] = "ts.session_end_date >= CURDATE()";
+}
+
 if ($search) {
     $whereConditions[] = "(ts.title LIKE :search OR ts.venue LIKE :search OR ts.major_service LIKE :search)";
     $params[':search'] = '%' . $search . '%';
@@ -270,9 +287,9 @@ if ($serviceFilter && $serviceFilter !== 'all') {
 $whereClause = 'WHERE ' . implode(' AND ', $whereConditions);
 
 try {
-    // Main query to get all training sessions - UPDATED WITH MULTI-DAY FIELDS
+    // Main query to get all training sessions - UPDATED WITH MULTI-DAY FIELDS AND ARCHIVE SUPPORT
     $stmt = $pdo->prepare("
-    SELECT ts.*, 
+    SELECT ts.*,
            COALESCE(ts.session_end_date, ts.session_date) as session_end_date,
            COALESCE(ts.duration_days, 1) as duration_days,
            COALESCE((
@@ -306,20 +323,32 @@ try {
         $sessionsByService[$service][] = $session;
     }
 
-    // Get statistics - UPDATED FOR MULTI-DAY
-    $upcoming = $pdo->query("SELECT COUNT(*) FROM training_sessions WHERE session_end_date >= CURDATE()")->fetchColumn();
-    $past = $pdo->query("SELECT COUNT(*) FROM training_sessions WHERE session_end_date < CURDATE()")->fetchColumn();
-    $total_sessions = $upcoming + $past;
+    // Get statistics - UPDATED TO HANDLE ARCHIVE STATE
+    if ($showArchived) {
+        // When viewing archived sessions
+        $upcoming = $pdo->query("SELECT COUNT(*) FROM training_sessions WHERE archived = 1")->fetchColumn();
+        $past = 0; // Not relevant for archived view
+        $total_sessions = $upcoming;
+    } else {
+        // When viewing active sessions - exclude archived
+        $upcoming = $pdo->query("SELECT COUNT(*) FROM training_sessions WHERE session_end_date >= CURDATE() AND archived = 0")->fetchColumn();
+        $past = $pdo->query("SELECT COUNT(*) FROM training_sessions WHERE session_end_date < CURDATE() AND archived = 0")->fetchColumn();
+        $total_sessions = $upcoming + $past;
+    }
 
-    // Get user's registration count
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM session_registrations WHERE user_id = ?");
+    // Get user's registration count - only from non-archived sessions
+    $stmt = $pdo->prepare("
+        SELECT COUNT(*) FROM session_registrations sr 
+        JOIN training_sessions ts ON sr.session_id = ts.session_id 
+        WHERE sr.user_id = ? AND ts.archived = 0
+    ");
     $stmt->execute([$userId]);
     $registered = $stmt->fetchColumn();
 
     // Get user's registrations with session details - UPDATED WITH MULTI-DAY FIELDS
     $userRegistrations = $pdo->prepare("
         SELECT sr.*, ts.title, ts.session_date, ts.session_end_date, ts.duration_days,
-               ts.start_time, ts.end_time, ts.venue, ts.major_service
+               ts.start_time, ts.end_time, ts.venue, ts.major_service, ts.archived
         FROM session_registrations sr
         JOIN training_sessions ts ON sr.session_id = ts.session_id
         WHERE sr.user_id = ?
@@ -328,11 +357,18 @@ try {
     $userRegistrations->execute([$userId]);
     $myRegistrations = $userRegistrations->fetchAll();
 
+    // Filter out registrations for archived sessions (unless viewing archived)
+    if (!$showArchived) {
+        $myRegistrations = array_filter($myRegistrations, function($reg) {
+            return $reg['archived'] == 0;
+        });
+    }
+
     // Get statistics for my registrations
     $pending_registrations = count(array_filter($myRegistrations, function($reg) { return $reg['status'] === 'pending'; }));
     $approved_registrations = count(array_filter($myRegistrations, function($reg) { return $reg['status'] === 'approved'; }));
 
-    // Get ALL training sessions for calendar (next 6 months) - UPDATED WITH MULTI-DAY FIELDS
+    // Get ALL training sessions for calendar (next 6 months) - EXCLUDE ARCHIVED
     $calendarTrainings = $pdo->query("
         SELECT session_id, title, session_date, 
                COALESCE(session_end_date, session_date) as session_end_date,
@@ -341,10 +377,11 @@ try {
                (SELECT COUNT(*) FROM session_registrations WHERE session_id = training_sessions.session_id) as registrations_count
         FROM training_sessions 
         WHERE session_end_date BETWEEN DATE_SUB(CURDATE(), INTERVAL 1 MONTH) AND DATE_ADD(CURDATE(), INTERVAL 6 MONTH)
+        AND archived = 0
         ORDER BY session_date ASC, start_time ASC
     ")->fetchAll();
 
-    // Get extended training sessions for large calendar modal - SIMILAR TO EVENTS
+    // Get extended training sessions for large calendar modal - EXCLUDE ARCHIVED
     $extendedCalendarTrainings = $pdo->query("
         SELECT session_id, title, session_date,
                COALESCE(session_end_date, session_date) as session_end_date,
@@ -354,37 +391,41 @@ try {
         FROM training_sessions
         WHERE session_end_date >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)
         AND session_date <= DATE_ADD(CURDATE(), INTERVAL 6 MONTH)
+        AND archived = 0
         ORDER BY session_date ASC
     ")->fetchAll();
 
     // Get user registrations for JavaScript - FOR CALENDAR INTEGRATION
     $userRegistrationsStmt = $pdo->prepare("
-        SELECT session_id, registration_date 
-        FROM session_registrations 
-        WHERE user_id = ?
+        SELECT sr.session_id, sr.registration_date 
+        FROM session_registrations sr
+        JOIN training_sessions ts ON sr.session_id = ts.session_id
+        WHERE sr.user_id = ? AND ts.archived = 0
     ");
     $userRegistrationsStmt->execute([$userId]);
     $userRegistrationsJS = $userRegistrationsStmt->fetchAll();
 
-    // Get training summary statistics for calendar - UPDATED FOR MULTI-DAY
+    // Get training summary statistics for calendar - UPDATED FOR MULTI-DAY AND ARCHIVE
     $trainingStats = [
         'total_upcoming' => $upcoming,
         'this_week' => $pdo->query("
             SELECT COUNT(*) FROM training_sessions 
             WHERE session_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)
+            AND archived = 0
         ")->fetchColumn(),
         'this_month' => $pdo->query("
             SELECT COUNT(*) FROM training_sessions 
             WHERE session_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)
+            AND archived = 0
         ")->fetchColumn(),
         'my_upcoming' => 0 // Will calculate below
     ];
     
-    // Calculate my upcoming registrations - UPDATED FOR MULTI-DAY
+    // Calculate my upcoming registrations - UPDATED FOR MULTI-DAY AND ARCHIVE
     $stmt = $pdo->prepare("
         SELECT COUNT(*) FROM session_registrations sr
         JOIN training_sessions ts ON sr.session_id = ts.session_id
-        WHERE sr.user_id = ? AND ts.session_end_date >= CURDATE()
+        WHERE sr.user_id = ? AND ts.session_end_date >= CURDATE() AND ts.archived = 0
     ");
     $stmt->execute([$userId]);
     $trainingStats['my_upcoming'] = $stmt->fetchColumn();
@@ -411,6 +452,7 @@ try {
         'my_upcoming' => 0
     ];
 }
+// Enhanced form validation in the POST handler
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_training'])) {
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
         $errorMessage = "Security error: Invalid form submission. Please try again.";
@@ -418,7 +460,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_training'])) 
     } else {
         $serviceType = trim($_POST['service_type'] ?? '');
         $trainingProgram = trim($_POST['training_program'] ?? '');
-        $preferredDate = !empty($_POST['preferred_date']) ? $_POST['preferred_date'] : null;
+        $preferredStartDate = !empty($_POST['preferred_start_date']) ? $_POST['preferred_start_date'] : null;
+        $preferredEndDate = !empty($_POST['preferred_end_date']) ? $_POST['preferred_end_date'] : null;
         $preferredTime = $_POST['preferred_time'] ?? 'morning';
         $participantCount = (int)($_POST['participant_count'] ?? 1);
         $organizationName = trim($_POST['organization_name'] ?? '');
@@ -428,6 +471,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_training'])) 
         $purpose = trim($_POST['purpose'] ?? '');
         $additionalRequirements = trim($_POST['additional_requirements'] ?? '');
         $locationPreference = trim($_POST['location_preference'] ?? '');
+        
+        // Calculate duration if both dates provided
+        $durationDays = 1;
+        if ($preferredStartDate && $preferredEndDate) {
+            $start = new DateTime($preferredStartDate);
+            $end = new DateTime($preferredEndDate);
+            $durationDays = $end->diff($start)->days + 1;
+        }
         
         // Validation
         $errors = [];
@@ -446,6 +497,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_training'])) 
         
         if (empty($contactNumber)) {
             $errors[] = "Contact number is required.";
+        } else if (!validatePhilippineNumber($contactNumber)) {
+            $errors[] = "Please enter a valid Philippine phone number (e.g., 09XX XXX XXXX, 032 XXX XXXX, or +63 9XX XXX XXXX).";
         }
         
         if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -456,8 +509,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_training'])) 
             $errors[] = "Participant count must be between 1 and 100.";
         }
         
-        if ($preferredDate && strtotime($preferredDate) < strtotime('+1 week')) {
-            $errors[] = "Preferred date must be at least 1 week from now.";
+        // Enhanced date validation
+        if ($preferredStartDate) {
+            $startDate = new DateTime($preferredStartDate);
+            $nextWeek = new DateTime('+1 week');
+            
+            if ($startDate < $nextWeek) {
+                $errors[] = "Preferred start date must be at least 1 week from now.";
+            }
+            
+            if ($preferredEndDate) {
+                $endDate = new DateTime($preferredEndDate);
+                if ($endDate < $startDate) {
+                    $errors[] = "End date cannot be before start date.";
+                }
+                
+                if ($durationDays > 365) {
+                    $errors[] = "Training duration cannot exceed 365 days.";
+                }
+            }
         }
         
         // Validate training program against service type
@@ -551,25 +621,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_training'])) 
 
                 // Only proceed if no file upload errors
                 if (empty($errors)) {
-                    $stmt = $pdo->prepare("
-                        INSERT INTO training_requests (
-                            user_id, service_type, training_program, preferred_date, preferred_time, 
-                            participant_count, organization_name, contact_person, contact_number, 
-                            email, purpose, additional_requirements, location_preference, status,
-                            valid_id_request_path, participant_list_path, additional_docs_paths, 
-                            additional_docs_filenames, documents_uploaded_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, NOW())
-                    ");
+    $stmt = $pdo->prepare("
+    INSERT INTO training_requests (
+        user_id, service_type, training_program, preferred_start_date, preferred_end_date, 
+        duration_days, preferred_start_time, preferred_end_time, 
+        participant_count, organization_name, contact_person, 
+        contact_number, email, purpose, additional_requirements, location_preference, status,
+        valid_id_request_path, participant_list_path, additional_docs_paths, 
+        additional_docs_filenames, documents_uploaded_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, NOW())
+");
                     
-                    $result = $stmt->execute([
-                        $userId, $serviceType, $trainingProgram, $preferredDate, $preferredTime,
-                        $participantCount, $organizationName, $contactPerson, $contactNumber,
-                        $email, $purpose, $additionalRequirements, $locationPreference,
-                        $validIdPath,
-                        $participantListPath ?: null,
-                        !empty($additionalDocsPaths) ? json_encode($additionalDocsPaths) : null,
-                        !empty($additionalDocsFilenames) ? json_encode($additionalDocsFilenames) : null
-                    ]);
+                    $preferredStartTime = !empty($_POST['preferred_start_time']) ? $_POST['preferred_start_time'] : null;
+$preferredEndTime = !empty($_POST['preferred_end_time']) ? $_POST['preferred_end_time'] : null;
+
+$result = $stmt->execute([
+    $userId, $serviceType, $trainingProgram, $preferredStartDate, $preferredEndDate,
+    $durationDays, $preferredStartTime, $preferredEndTime,
+    $participantCount, $organizationName, $contactPerson, 
+    $contactNumber, $email, $purpose, $additionalRequirements, $locationPreference,
+    $validIdPath,
+    $participantListPath ?: null,
+    !empty($additionalDocsPaths) ? json_encode($additionalDocsPaths) : null,
+    !empty($additionalDocsFilenames) ? json_encode($additionalDocsFilenames) : null
+]);
                     
                     if ($result) {
                         $requestId = $pdo->lastInsertId();
@@ -589,23 +664,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_training'])) 
         }
     }
 }
-
+// First, add the phone validation function at the top of the file after the existing functions
+function validatePhilippineNumber($phoneNumber) {
+    // Remove all non-digit characters
+    $cleanNumber = preg_replace('/[^0-9]/', '', $phoneNumber);
+    
+    // Check for various Philippine number formats
+    $patterns = [
+        '/^(09\d{9})$/',           // 09XXXXXXXXX (mobile)
+        '/^(\+639\d{9})$/',        // +639XXXXXXXXX (mobile with country code)
+        '/^(639\d{9})$/',          // 639XXXXXXXXX (mobile without +)
+        '/^(02\d{7,8})$/',         // 02XXXXXXX or 02XXXXXXXX (Manila landline)
+        '/^(032\d{7})$/',          // 032XXXXXXX (Cebu landline)
+        '/^(033\d{7})$/',          // 033XXXXXXX (Iloilo landline)
+        '/^(034\d{7})$/',          // 034XXXXXXX (Bacolod landline)
+        '/^(035\d{7})$/',          // 035XXXXXXX (Dumaguete landline)
+        '/^(036\d{7})$/',          // 036XXXXXXX (Kalibo landline)
+        '/^(038\d{7})$/',          // 038XXXXXXX (Tagbilaran landline)
+        '/^(045\d{7})$/',          // 045XXXXXXX (Cabanatuan landline)
+        '/^(046\d{7})$/',          // 046XXXXXXX (Batangas landline)
+        '/^(047\d{7})$/',          // 047XXXXXXX (Lipa landline)
+        '/^(048\d{7})$/',          // 048XXXXXXX (San Pablo landline)
+        '/^(049\d{7})$/',          // 049XXXXXXX (Los Baños landline)
+        '/^(063\d{7})$/',          // 063XXXXXXX (Davao landline)
+        '/^(078\d{7})$/',          // 078XXXXXXX (Cagayan de Oro landline)
+        '/^(082\d{7})$/',          // 082XXXXXXX (Davao landline alt)
+        '/^(083\d{7})$/',          // 083XXXXXXX (Butuan landline)
+        '/^(085\d{7})$/',          // 085XXXXXXX (Zamboanga landline)
+        '/^(088\d{7})$/',          // 088XXXXXXX (Cagayan de Oro landline alt)
+    ];
+    
+    foreach ($patterns as $pattern) {
+        if (preg_match($pattern, $cleanNumber)) {
+            return true;
+        }
+    }
+    
+    return false;
+}
 // Get user's training requests for display
 try {
-    $userRequestsStmt = $pdo->prepare("
-        SELECT tr.*, tp.program_name, tp.program_description, tp.typical_duration_hours
-        FROM training_requests tr
-        LEFT JOIN training_programs tp ON tr.training_program = tp.program_code 
-            AND tr.service_type = tp.service_type
-        WHERE tr.user_id = ?
-        ORDER BY tr.created_at DESC
-    ");
+   $userRequestsStmt = $pdo->prepare("
+    SELECT tr.*, tp.program_name, tp.program_description, tp.typical_duration_hours,
+           tr.preferred_start_time, tr.preferred_end_time
+    FROM training_requests tr
+    LEFT JOIN training_programs tp ON tr.training_program = tp.program_code 
+        AND tr.service_type = tp.service_type
+    WHERE tr.user_id = ?
+    ORDER BY tr.created_at DESC
+");
     $userRequestsStmt->execute([$userId]);
     $userTrainingRequests = $userRequestsStmt->fetchAll();
 } catch (PDOException $e) {
     error_log("Error fetching training requests: " . $e->getMessage());
     $userTrainingRequests = [];
 }
+
 ?>
 
 <!DOCTYPE html>
@@ -710,7 +824,7 @@ try {
             </div>
           </div>
 <div class="modal" id="trainingRequestModal">
-    <div class="modal-content" style="max-width: 800px;">
+    <div class="modal-content" style="max-width: 900px;">
         <div class="modal-header">
             <h2 class="modal-title">Request Training Program</h2>
             <button class="close-modal" onclick="closeTrainingRequestModal()">
@@ -762,70 +876,114 @@ try {
                     </div>
                 </div>
                 
+                <!-- Enhanced Date Range Selection -->
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="preferred_date">Preferred Date</label>
+                        <label for="preferred_start_date">Preferred Start Date</label>
                         <input type="date" 
-                               id="preferred_date" 
-                               name="preferred_date" 
+                               id="preferred_start_date" 
+                               name="preferred_start_date" 
                                min="<?= date('Y-m-d', strtotime('+1 week')) ?>"
-                               value="<?= isset($_POST['preferred_date']) ? htmlspecialchars($_POST['preferred_date']) : '' ?>">
+                               value="<?= isset($_POST['preferred_start_date']) ? htmlspecialchars($_POST['preferred_start_date']) : '' ?>"
+                               onchange="updateRequestDatePreview()">
                         <small style="color: var(--gray);">Leave blank if flexible</small>
                     </div>
                     
                     <div class="form-group">
-                        <label for="preferred_time">Preferred Time</label>
-                        <select id="preferred_time" name="preferred_time">
-                            <option value="morning" <?= isset($_POST['preferred_time']) && $_POST['preferred_time'] === 'morning' ? 'selected' : '' ?>>Morning (8:00 AM - 12:00 PM)</option>
-                            <option value="afternoon" <?= isset($_POST['preferred_time']) && $_POST['preferred_time'] === 'afternoon' ? 'selected' : '' ?>>Afternoon (1:00 PM - 5:00 PM)</option>
-                            <option value="evening" <?= isset($_POST['preferred_time']) && $_POST['preferred_time'] === 'evening' ? 'selected' : '' ?>>Evening (6:00 PM - 8:00 PM)</option>
-                        </select>
+                        <label for="preferred_end_date">Preferred End Date</label>
+                        <input type="date" 
+                               id="preferred_end_date" 
+                               name="preferred_end_date" 
+                               min="<?= date('Y-m-d', strtotime('+1 week')) ?>"
+                               value="<?= isset($_POST['preferred_end_date']) ? htmlspecialchars($_POST['preferred_end_date']) : '' ?>"
+                               onchange="updateRequestDatePreview()">
+                        <small style="color: var(--gray);">Same as start date for single-day training</small>
                     </div>
                 </div>
+
+                <!-- Date Preview (similar to sessions) -->
+                <div class="date-preview-container" id="requestDatePreviewContainer" style="display: none;">
+                    <div class="date-preview">
+                        <div class="date-preview-header">
+                            <i class="fas fa-calendar-check"></i>
+                            <span>Requested Training Period</span>
+                        </div>
+                        <div class="date-preview-content">
+                            <div class="date-range">
+                                <span class="start-date" id="requestPreviewStartDate">-</span>
+                                <i class="fas fa-arrow-right"></i>
+                                <span class="end-date" id="requestPreviewEndDate">-</span>
+                            </div>
+                            <div class="duration-display" id="requestPreviewDuration">1 day</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-row">
+    <div class="form-group">
+        <label for="preferred_start_time">Preferred Start Time <span class="required">*</span></label>
+        <input type="time" 
+               id="preferred_start_time" 
+               name="preferred_start_time" 
+               required
+               value="09:00"
+               title="Preferred training start time">
+    </div>
+    
+    <div class="form-group">
+        <label for="preferred_end_time">Preferred End Time <span class="required">*</span></label>
+        <input type="time" 
+               id="preferred_end_time" 
+               name="preferred_end_time" 
+               required
+               value="17:00"
+               title="Preferred training end time">
+    </div>
+</div>
             </div>
+            
 
             <!-- Step 2: Participant Information -->
-            <div class="form-section">
-                <h3 class="section-title">
-                    <i class="fas fa-users"></i>
-                    Participant Information
-                </h3>
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="participant_count">Expected Participants <span class="required">*</span></label>
-                        <input type="number" 
-                               id="participant_count" 
-                               name="participant_count" 
-                               min="1" 
-                               max="100" 
-                               value="<?= isset($_POST['participant_count']) ? htmlspecialchars($_POST['participant_count']) : '1' ?>" 
-                               required
-                               onchange="toggleOrganizationSection()">
-                        <small style="color: var(--gray);">Number of people who will attend</small>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="location_preference">Location Preference</label>
-                        <input type="text" 
-                               id="location_preference" 
-                               name="location_preference" 
-                               placeholder="Preferred training location"
-                               value="<?= isset($_POST['location_preference']) ? htmlspecialchars($_POST['location_preference']) : '' ?>">
-                        <small style="color: var(--gray);">City or specific venue preference</small>
-                    </div>
-                </div>
-                
-                <div class="form-group" id="organization_section" style="display: none;">
-                    <label for="organization_name">Organization/Company Name</label>
-                    <input type="text" 
-                           id="organization_name" 
-                           name="organization_name" 
-                           placeholder="Organization name if applicable"
-                           value="<?= isset($_POST['organization_name']) ? htmlspecialchars($_POST['organization_name']) : '' ?>">
-                    <small style="color: var(--gray);">Required for groups of 5 or more participants</small>
-                </div>
-            </div>
+<div class="form-section">
+    <h3 class="section-title">
+        <i class="fas fa-users"></i>
+        Participant Information
+    </h3>
+    
+    <div class="form-group">
+        <label for="participant_count">Number of Participants <span class="required">*</span></label>
+        <input type="number" 
+               id="participant_count" 
+               name="participant_count" 
+               min="1" 
+               max="100" 
+               required 
+               placeholder="How many participants?"
+               value="<?= isset($_POST['participant_count']) ? htmlspecialchars($_POST['participant_count']) : '1' ?>"
+               onchange="toggleOrganizationSection()">
+        <small style="color: var(--gray);">Minimum 1, maximum 100 participants</small>
+    </div>
+    
+    
+    <div class="form-group">
+        <label for="location_preference">Location Preference</label>
+        <input type="text" 
+               id="location_preference" 
+               name="location_preference" 
+               placeholder="Preferred training location"
+               value="<?= isset($_POST['location_preference']) ? htmlspecialchars($_POST['location_preference']) : '' ?>">
+        <small style="color: var(--gray);">City or specific venue preference</small>
+    </div>
+    
+    <div class="form-group" id="organization_section" style="display: none;">
+        <label for="organization_name">Organization/Company Name</label>
+        <input type="text" 
+               id="organization_name" 
+               name="organization_name" 
+               placeholder="Organization name if applicable"
+               value="<?= isset($_POST['organization_name']) ? htmlspecialchars($_POST['organization_name']) : '' ?>">
+        <small style="color: var(--gray);">Required for groups of 5 or more participants</small>
+    </div>
+</div>
 
             <!-- Step 3: Contact Information -->
             <div class="form-section">
@@ -846,13 +1004,21 @@ try {
                     </div>
                     
                     <div class="form-group">
-                        <label for="contact_number">Contact Number <span class="required">*</span></label>
+                        <label for="contact_number">Philippine Contact Number <span class="required">*</span></label>
                         <input type="tel" 
                                id="contact_number" 
                                name="contact_number" 
                                required 
-                               placeholder="+63 XXX XXX XXXX"
-                               value="<?= isset($_POST['contact_number']) ? htmlspecialchars($_POST['contact_number']) : '' ?>">
+                               placeholder="09XX XXX XXXX or 032 XXX XXXX"
+                               pattern="^(\+?63|0)?[0-9\s\-\(\)]{10,14}$"
+                               value="<?= isset($_POST['contact_number']) ? htmlspecialchars($_POST['contact_number']) : '' ?>"
+                               onblur="validatePhoneNumber(this)">
+                        <div class="phone-validation-feedback" id="phoneValidationFeedback" style="display: none;">
+                            <!-- Validation feedback will be shown here -->
+                        </div>
+                        <small style="color: var(--gray);">
+                            Accepted formats: 09XX XXX XXXX (mobile), 032 XXX XXXX (landline), +63 9XX XXX XXXX
+                        </small>
                     </div>
                 </div>
                 
@@ -1161,15 +1327,15 @@ try {
                           <?php endif; ?>
                         </div>
                       </td>
-                      <td>
+  <td>
     <div class="venue-display">
         <div class="venue-preview">
-            <?= htmlspecialchars(strlen($s['venue']) > 60 ? 
-                substr($s['venue'], 0, 60) . '...' : 
-                $s['venue']) ?>
+            <?= htmlspecialchars(strlen($r['venue']) > 60 ? 
+                substr($r['venue'], 0, 60) . '...' : 
+                $r['venue']) ?>
         </div>
-        <?php if (strlen($s['venue']) > 60): ?>
-            <button type="button" class="btn-view-venue" onclick="showVenueModal('<?= htmlspecialchars($s['title'], ENT_QUOTES) ?>', <?= htmlspecialchars(json_encode($s['venue']), ENT_QUOTES) ?>)">
+        <?php if (strlen($r['venue']) > 60): ?>
+            <button type="button" class="btn-view-venue" onclick="showVenueModal('<?= htmlspecialchars($r['title'], ENT_QUOTES) ?>', <?= htmlspecialchars(json_encode($r['venue']), ENT_QUOTES) ?>)">
                 <i class="fas fa-map-marker-alt"></i> View Full
             </button>
         <?php endif; ?>
@@ -1288,23 +1454,44 @@ try {
                                 </div>
                             <?php endif; ?>
                         </td>
-                        <td>
-                            <?php if ($request['preferred_date']): ?>
-                                <div style="font-weight: 600;">
-                                    <?= date('M d, Y', strtotime($request['preferred_date'])) ?>
-                                </div>
-                            <?php else: ?>
-                                <div style="color: var(--gray); font-style: italic;">Flexible</div>
-                            <?php endif; ?>
-                            <div style="font-size: 0.8rem; color: var(--gray);">
-                                <?= ucfirst($request['preferred_time']) ?>
-                            </div>
-                            <?php if ($request['location_preference']): ?>
-                                <div style="font-size: 0.8rem; color: var(--gray); margin-top: 0.2rem;">
-                                    <i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($request['location_preference']) ?>
-                                </div>
-                            <?php endif; ?>
-                        </td>
+           <td>
+    <?php if ($request['preferred_start_date']): ?>
+        <div style="font-weight: 600;">
+            <?= date('M d, Y', strtotime($request['preferred_start_date'])) ?>
+            <?php if ($request['preferred_end_date'] && $request['preferred_end_date'] !== $request['preferred_start_date']): ?>
+                <div style="font-size: 0.8rem; color: var(--gray);">
+                    to <?= date('M d, Y', strtotime($request['preferred_end_date'])) ?>
+                </div>
+            <?php endif; ?>
+        </div>
+        
+        <!-- Show specific times only -->
+        <?php if (!empty($request['preferred_start_time']) || !empty($request['preferred_end_time'])): ?>
+            <div style="font-size: 0.8rem; color: #2196F3; margin-top: 0.3rem; font-weight: 500;">
+                <i class="fas fa-clock"></i>
+                <?php if (!empty($request['preferred_start_time'])): ?>
+                    <?= date('g:i A', strtotime($request['preferred_start_time'])) ?>
+                <?php endif; ?>
+                <?php if (!empty($request['preferred_end_time'])): ?>
+                    <?php if (!empty($request['preferred_start_time'])): ?>
+                        - <?= date('g:i A', strtotime($request['preferred_end_time'])) ?>
+                    <?php else: ?>
+                        End: <?= date('g:i A', strtotime($request['preferred_end_time'])) ?>
+                    <?php endif; ?>
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
+        
+    <?php else: ?>
+        <div style="color: var(--gray); font-style: italic;">Flexible</div>
+    <?php endif; ?>
+    
+    <?php if ($request['location_preference']): ?>
+        <div style="font-size: 0.8rem; color: var(--gray); margin-top: 0.2rem;">
+            <i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($request['location_preference']) ?>
+        </div>
+    <?php endif; ?>
+</td>
                         <td>
                             <div style="font-size: 0.85rem;">
                                 <div style="font-weight: 600;"><?= htmlspecialchars($request['contact_person']) ?></div>
@@ -1840,6 +2027,7 @@ try {
   <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
   <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
   <script src="js/header.js?v=<?php echo time(); ?>"></script>
+    <?php include 'chat_widget.php'; ?>
   <script> 
 // Store training sessions and user registrations in global scope
 window.calendarTrainingsData = <?php echo json_encode($calendarTrainings); ?>;
@@ -2673,6 +2861,8 @@ function validateForm(form) {
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
     generateTrainingCalendar();
+    const startDateInput = document.getElementById('preferred_start_date');
+    const endDateInput = document.getElementById('preferred_end_date');
     
     // Initialize payment method listeners
     const paymentMethods = document.querySelectorAll('input[name="payment_method"]');
@@ -2681,11 +2871,63 @@ document.addEventListener('DOMContentLoaded', function() {
             handlePaymentMethodChange(this.value);
         });
     });
-     document.addEventListener('keydown', function(e) {
+    
+    document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape' && window.currentVenueModal) {
             closeVenueModal();
         }
     });
+
+    // Enhanced date change handlers for Training Request Modal
+    if (startDateInput) {
+        startDateInput.addEventListener('change', function() {
+            const startDate = this.value;
+            if (endDateInput) {
+                endDateInput.min = startDate;
+                if (endDateInput.value && endDateInput.value < startDate) {
+                    endDateInput.value = startDate;
+                }
+                if (!endDateInput.value) {
+                    endDateInput.value = startDate;
+                }
+            }
+            updateRequestDatePreview();
+        });
+    }
+    
+    if (endDateInput) {
+        endDateInput.addEventListener('change', function() {
+            updateRequestDatePreview();
+        });
+    }
+    
+    // Phone number formatting and validation for Training Request Modal
+    const phoneInput = document.getElementById('contact_number');
+    if (phoneInput) {
+        phoneInput.addEventListener('input', function() {
+            let value = this.value.replace(/[^\d\+\-\s\(\)]/g, '');
+            
+            // Auto-format common patterns
+            if (value.match(/^09\d{9}$/)) {
+                // Format 09XXXXXXXXX to 09XX XXX XXXX
+                value = value.replace(/(\d{4})(\d{3})(\d{4})/, '$1 $2 $3');
+            } else if (value.match(/^0\d{2}\d{7}$/)) {
+                // Format 0XXXXXXXXXX to 0XX XXX XXXX
+                value = value.replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3');
+            }
+            
+            this.value = value;
+        });
+        
+        // Clear validation on input change
+        phoneInput.addEventListener('input', function() {
+            const feedbackElement = document.getElementById('phoneValidationFeedback');
+            if (feedbackElement) {
+                feedbackElement.style.display = 'none';
+            }
+            this.classList.remove('valid', 'invalid');
+        });
+    }
 
     // Initialize file upload handlers
     const validIdInput = document.getElementById('valid_id');
@@ -2710,7 +2952,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Form submission handler
+    // Form submission handler for registration
     const registerForm = document.getElementById('registerForm');
     if (registerForm) {
         registerForm.addEventListener('submit', function(e) {
@@ -2723,6 +2965,63 @@ document.addEventListener('DOMContentLoaded', function() {
             if (submitBtn) {
                 submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing Registration...';
                 submitBtn.disabled = true;
+            }
+        });
+    }
+
+    // Form submission handler for training request
+    const trainingRequestForm = document.getElementById('trainingRequestForm');
+    if (trainingRequestForm) {
+        trainingRequestForm.addEventListener('submit', function(e) {
+            const errors = validateTrainingRequestForm();
+            
+            if (errors.length > 0) {
+                e.preventDefault();
+                alert('Please fix the following errors:\n\n' + errors.join('\n'));
+                return false;
+            }
+            
+            // Check phone validation status
+            const phoneInput = document.getElementById('contact_number');
+            if (phoneInput && phoneInput.classList.contains('invalid')) {
+                e.preventDefault();
+                alert('Please enter a valid Philippine phone number before submitting.');
+                phoneInput.focus();
+                return false;
+            }
+            
+            // Show loading state
+            const submitBtn = this.querySelector('.btn-submit');
+            if (submitBtn) {
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting Request...';
+                submitBtn.disabled = true;
+            }
+            
+            return true;
+        });
+    }
+
+    // Initialize form state for training request
+    toggleOrganizationSection();
+    
+    // Event listeners for dynamic sections
+    const participantCountInput = document.getElementById('participant_count');
+    if (participantCountInput) {
+        participantCountInput.addEventListener('input', toggleOrganizationSection);
+    }
+    
+    const trainingProgramSelect = document.getElementById('training_program');
+    if (trainingProgramSelect) {
+        trainingProgramSelect.addEventListener('change', function() {
+            const selectedOption = this.options[this.selectedIndex];
+            const programDescription = document.getElementById('program_description');
+            const descriptionText = programDescription.querySelector('small');
+            
+            if (selectedOption.dataset.description) {
+                descriptionText.textContent = selectedOption.dataset.description;
+                programDescription.style.display = 'block';
+            } else {
+                programDescription.style.display = 'none';
             }
         });
     }
@@ -2747,6 +3046,16 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Close training request modal when clicking outside
+    const trainingRequestModal = document.getElementById('trainingRequestModal');
+    if (trainingRequestModal) {
+        trainingRequestModal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeTrainingRequestModal();
+            }
+        });
+    }
+
     // Keyboard navigation
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
@@ -2754,6 +3063,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 closeCalendarModal();
             } else if (modal && modal.classList.contains('active')) {
                 closeRegisterModal();
+            } else if (trainingRequestModal && trainingRequestModal.classList.contains('active')) {
+                closeTrainingRequestModal();
             }
         }
         
@@ -3067,16 +3378,51 @@ function validateTrainingRequestForm() {
         }
     });
     
+    // Enhanced phone validation
+    const phone = formData.get('contact_number');
+    if (phone) {
+        const cleanNumber = phone.replace(/[^0-9]/g, '');
+        const validPatterns = [
+            /^(09\d{9})$/,
+            /^(\+639\d{9})$/,
+            /^(639\d{9})$/,
+            /^(02\d{7,8})$/,
+            /^(032\d{7})$/,
+            /^(033\d{7})$/,
+            /^(034\d{7})$/,
+            /^(035\d{7})$/,
+            /^(036\d{7})$/,
+            /^(038\d{7})$/,
+            /^(045\d{7})$/,
+            /^(046\d{7})$/,
+            /^(047\d{7})$/,
+            /^(048\d{7})$/,
+            /^(049\d{7})$/,
+            /^(063\d{7})$/,
+            /^(078\d{7})$/,
+            /^(082\d{7})$/,
+            /^(083\d{7})$/,
+            /^(085\d{7})$/,
+            /^(088\d{7})$/
+        ];
+        
+        let phoneValid = false;
+        for (const pattern of validPatterns) {
+            if (pattern.test(cleanNumber)) {
+                phoneValid = true;
+                break;
+            }
+        }
+        
+        if (!phoneValid) {
+            errors.push('Please enter a valid Philippine phone number.');
+        }
+    }
+    
     // Email validation
     const email = formData.get('email');
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         errors.push('Please enter a valid email address.');
-    }
-    
-    // Phone validation
-    const phone = formData.get('contact_number');
-    if (phone && !/^\+?[\d\s\-\(\)]{10,}$/.test(phone)) {
-        errors.push('Please enter a valid contact number.');
     }
     
     // Participant count validation
@@ -3088,6 +3434,32 @@ function validateTrainingRequestForm() {
     // Organization name required for large groups
     if (participantCount >= 5 && !formData.get('organization_name')) {
         errors.push('Organization name is required for groups of 5 or more participants.');
+    }
+    
+    // Date validation
+    const startDate = formData.get('preferred_start_date');
+    const endDate = formData.get('preferred_end_date');
+    
+    if (startDate) {
+        const start = new Date(startDate);
+        const nextWeek = new Date();
+        nextWeek.setDate(nextWeek.getDate() + 7);
+        
+        if (start < nextWeek) {
+            errors.push('Preferred start date must be at least 1 week from now.');
+        }
+        
+        if (endDate) {
+            const end = new Date(endDate);
+            if (end < start) {
+                errors.push('End date cannot be before start date.');
+            }
+            
+            const duration = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+            if (duration > 365) {
+                errors.push('Training duration cannot exceed 365 days.');
+            }
+        }
     }
     
     // File validation
@@ -3108,13 +3480,23 @@ function validateTrainingRequestForm() {
 document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('trainingRequestForm');
     
-    if (form) {
+    
+   if (form) {
         form.addEventListener('submit', function(e) {
             const errors = validateTrainingRequestForm();
             
             if (errors.length > 0) {
                 e.preventDefault();
                 alert('Please fix the following errors:\n\n' + errors.join('\n'));
+                return false;
+            }
+            
+            // Check phone validation status
+            const phoneInput = document.getElementById('contact_number');
+            if (phoneInput && phoneInput.classList.contains('invalid')) {
+                e.preventDefault();
+                alert('Please enter a valid Philippine phone number before submitting.');
+                phoneInput.focus();
                 return false;
             }
             
@@ -3154,6 +3536,170 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+// Update request date preview
+function updateRequestDatePreview() {
+    const startDateInput = document.getElementById('preferred_start_date');
+    const endDateInput = document.getElementById('preferred_end_date');
+    const previewContainer = document.getElementById('requestDatePreviewContainer');
+    
+    if (!startDateInput || !endDateInput || !previewContainer) return;
+    
+    const previewStartDate = document.getElementById('requestPreviewStartDate');
+    const previewEndDate = document.getElementById('requestPreviewEndDate');
+    const previewDuration = document.getElementById('requestPreviewDuration');
+    
+    const startDate = startDateInput.value;
+    const endDate = endDateInput.value;
+    
+    if (startDate) {
+        const start = new Date(startDate + 'T00:00:00');
+        let end = start;
+        let duration = 1;
+        
+        if (endDate) {
+            end = new Date(endDate + 'T00:00:00');
+            const timeDiff = end.getTime() - start.getTime();
+            duration = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1;
+            
+            if (duration < 1) {
+                duration = 1;
+                end = start;
+            }
+        }
+        
+        if (previewStartDate) {
+            previewStartDate.textContent = start.toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+            });
+        }
+        
+        if (previewEndDate) {
+            previewEndDate.textContent = end.toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+            });
+        }
+        
+        if (previewDuration) {
+            const durationText = duration === 1 ? '1 day' : `${duration} days`;
+            previewDuration.textContent = durationText;
+        }
+        
+        previewContainer.style.display = 'block';
+    } else {
+        previewContainer.style.display = 'none';
+    }
+}
+
+// Philippine phone number validation with API simulation
+async function validatePhoneNumber(input) {
+    const phoneNumber = input.value.trim();
+    const feedbackElement = document.getElementById('phoneValidationFeedback');
+    
+    if (!phoneNumber) {
+        feedbackElement.style.display = 'none';
+        input.classList.remove('valid', 'invalid');
+        return;
+    }
+    
+    // Show loading state
+    feedbackElement.style.display = 'block';
+    feedbackElement.className = 'phone-validation-feedback loading';
+    feedbackElement.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Validating phone number...';
+    
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Client-side validation patterns for Philippine numbers
+    const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
+    
+    const validPatterns = [
+        /^(09\d{9})$/,           // 09XXXXXXXXX (mobile)
+        /^(\+639\d{9})$/,        // +639XXXXXXXXX (mobile with country code) 
+        /^(639\d{9})$/,          // 639XXXXXXXXX (mobile without +)
+        /^(02\d{7,8})$/,         // 02XXXXXXX or 02XXXXXXXX (Manila landline)
+        /^(032\d{7})$/,          // 032XXXXXXX (Cebu landline)
+        /^(033\d{7})$/,          // 033XXXXXXX (Iloilo landline)
+        /^(034\d{7})$/,          // 034XXXXXXX (Bacolod landline)
+        /^(035\d{7})$/,          // 035XXXXXXX (Dumaguete landline)
+        /^(036\d{7})$/,          // 036XXXXXXX (Kalibo landline)
+        /^(038\d{7})$/,          // 038XXXXXXX (Tagbilaran landline)
+        /^(045\d{7})$/,          // 045XXXXXXX (Cabanatuan landline)
+        /^(046\d{7})$/,          // 046XXXXXXX (Batangas landline)
+        /^(047\d{7})$/,          // 047XXXXXXX (Lipa landline)
+        /^(048\d{7})$/,          // 048XXXXXXX (San Pablo landline)
+        /^(049\d{7})$/,          // 049XXXXXXX (Los Baños landline)
+        /^(063\d{7})$/,          // 063XXXXXXX (Davao landline)
+        /^(078\d{7})$/,          // 078XXXXXXX (Cagayan de Oro landline)
+        /^(082\d{7})$/,          // 082XXXXXXX (Davao landline alt)
+        /^(083\d{7})$/,          // 083XXXXXXX (Butuan landline)
+        /^(085\d{7})$/,          // 085XXXXXXX (Zamboanga landline)
+        /^(088\d{7})$/,          // 088XXXXXXX (Cagayan de Oro landline alt)
+    ];
+    
+    let isValid = false;
+    let numberType = '';
+    let formattedNumber = '';
+    
+    // Check against patterns
+    for (const pattern of validPatterns) {
+        if (pattern.test(cleanNumber)) {
+            isValid = true;
+            
+            if (cleanNumber.startsWith('09') || cleanNumber.startsWith('639')) {
+                numberType = 'Mobile';
+                // Format mobile number
+                if (cleanNumber.startsWith('09')) {
+                    formattedNumber = cleanNumber.replace(/(\d{4})(\d{3})(\d{4})/, '$1 $2 $3');
+                } else {
+                    formattedNumber = '+63 ' + cleanNumber.substring(2).replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3');
+                }
+            } else {
+                numberType = 'Landline';
+                // Format landline number
+                formattedNumber = cleanNumber.replace(/(\d{2,3})(\d{3})(\d{4})/, '$1 $2 $3');
+            }
+            break;
+        }
+    }
+    
+    // Simulate additional validation checks (carrier verification, etc.)
+    if (isValid) {
+        // Simulate carrier check
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        feedbackElement.className = 'phone-validation-feedback valid';
+        feedbackElement.innerHTML = `
+            <i class="fas fa-check-circle"></i>
+            <div class="validation-details">
+                <div class="validation-status">Valid Philippine ${numberType} Number</div>
+                <div class="formatted-number">${formattedNumber}</div>
+                <div class="validation-note">Number format verified</div>
+            </div>
+        `;
+        input.classList.remove('invalid');
+        input.classList.add('valid');
+    } else {
+        feedbackElement.className = 'phone-validation-feedback invalid';
+        feedbackElement.innerHTML = `
+            <i class="fas fa-times-circle"></i>
+            <div class="validation-details">
+                <div class="validation-status">Invalid Philippine Number</div>
+                <div class="validation-suggestions">
+                    <strong>Valid formats:</strong><br>
+                    • Mobile: 09XX XXX XXXX or +63 9XX XXX XXXX<br>
+                    • Landline: 032 XXX XXXX (Cebu), 02 XXXX XXXX (Manila)
+                </div>
+            </div>
+        `;
+        input.classList.remove('valid');
+        input.classList.add('invalid');
+    }
+}
+
 // Function to inject multi-day training styles
 function injectMultiDayTrainingStyles() {
     const multiDayTrainingStyles = `
@@ -3500,25 +4046,194 @@ const trainingPrograms = {
 
 // Open Training Request Modal
 function openTrainingRequestModal() {
-    document.getElementById('trainingRequestModal').classList.add('active');
-    document.body.style.overflow = 'hidden';
+    const modal = document.getElementById('trainingRequestModal');
+    if (modal) {
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        
+        // Reset form
+        const form = document.getElementById('trainingRequestForm');
+        if (form) {
+            form.reset();
+        }
+        
+        // Reset form state
+        const programSelect = document.getElementById('training_program');
+        const programDescription = document.getElementById('program_description');
+        const orgSection = document.getElementById('organization_section');
+        const participantListSection = document.getElementById('participant_list_section');
+        
+        if (programSelect) {
+            programSelect.disabled = true;
+            programSelect.innerHTML = '<option value="">Select service type first</option>';
+        }
+        if (programDescription) {
+            programDescription.style.display = 'none';
+        }
+        if (orgSection) {
+            orgSection.style.display = 'none';
+        }
+        if (participantListSection) {
+            participantListSection.style.display = 'none';
+        }
+        
+        // Set default times
+        setDefaultTimes();
+        
+        // Set minimum date to 1 week from now
+        const nextWeek = new Date();
+        nextWeek.setDate(nextWeek.getDate() + 7);
+        const minDate = nextWeek.toISOString().split('T')[0];
+        
+        const startDateInput = document.getElementById('preferred_start_date');
+        const endDateInput = document.getElementById('preferred_end_date');
+        
+        if (startDateInput) {
+            startDateInput.min = minDate;
+            startDateInput.value = '';
+        }
+        if (endDateInput) {
+            endDateInput.min = minDate;
+            endDateInput.value = '';
+        }
+        
+        // Hide date preview
+        const previewContainer = document.getElementById('requestDatePreviewContainer');
+        if (previewContainer) {
+            previewContainer.style.display = 'none';
+        }
+        
+        // Reset file uploads
+        const fileContainers = document.querySelectorAll('#trainingRequestModal .file-upload-container');
+        fileContainers.forEach(container => {
+            container.classList.remove('has-file');
+            const input = container.querySelector('input[type="file"]');
+            if (input) {
+                input.value = '';
+                const info = container.querySelector('.file-upload-info span');
+                if (info) {
+                    resetFileUploadInfo(input);
+                }
+            }
+        });
+        
+        // Clear uploaded files list
+        const filesList = document.getElementById('additional_docs_list');
+        if (filesList) {
+            filesList.innerHTML = '';
+            filesList.classList.remove('has-files');
+        }
+        
+        // Clear phone validation
+        const phoneInput = document.getElementById('contact_number');
+        const phoneValidation = document.getElementById('phoneValidationFeedback');
+        if (phoneInput) {
+            phoneInput.classList.remove('valid', 'invalid');
+        }
+        if (phoneValidation) {
+            phoneValidation.style.display = 'none';
+        }
+        
+        // Clear any previous errors
+        document.querySelectorAll('#trainingRequestModal .form-group.error').forEach(group => {
+            group.classList.remove('error');
+            const errorMsg = group.querySelector('.error-message');
+            if (errorMsg) errorMsg.remove();
+        });
+    }
+}
+
+// Set default times based on preference or specific times
+function setDefaultTimes() {
+    const startTimeInput = document.getElementById('preferred_start_time');
+    const endTimeInput = document.getElementById('preferred_end_time');
     
-    // Reset form
-    document.getElementById('trainingRequestForm').reset();
-    document.getElementById('training_program').disabled = true;
-    document.getElementById('program_description').style.display = 'none';
-    document.getElementById('organization_section').style.display = 'none';
+    // Default times
+    let startTime = '09:00';
+    let endTime = '17:00';
     
-    // Set minimum date to 1 week from now
-    const nextWeek = new Date();
-    nextWeek.setDate(nextWeek.getDate() + 7);
-    document.getElementById('preferred_date').min = nextWeek.toISOString().split('T')[0];
+    // Check if specific times were provided (when editing existing request)
+    if (startTimeInput && startTimeInput.value) {
+        startTime = startTimeInput.value;
+    }
+    if (endTimeInput && endTimeInput.value) {
+        endTime = endTimeInput.value;
+    }
+    
+    // Fallback to preference-based times if specific times not provided
+    if ((!startTimeInput || !startTimeInput.value) && preferredTimeSelect && preferredTimeSelect.value) {
+        const preferredTime = preferredTimeSelect.value;
+        
+        if (preferredTime === 'morning') {
+            startTime = '09:00';
+            endTime = '17:00';
+        } else if (preferredTime === 'afternoon') {
+            startTime = '13:00';
+            endTime = '17:00';
+        } else if (preferredTime === 'evening') {
+            startTime = '18:00';
+            endTime = '20:00';
+        } else if (preferredTime === 'flexible') {
+            startTime = '09:00';
+            endTime = '17:00';
+        }
+    }
+    
+    // Set the time inputs
+    if (startTimeInput) {
+        startTimeInput.value = startTime;
+    }
+    if (endTimeInput) {
+        endTimeInput.value = endTime;
+    }
+}
+
+// Update times based on preferred time selection
+function updateTimesBasedOnPreference() {
+    const preferredTimeSelect = document.getElementById('preferred_time');
+    const startTimeInput = document.getElementById('preferred_start_time');
+    const endTimeInput = document.getElementById('preferred_end_time');
+    
+    if (!preferredTimeSelect || !startTimeInput || !endTimeInput) return;
+    
+    const preferredTime = preferredTimeSelect.value;
+    
+    // Only update if user hasn't manually set specific times
+    const hasCustomStartTime = startTimeInput.value && startTimeInput.value !== '09:00';
+    const hasCustomEndTime = endTimeInput.value && endTimeInput.value !== '17:00';
+    
+    if (!hasCustomStartTime || !hasCustomEndTime) {
+        switch (preferredTime) {
+            case 'morning':
+                startTimeInput.value = '09:00';
+                endTimeInput.value = '17:00';
+                break;
+            case 'afternoon':
+                startTimeInput.value = '13:00';
+                endTimeInput.value = '17:00';
+                break;
+            case 'evening':
+                startTimeInput.value = '18:00';
+                endTimeInput.value = '20:00';
+                break;
+            case 'flexible':
+                startTimeInput.value = '09:00';
+                endTimeInput.value = '17:00';
+                break;
+            default:
+                startTimeInput.value = '09:00';
+                endTimeInput.value = '17:00';
+        }
+    }
 }
 
 // Close Training Request Modal
 function closeTrainingRequestModal() {
-    document.getElementById('trainingRequestModal').classList.remove('active');
-    document.body.style.overflow = '';
+    const modal = document.getElementById('trainingRequestModal');
+    if (modal) {
+        modal.classList.remove('active');
+        document.body.style.overflow = '';
+    }
 }
 
 // Update Training Programs based on Service Type
@@ -3526,8 +4241,6 @@ function updateTrainingPrograms() {
     const serviceType = document.getElementById('service_type').value;
     const programSelect = document.getElementById('training_program');
     const programDescription = document.getElementById('program_description');
-    const participantCount = document.getElementById('participant_count');
-    const orgSection = document.getElementById('organization_section');
     
     // Clear program selection
     programSelect.innerHTML = '<option value="">Select training program</option>';
@@ -3546,140 +4259,249 @@ function updateTrainingPrograms() {
             option.dataset.duration = program.duration;
             programSelect.appendChild(option);
         });
-        
-        // Show organization section for multiple participants
-        if (parseInt(participantCount.value) > 5) {
-            orgSection.style.display = 'block';
-        }
     } else {
         // Disable program selection
         programSelect.disabled = true;
-        orgSection.style.display = 'none';
     }
+    
+    // Update organization section visibility
+    toggleOrganizationSection();
 }
 
-// Show program description when program is selected
-document.getElementById('training_program').addEventListener('change', function() {
-    const selectedOption = this.options[this.selectedIndex];
-    const programDescription = document.getElementById('program_description');
-    const descriptionText = programDescription.querySelector('small');
+// Enhanced form validation
+function validateTrainingRequestForm() {
+    const form = document.getElementById('trainingRequestForm');
+    const formData = new FormData(form);
+    const errors = [];
     
-    if (selectedOption.dataset.description) {
-        descriptionText.textContent = selectedOption.dataset.description;
-        programDescription.style.display = 'block';
-    } else {
-        programDescription.style.display = 'none';
-    }
-});
-
-// Show organization section for group training
-document.getElementById('participant_count').addEventListener('input', function() {
-    const orgSection = document.getElementById('organization_section');
-    const participantCount = parseInt(this.value);
+    // Basic field validation
+    const requiredFields = {
+        'service_type': 'Service Type',
+        'training_program': 'Training Program',
+        'contact_person': 'Contact Person',
+        'contact_number': 'Contact Number',
+        'email': 'Email Address'
+    };
     
-    if (participantCount > 5) {
-        orgSection.classList.add('show');
-        orgSection.style.display = 'block';
-    } else {
-        orgSection.classList.remove('show');
-        orgSection.style.display = 'none';
-        document.getElementById('organization_name').value = '';
-    }
-});
-
-// Form validation
-document.getElementById('trainingRequestForm').addEventListener('submit', function(e) {
-    const serviceType = document.getElementById('service_type').value;
-    const trainingProgram = document.getElementById('training_program').value;
-    const contactPerson = document.getElementById('contact_person').value.trim();
-    const contactNumber = document.getElementById('contact_number').value.trim();
-    const email = document.getElementById('email').value.trim();
-    const participantCount = parseInt(document.getElementById('participant_count').value);
-    
-    let hasErrors = false;
-    
-    // Clear previous errors
-    document.querySelectorAll('.form-group.error').forEach(group => {
-        group.classList.remove('error');
-        const errorMsg = group.querySelector('.error-message');
-        if (errorMsg) errorMsg.remove();
+    Object.entries(requiredFields).forEach(([field, label]) => {
+        if (!formData.get(field) || formData.get(field).trim() === '') {
+            errors.push(`${label} is required.`);
+        }
     });
     
-    // Validate required fields
-    if (!serviceType) {
-        showFieldError('service_type', 'Please select a service type');
-        hasErrors = true;
+    // Enhanced phone validation
+    const phone = formData.get('contact_number');
+    if (phone) {
+        const cleanNumber = phone.replace(/[^0-9]/g, '');
+        const validPatterns = [
+            /^(09\d{9})$/,
+            /^(\+639\d{9})$/,
+            /^(639\d{9})$/,
+            /^(02\d{7,8})$/,
+            /^(032\d{7})$/,
+            /^(033\d{7})$/,
+            /^(034\d{7})$/,
+            /^(035\d{7})$/,
+            /^(036\d{7})$/,
+            /^(038\d{7})$/,
+            /^(045\d{7})$/,
+            /^(046\d{7})$/,
+            /^(047\d{7})$/,
+            /^(048\d{7})$/,
+            /^(049\d{7})$/,
+            /^(063\d{7})$/,
+            /^(078\d{7})$/,
+            /^(082\d{7})$/,
+            /^(083\d{7})$/,
+            /^(085\d{7})$/,
+            /^(088\d{7})$/
+        ];
+        
+        let phoneValid = false;
+        for (const pattern of validPatterns) {
+            if (pattern.test(cleanNumber)) {
+                phoneValid = true;
+                break;
+            }
+        }
+        
+        if (!phoneValid) {
+            errors.push('Please enter a valid Philippine phone number.');
+        }
     }
     
-    if (!trainingProgram) {
-        showFieldError('training_program', 'Please select a training program');
-        hasErrors = true;
+    // Email validation
+    const email = formData.get('email');
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        errors.push('Please enter a valid email address.');
     }
     
-    if (!contactPerson) {
-        showFieldError('contact_person', 'Contact person is required');
-        hasErrors = true;
-    }
-    
-    if (!contactNumber) {
-        showFieldError('contact_number', 'Contact number is required');
-        hasErrors = true;
-    } else if (!/^\+?[\d\s\-\(\)]{10,}$/.test(contactNumber)) {
-        showFieldError('contact_number', 'Please enter a valid contact number');
-        hasErrors = true;
-    }
-    
-    if (!email) {
-        showFieldError('email', 'Email address is required');
-        hasErrors = true;
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        showFieldError('email', 'Please enter a valid email address');
-        hasErrors = true;
-    }
-    
+    // Participant count validation
+    const participantCount = parseInt(formData.get('participant_count')) || 0;
     if (participantCount < 1 || participantCount > 100) {
-        showFieldError('participant_count', 'Participant count must be between 1 and 100');
-        hasErrors = true;
+        errors.push('Participant count must be between 1 and 100.');
     }
     
-    if (hasErrors) {
-        e.preventDefault();
-        return;
+    // Organization name required for large groups
+    if (participantCount >= 5 && !formData.get('organization_name')) {
+        errors.push('Organization name is required for groups of 5 or more participants.');
     }
     
-    // Show loading state
-    const submitBtn = this.querySelector('.btn-submit');
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting Request...';
-    submitBtn.disabled = true;
-});
+    // Date validation
+    const startDate = formData.get('preferred_start_date');
+    const endDate = formData.get('preferred_end_date');
+    
+    if (startDate) {
+        const start = new Date(startDate);
+        const nextWeek = new Date();
+        nextWeek.setDate(nextWeek.getDate() + 7);
+        
+        if (start < nextWeek) {
+            errors.push('Preferred start date must be at least 1 week from now.');
+        }
+        
+        if (endDate) {
+            const end = new Date(endDate);
+            if (end < start) {
+                errors.push('End date cannot be before start date.');
+            }
+            
+            const duration = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+            if (duration > 365) {
+                errors.push('Training duration cannot exceed 365 days.');
+            }
+        }
+    }
+    
+    // Time validation
+    const startTime = formData.get('preferred_start_time');
+    const endTime = formData.get('preferred_end_time');
+    
+    if (startTime && endTime) {
+        const start = new Date('1970-01-01T' + startTime);
+        const end = new Date('1970-01-01T' + endTime);
+        
+        if (end <= start) {
+            errors.push('End time must be after start time.');
+        }
+    }
+    
+    // File validation
+    const validIdFile = document.getElementById('valid_id_request').files[0];
+    if (!validIdFile) {
+        errors.push('Valid ID upload is required.');
+    }
+    
+    const participantListFile = document.getElementById('participant_list').files[0];
+    if (participantCount >= 5 && !participantListFile) {
+        errors.push('Participant list is required for groups of 5 or more participants.');
+    }
+    
+    return errors;
+}
 
 // Helper function to show field errors
 function showFieldError(fieldId, message) {
     const field = document.getElementById(fieldId);
-    const formGroup = field.closest('.form-group');
-    formGroup.classList.add('error');
-    
-    const errorElement = document.createElement('div');
-    errorElement.className = 'error-message';
-    errorElement.textContent = message;
-    formGroup.appendChild(errorElement);
-}
-
-// Close modal when clicking outside
-document.getElementById('trainingRequestModal').addEventListener('click', function(e) {
-    if (e.target === this) {
-        closeTrainingRequestModal();
-    }
-});
-
-// Keyboard navigation
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') {
-        const modal = document.getElementById('trainingRequestModal');
-        if (modal && modal.classList.contains('active')) {
-            closeTrainingRequestModal();
+    if (field) {
+        const formGroup = field.closest('.form-group');
+        if (formGroup) {
+            formGroup.classList.add('error');
+            
+            const errorElement = document.createElement('div');
+            errorElement.className = 'error-message';
+            errorElement.textContent = message;
+            formGroup.appendChild(errorElement);
         }
     }
+}
+
+// Initialize event listeners when DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    // Training program change listener
+    const trainingProgramSelect = document.getElementById('training_program');
+    if (trainingProgramSelect) {
+        trainingProgramSelect.addEventListener('change', function() {
+            const selectedOption = this.options[this.selectedIndex];
+            const programDescription = document.getElementById('program_description');
+            const descriptionText = programDescription.querySelector('small');
+            
+            if (selectedOption.dataset.description) {
+                descriptionText.textContent = selectedOption.dataset.description;
+                programDescription.style.display = 'block';
+            } else {
+                programDescription.style.display = 'none';
+            }
+        });
+    }
+
+    // Participant count change listener
+    const participantCountInput = document.getElementById('participant_count');
+    if (participantCountInput) {
+        participantCountInput.addEventListener('input', function() {
+            toggleOrganizationSection();
+        });
+    }
+
+    // Preferred time change listener
+    const preferredTimeSelect = document.getElementById('preferred_time');
+    if (preferredTimeSelect) {
+        preferredTimeSelect.addEventListener('change', function() {
+            updateTimesBasedOnPreference();
+        });
+    }
+
+    // Form submission handler
+    const trainingRequestForm = document.getElementById('trainingRequestForm');
+    if (trainingRequestForm) {
+        trainingRequestForm.addEventListener('submit', function(e) {
+            const errors = validateTrainingRequestForm();
+            
+            if (errors.length > 0) {
+                e.preventDefault();
+                alert('Please fix the following errors:\n\n' + errors.join('\n'));
+                return false;
+            }
+            
+            // Check phone validation status
+            const phoneInput = document.getElementById('contact_number');
+            if (phoneInput && phoneInput.classList.contains('invalid')) {
+                e.preventDefault();
+                alert('Please enter a valid Philippine phone number before submitting.');
+                phoneInput.focus();
+                return false;
+            }
+            
+            // Show loading state
+            const submitBtn = this.querySelector('.btn-submit');
+            if (submitBtn) {
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting Request...';
+                submitBtn.disabled = true;
+            }
+            
+            return true;
+        });
+    }
+
+    // Close modal when clicking outside
+    const trainingRequestModal = document.getElementById('trainingRequestModal');
+    if (trainingRequestModal) {
+        trainingRequestModal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeTrainingRequestModal();
+            }
+        });
+    }
+
+    // Keyboard navigation
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            const modal = document.getElementById('trainingRequestModal');
+            if (modal && modal.classList.contains('active')) {
+                closeTrainingRequestModal();
+            }
+        }
+    });
 });
 </script>
 

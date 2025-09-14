@@ -43,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $rcy_role = trim($_POST['rcy_role'] ?? '');
         $services = $_POST['services'] ?? [];
 
-        if ($username && $password && $full_name && in_array($role, ['admin','user'])) {
+       if ($username && $password && $full_name && in_array($role, ['admin','user'])) {
             $hash = password_hash($password, PASSWORD_DEFAULT);
             $servicesJson = $user_type === 'rcy_member' ? json_encode($services) : null;
             
@@ -64,13 +64,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 
                 // Create notification for new user
-                if (file_exists('notifications_api_admin.php')) {
+              if (file_exists('notifications_api_admin.php')) {
                     require_once 'notifications_api_admin.php';
+                    // Remove any debug output from this function call
                     notifyNewUserCreated($pdo, $userId, $username, $role, $user_type, $_SESSION['user_id']);
                 }
                 
                 $successMessage = "User '$username' created successfully!";
-            } catch (Exception $e) {
+
+           } catch (Exception $e) {
                 $errorMessage = "Error creating user: " . $e->getMessage();
             }
         } else {
@@ -242,9 +244,12 @@ function isNewUser($createdAt) {
     <link rel="stylesheet" href="../assets/header.css?v=<?php echo time(); ?>">
     <link rel="stylesheet" href="../assets/admin_users.css?v=<?php echo time(); ?>">  
 </head>
+
 <body>
     <?php include 'sidebar.php'; ?>
+   
     <div class="users-container">
+         <?php include 'header.php'; ?>
         <!-- Enhanced Page Header -->
         <div class="page-header">
             <h1><i class="fas fa-users-cog"></i> User Management</h1>
@@ -842,6 +847,7 @@ function isNewUser($createdAt) {
     <script src="../admin/js/notification_frontend.js?v=<?php echo time(); ?>"></script>
     <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
     <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
+      <?php include 'chat_widget.php'; ?>
     <script>
         // Enhanced Document viewing functionality
         function viewDocuments(userId, username) {

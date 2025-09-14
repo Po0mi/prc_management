@@ -190,90 +190,343 @@
   cursor: pointer;
   z-index: 102;
 }
+/* Sidebar Notification Bell - Transferred from Header */
 
+/* Notification section in sidebar */
+.sidebar-notification-section {
+  padding: 0.5rem 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: auto;
+}
+
+/* Notification Bell in Sidebar */
+.sidebar .notification-bell {
+  position: relative;
+  cursor: pointer;
+  width: 100%;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  color: white;
+  text-decoration: none;
+  padding: 1rem 1.2rem;
+  transition: all 0.3s ease;
+  font-weight: 500;
+  font-size: 0.85rem;
+  border: none;
+  background: none;
+  border-radius: 6px;
+}
+
+.sidebar .notification-bell:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.sidebar .notification-bell i {
+  width: 24px;
+  text-align: center;
+  font-size: 1.1rem;
+}
+
+/* Notification Badge in Sidebar */
+.sidebar .notification-badge {
+  position: absolute;
+  top: 8px;
+  left: 20px;
+  background-color: #ff4444;
+  color: white;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: bold;
+  z-index: 1;
+}
+
+.sidebar .notification-badge.hidden {
+  display: none;
+}
+
+/* Notification Panel in Sidebar */
+.sidebar .notification-panel {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  background-color: var(--card-bg, white);
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 8px;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  margin-bottom: 0.5rem;
+  color: var(--text-color, #333);
+}
+
+.sidebar .notification-panel.active {
+  display: block;
+}
+
+.sidebar .notification-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  border-bottom: 1px solid var(--border-color, #e0e0e0);
+}
+
+.sidebar .notification-header h3 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1rem;
+  color: var(--text-color, #333);
+}
+
+.sidebar .notification-count {
+  background-color: var(--prc-red, #a00000);
+  color: white;
+  border-radius: 10px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+.sidebar .mark-all-read {
+  background: none;
+  border: none;
+  color: var(--prc-red, #a00000);
+  cursor: pointer;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.sidebar .mark-all-read:hover {
+  background-color: rgba(160, 0, 0, 0.1);
+}
+
+.sidebar .notification-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.sidebar .notification-loading {
+  padding: 2rem;
+  text-align: center;
+  color: #777;
+}
+
+/* Collapsed sidebar adjustments */
+.sidebar.collapsed .notification-bell {
+  justify-content: center;
+  padding: 1rem 0;
+}
+
+.sidebar.collapsed .notification-bell span {
+  display: none;
+}
+
+.sidebar.collapsed .notification-badge {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.sidebar.collapsed .notification-panel {
+  left: 100%;
+  bottom: 0;
+  width: 320px;
+  margin-left: 0.5rem;
+  margin-bottom: 0;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .sidebar-notification-section {
+    margin-bottom: 20px; /* No collapse button on mobile */
+    padding: 0.3rem 0.8rem;
+  }
+
+  /* Match existing mobile sidebar behavior */
+  .sidebar:not(.expanded) .notification-bell span {
+    display: none;
+  }
+
+  .sidebar:not(.expanded) .notification-bell {
+    justify-content: center;
+    padding: 1rem 0;
+  }
+
+  .sidebar:not(.expanded) .notification-badge {
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .sidebar.expanded .notification-bell {
+    justify-content: flex-start;
+    padding: 0.5rem 1rem;
+  }
+
+  .sidebar.expanded .notification-panel {
+    left: 0;
+    right: 0;
+    width: auto;
+  }
+
+  .sidebar:not(.expanded) .notification-panel {
+    left: 100%;
+    bottom: 0;
+    width: 280px;
+    margin-left: 0.5rem;
+    margin-bottom: 0;
+  }
+}
+
+/* Very small devices */
+@media (max-width: 350px) {
+  .sidebar-notification-section {
+    padding: 0.3rem 0.6rem;
+  }
+
+  .sidebar.expanded .notification-bell {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.75rem;
+  }
+
+  .sidebar.expanded .notification-bell i {
+    font-size: 1rem;
+  }
+}
+
+/* Landscape tablets - match existing behavior */
+@media (max-width: 992px) and (min-width: 769px) and (orientation: landscape) {
+  .sidebar-notification-section {
+    margin-bottom: 40px; /* Smaller collapse button */
+    padding: 0.4rem 0.8rem;
+  }
+
+  .sidebar .notification-bell {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.7rem;
+  }
+
+  .sidebar .notification-bell i {
+    font-size: 0.9rem;
+  }
+}
+
+/* Match existing medium screen adjustments */
+@media (max-width: 1005px) and (min-width: 901px) {
+  .sidebar-notification-section {
+    margin-bottom: 60px;
+    padding: 0.4rem 0.8rem;
+  }
+
+  .sidebar .notification-bell {
+    padding: 0.45rem 0.8rem;
+    font-size: 0.75rem;
+  }
+}
+
+/* Toast container positioning */
+.toast-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 2000;
+}
 /* Small desktop screens - like in screenshot */
 @media (max-width: 1440px) and (min-width: 900px) {
   .sidebar-header {
     padding: 1rem;
   }
-  
+
   .logo-title {
     gap: 0.8rem;
     margin-bottom: 0.8rem;
   }
-  
+
   .logo-title img {
     width: 42px;
     min-width: 42px;
   }
-  
+
   .logo-title h1 {
     font-size: 1.05rem;
   }
-  
+
   .logo-title p {
     font-size: 0.72rem;
   }
-  
+
   .user-info {
     padding: 8px;
     margin-top: 0.8rem;
     gap: 8px;
   }
-  
+
   .user-info i {
     font-size: 1.3rem;
   }
-  
+
   .user-info span {
     font-size: 0.82rem;
   }
-  
+
   .nav-link {
     padding: 0.65rem 1.3rem;
     gap: 10px;
   }
-  
+
   .nav-link i {
     font-size: 1.05rem;
   }
-  
+
   .collapse-btn {
     width: 42px;
     height: 42px;
     bottom: 130px;
   }
-  
+
   .collapse-btn i {
     font-size: 0.85rem;
   }
-  
+
   .sidebar-nav {
     padding-top: 1.8rem;
   }
-  
+
   /* Collapsed state for small desktop */
   .sidebar.collapsed .sidebar-header {
     padding: 0.8rem;
   }
-  
+
   .sidebar.collapsed .logo-title img {
     width: 35px;
     min-width: 35px;
   }
-  
+
   .sidebar.collapsed .user-info {
     padding: 6px 0;
   }
-  
+
   .sidebar.collapsed .user-info i {
     font-size: 1.15rem;
   }
-  
+
   .sidebar.collapsed .nav-link {
     padding: 0.8rem 0;
   }
-  
+
   .sidebar.collapsed .nav-link i {
     font-size: 1rem;
   }
@@ -284,81 +537,81 @@
   .sidebar-header {
     padding: 0.8rem;
   }
-  
+
   .logo-title {
     gap: 0.5rem;
     margin-bottom: 0.5rem;
   }
-  
+
   .logo-title img {
     width: 35px;
     min-width: 35px;
   }
-  
+
   .logo-title h1 {
     font-size: 0.9rem;
   }
-  
+
   .logo-title p {
     font-size: 0.65rem;
   }
-  
+
   .user-info {
     padding: 5px;
     margin-top: 0.5rem;
     gap: 6px;
   }
-  
+
   .user-info i {
     font-size: 1.1rem;
   }
-  
+
   .user-info span {
     font-size: 0.75rem;
   }
-  
+
   .nav-link {
     padding: 0.5rem 1rem;
     font-size: 0.8rem;
     gap: 8px;
   }
-  
+
   .collapse-btn {
     width: 32px;
     height: 32px;
     bottom: -16px;
   }
-  
+
   .collapse-btn i {
     font-size: 0.75rem;
   }
-  
+
   .sidebar-nav {
     padding-top: 1rem;
   }
-  
+
   /* Collapsed state for tablets */
   .sidebar.collapsed .sidebar-header {
     padding: 0.6rem;
   }
-  
+
   .sidebar.collapsed .logo-title img {
     width: 28px;
     min-width: 28px;
   }
-  
+
   .sidebar.collapsed .user-info {
     padding: 4px 0;
   }
-  
+
   .sidebar.collapsed .user-info i {
     font-size: 1rem;
   }
-  
+
   .sidebar.collapsed .nav-link {
     padding: 0.7rem 0;
   }
-  
+
   .sidebar.collapsed .nav-link i {
     font-size: 0.95rem;
   }
@@ -369,72 +622,72 @@
   .sidebar-header {
     padding: 0.6rem;
   }
-  
+
   .logo-title {
     gap: 0.4rem;
     margin-bottom: 0.4rem;
   }
-  
+
   .logo-title img {
     width: 30px;
     min-width: 30px;
   }
-  
+
   .logo-title h1 {
     font-size: 0.85rem;
   }
-  
+
   .logo-title p {
     font-size: 0.6rem;
   }
-  
+
   .user-info {
     padding: 4px;
     margin-top: 0.4rem;
     gap: 5px;
   }
-  
+
   .user-info i {
     font-size: 1rem;
   }
-  
+
   .user-info span {
     font-size: 0.7rem;
   }
-  
+
   .nav-link {
     padding: 0.45rem 0.8rem;
     font-size: 0.75rem;
   }
-  
+
   .collapse-btn {
     width: 28px;
     height: 28px;
     bottom: 150px;
   }
-  
+
   /* Collapsed state for medium screens */
   .sidebar.collapsed .sidebar-header {
     padding: 0.5rem;
   }
-  
+
   .sidebar.collapsed .logo-title img {
     width: 24px;
     min-width: 24px;
   }
-  
+
   .sidebar.collapsed .user-info {
     padding: 3px 0;
   }
-  
+
   .sidebar.collapsed .user-info i {
     font-size: 0.9rem;
   }
-  
+
   .sidebar.collapsed .nav-link {
     padding: 0.6rem 0;
   }
-  
+
   .sidebar.collapsed .nav-link i {
     font-size: 0.85rem;
   }
@@ -444,72 +697,72 @@
   .sidebar-header {
     padding: 0.6rem;
   }
-  
+
   .logo-title {
     gap: 0.4rem;
     margin-bottom: 0.4rem;
   }
-  
+
   .logo-title img {
     width: 30px;
     min-width: 30px;
   }
-  
+
   .logo-title h1 {
     font-size: 0.85rem;
   }
-  
+
   .logo-title p {
     font-size: 0.6rem;
   }
-  
+
   .user-info {
     padding: 4px;
     margin-top: 0.4rem;
     gap: 5px;
   }
-  
+
   .user-info i {
     font-size: 1rem;
   }
-  
+
   .user-info span {
     font-size: 0.7rem;
   }
-  
+
   .nav-link {
     padding: 0.45rem 0.8rem;
     font-size: 0.75rem;
   }
-  
+
   .collapse-btn {
     width: 28px;
     height: 28px;
     bottom: 150px;
   }
-  
+
   /* Collapsed state for medium screens */
   .sidebar.collapsed .sidebar-header {
     padding: 0.5rem;
   }
-  
+
   .sidebar.collapsed .logo-title img {
     width: 24px;
     min-width: 24px;
   }
-  
+
   .sidebar.collapsed .user-info {
     padding: 3px 0;
   }
-  
+
   .sidebar.collapsed .user-info i {
     font-size: 0.9rem;
   }
-  
+
   .sidebar.collapsed .nav-link {
     padding: 0.6rem 0;
   }
-  
+
   .sidebar.collapsed .nav-link i {
     font-size: 0.85rem;
   }
@@ -522,32 +775,32 @@
     transform: translateX(calc(-1 * var(--sidebar-collapsed-width)));
     transition: transform var(--transition-speed) ease;
   }
-  
+
   .sidebar.expanded {
     width: var(--sidebar-width);
     transform: translateX(0);
     box-shadow: 5px 0 15px rgba(0, 0, 0, 0.3);
   }
-  
+
   /* Compact header for mobile */
   .sidebar-header {
     padding: 0.8rem;
   }
-  
+
   .sidebar.expanded .sidebar-header {
     padding: 1rem;
   }
-  
+
   /* Hide the main collapse button on mobile */
   .collapse-btn {
     display: none;
   }
-  
+
   /* Show mobile collapse button */
   .mobile-collapse-btn {
     display: block;
   }
-  
+
   /* Mobile hamburger button - fixed position */
   .mobile-collapse-btn {
     position: fixed;
@@ -563,7 +816,7 @@
     justify-content: center;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   }
-  
+
   /* Hide text in collapsed state by default */
   .logo-title h1,
   .logo-title p,
@@ -571,14 +824,14 @@
   .nav-link span {
     display: none;
   }
-  
+
   .sidebar.expanded .logo-title h1,
   .sidebar.expanded .logo-title p,
   .sidebar.expanded .user-info span,
   .sidebar.expanded .nav-link span {
     display: flex;
   }
-  
+
   /* Adjust logo in mobile - compact sizes */
   .logo-title {
     justify-content: center;
@@ -586,74 +839,74 @@
     gap: 0.5rem;
     margin-bottom: 0.5rem;
   }
-  
+
   .sidebar.expanded .logo-title {
     padding: 0.8rem 0;
     padding-left: 2.5rem; /* Space for mobile button when expanded */
     gap: 0.8rem;
     margin-bottom: 0.8rem;
   }
-  
+
   .sidebar:not(.expanded) .logo-title {
     padding-left: 0;
   }
-  
+
   .logo-title img {
     width: 30px;
     min-width: 30px;
   }
-  
+
   .sidebar.expanded .logo-title img {
     width: 40px;
     min-width: 40px;
   }
-  
+
   .sidebar.expanded .logo-title h1 {
     font-size: 1rem;
   }
-  
+
   .sidebar.expanded .logo-title p {
     font-size: 0.7rem;
   }
-  
+
   /* User info compact styling */
   .user-info {
     justify-content: center;
     padding: 5px 0;
     margin-top: 0.5rem;
   }
-  
+
   .sidebar.expanded .user-info {
     justify-content: flex-start;
     padding: 6px;
     margin-top: 0.8rem;
   }
-  
+
   .sidebar.expanded .user-info i {
     font-size: 1.2rem;
   }
-  
+
   .sidebar.expanded .user-info span {
     font-size: 0.8rem;
   }
-  
+
   /* Center align everything in collapsed state */
   .nav-link {
     justify-content: center;
     padding: 1rem 0;
   }
-  
+
   .sidebar.expanded .nav-link {
     justify-content: flex-start;
     padding: 0.5rem 1rem;
     font-size: 0.8rem;
   }
-  
+
   /* Remove extra padding from nav when collapsed */
   .sidebar-nav {
     padding-top: 1rem;
   }
-  
+
   .sidebar.expanded .sidebar-nav {
     padding-top: 1.5rem;
   }
@@ -665,65 +918,65 @@
     width: 100vw;
     z-index: 1000;
   }
-  
+
   .sidebar-header {
     padding: 0.6rem;
   }
-  
+
   .sidebar.expanded .sidebar-header {
     padding: 0.8rem;
   }
-  
+
   .logo-title {
     gap: 0.4rem;
     margin-bottom: 0.4rem;
   }
-  
+
   .sidebar.expanded .logo-title {
     gap: 0.6rem;
     margin-bottom: 0.6rem;
     padding-left: 2rem; /* Less space for smaller button */
   }
-  
+
   .logo-title img {
     width: 25px;
     min-width: 25px;
   }
-  
+
   .sidebar.expanded .logo-title img {
     width: 35px;
     min-width: 35px;
   }
-  
+
   .sidebar.expanded .logo-title h1 {
     font-size: 0.9rem;
   }
-  
+
   .sidebar.expanded .logo-title p {
     font-size: 0.65rem;
   }
-  
+
   .user-info {
     margin-top: 0.4rem;
   }
-  
+
   .sidebar.expanded .user-info {
     padding: 5px;
     margin-top: 0.6rem;
   }
-  
+
   .sidebar.expanded .user-info i {
     font-size: 1.1rem;
   }
-  
+
   .sidebar.expanded .user-info span {
     font-size: 0.75rem;
   }
-  
+
   .nav-link {
     padding: 0.75rem 1rem;
   }
-  
+
   .mobile-collapse-btn {
     top: 0.5rem;
     left: 0.5rem;
@@ -739,63 +992,63 @@
     width: var(--sidebar-width);
     transform: translateX(0);
   }
-  
+
   .sidebar-header {
     padding: 0.5rem;
   }
-  
+
   .logo-title {
     gap: 0.3rem;
     margin-bottom: 0.3rem;
   }
-  
+
   .logo-title img {
     width: 25px;
     min-width: 25px;
   }
-  
+
   .logo-title h1 {
     font-size: 0.8rem;
   }
-  
+
   .logo-title p {
     font-size: 0.55rem;
   }
-  
+
   .user-info {
     padding: 3px;
     margin-top: 0.3rem;
     gap: 4px;
   }
-  
+
   .user-info i {
     font-size: 0.9rem;
   }
-  
+
   .user-info span {
     font-size: 0.65rem;
   }
-  
+
   .nav-link {
     padding: 0.4rem 0.8rem;
     font-size: 0.7rem;
   }
-  
+
   .collapse-btn {
     display: flex;
     width: 24px;
     height: 24px;
     bottom: -12px;
   }
-  
+
   .collapse-btn i {
     font-size: 0.6rem;
   }
-  
+
   .mobile-collapse-btn {
     display: none;
   }
-  
+
   /* Show all text elements */
   .logo-title h1,
   .logo-title p,
@@ -803,15 +1056,15 @@
   .nav-link span {
     display: flex;
   }
-  
+
   .nav-link {
     justify-content: flex-start;
   }
-  
+
   .user-info {
     justify-content: flex-start;
   }
-  
+
   .sidebar-nav {
     padding-top: 0.8rem;
   }
@@ -823,13 +1076,13 @@
     min-height: 44px;
     padding: 1rem 1.5rem;
   }
-  
+
   .collapse-btn,
   .mobile-collapse-btn {
     min-width: 44px;
     min-height: 44px;
   }
-  
+
   .nav-link:active {
     background-color: rgba(255, 255, 255, 0.25);
   }
@@ -840,7 +1093,7 @@
   .sidebar {
     border-right: 2px solid white;
   }
-  
+
   .nav-link {
     border-bottom: 1px solid rgba(255, 255, 255, 0.2);
   }
@@ -851,11 +1104,11 @@
   .sidebar {
     transition: none;
   }
-  
+
   .collapse-btn i {
     transition: none;
   }
-  
+
   * {
     transition: none !important;
   }
@@ -878,7 +1131,7 @@
   body.sidebar-expanded .sidebar-mobile-overlay {
     display: block;
   }
-  
+
   body.sidebar-expanded {
     overflow: hidden;
   }
@@ -903,7 +1156,7 @@
     margin-left: var(--sidebar-width);
     transition: margin-left var(--transition-speed);
   }
-  
+
   .sidebar.collapsed ~ .main-content {
     margin-left: var(--sidebar-collapsed-width);
   }

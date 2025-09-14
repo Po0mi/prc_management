@@ -506,6 +506,7 @@ try {
   <?php include 'sidebar.php'; ?>
 
   <div class="donations-container">
+     <?php include 'header.php'; ?>
     <div class="page-header">
       <div class="header-content">
         <h1><i class="fas fa-hand-holding-heart"></i> Donation Management</h1>
@@ -1042,6 +1043,7 @@ try {
   </div>
 <script src="../admin/js/notification_frontend.js?v=<?php echo time(); ?>"></script>
   <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
+    <?php include 'chat_widget.php'; ?>
   <script>
    // Global variables for managing selections
 let selectedDonations = new Set();

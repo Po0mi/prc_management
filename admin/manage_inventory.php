@@ -13,613 +13,554 @@ $user_role = get_user_role();
 $admin_role = $_SESSION['admin_role'] ?? 'super';
 $user_email = $_SESSION['email'] ?? '';
 
-// Debug logging to check session values
-error_log("SESSION DEBUG: user_id = $user_id, user_role = $user_role, admin_role = $admin_role, email = $user_email");
-
-// Verify admin_role from database as well
-try {
-    $stmt = $pdo->prepare("SELECT admin_role FROM users WHERE user_id = ?");
-    $stmt->execute([$user_id]);
-    $db_admin_role = $stmt->fetchColumn();
-    error_log("DATABASE DEBUG: admin_role from DB = $db_admin_role");
-    
-    // Use database value if session doesn't match
-    if ($db_admin_role && $db_admin_role !== $admin_role) {
-        $admin_role = $db_admin_role;
-        $_SESSION['admin_role'] = $admin_role;
-        error_log("DATABASE DEBUG: Updated admin_role to $admin_role from database");
-    }
-} catch (PDOException $e) {
-    error_log("DATABASE DEBUG: Error fetching admin_role: " . $e->getMessage());
-}
-
 // Get active tab from query parameter
-$activeTab = isset($_GET['tab']) ? $_GET['tab'] : 'inventory';
+$activeTab = isset($_GET['tab']) ? $_GET['tab'] : 'items';
 
-// Define service-specific inventory categories
+// Service-specific categories
 $serviceCategories = [
-    'health' => [
-        'Medical Supplies', 'Medications', 'Blood Collection', 
-        'Laboratory Supplies', 'Surgical Instruments', 'First Aid'
-    ],
-    'safety' => [
-        'Safety Equipment', 'First Aid', 'Emergency Equipment', 
-        'Personal Protective Equipment', 'Training Materials'
-    ],
-    'welfare' => [
-        'Relief Goods', 'Food Supplies', 'Clothing', 
-        'Educational Materials', 'Community Supplies'
-    ],
-    'disaster' => [
-        'Emergency Equipment', 'Communication Devices', 'Rescue Tools', 
-        'Emergency Shelter', 'Disaster Response', 'Medical Supplies'
-    ],
-    'youth' => [
-        'Training Materials', 'Educational Supplies', 'Sports Equipment', 
-        'Activity Materials', 'Leadership Resources'
-    ]
+    'health' => ['Medical Supplies', 'Medications', 'First Aid Kits', 'Laboratory Equipment'],
+    'safety' => ['Safety Equipment', 'PPE', 'Emergency Supplies', 'Training Materials'],
+    'welfare' => ['Relief Goods', 'Food Supplies', 'Clothing', 'Educational Materials'],
+    'disaster' => ['Emergency Equipment', 'Communication Devices', 'Rescue Tools', 'Shelter Supplies'],
+    'youth' => ['Training Materials', 'Sports Equipment', 'Activity Supplies', 'Leadership Resources']
 ];
 
-// Get current admin's service area
-$currentService = $admin_role;
-if ($currentService === 'super') {
-    $currentService = 'all'; // Super admin can see everything
-}
+$vehicleCategories = [
+    'health' => ['Ambulances', 'Medical Transport'],
+    'safety' => ['Fire Trucks', 'Safety Patrol'],
+    'welfare' => ['Relief Trucks', 'Mobile Kitchens'],
+    'disaster' => ['Emergency Response', 'Rescue Vehicles'],
+    'youth' => ['Youth Transport', 'Training Vehicles']
+];
 
-// Get or create admin branch
-function getOrCreateAdminBranch($pdo, $user_id) {
-    $stmt = $pdo->query("SHOW TABLES LIKE 'admin_branches'");
-    if ($stmt->rowCount() == 0) {
-        $pdo->exec("
-            CREATE TABLE IF NOT EXISTS `admin_branches` (
-              `branch_id` int(11) NOT NULL AUTO_INCREMENT,
-              `user_id` int(11) NOT NULL,
-              `branch_name` varchar(100) NOT NULL,
-              `service_area` enum('health','safety','welfare','disaster','youth','super') DEFAULT NULL,
-              `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-              PRIMARY KEY (`branch_id`),
-              UNIQUE KEY `user_id` (`user_id`),
-              FOREIGN KEY (`user_id`) REFERENCES `users`(`user_id`) ON DELETE CASCADE
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        ");
-    }
-    
-    // Check if service_area column exists
-    $stmt = $pdo->query("SHOW COLUMNS FROM admin_branches LIKE 'service_area'");
-    if ($stmt->rowCount() == 0) {
-        $pdo->exec("ALTER TABLE `admin_branches` ADD COLUMN `service_area` enum('health','safety','welfare','disaster','youth','super') DEFAULT NULL");
-    }
-    
-    $stmt = $pdo->prepare("SELECT branch_name, service_area FROM admin_branches WHERE user_id = ?");
-    $stmt->execute([$user_id]);
-    $result = $stmt->fetch();
-    
-    if (!$result) {
-        $stmt = $pdo->prepare("SELECT email, admin_role FROM users WHERE user_id = ?");
-        $stmt->execute([$user_id]);
-        $user = $stmt->fetch();
-        
-        $branch_name = $user['admin_role'] ? ucfirst($user['admin_role']) . ' Services Branch' : explode('@', $user['email'])[0] . '_branch';
-        $service_area = $user['admin_role'] ?: 'super';
-        
-        $stmt = $pdo->prepare("INSERT INTO admin_branches (user_id, branch_name, service_area, created_at) VALUES (?, ?, ?, NOW())");
-        $stmt->execute([$user_id, $branch_name, $service_area]);
-        
-        return $branch_name;
-    }
-    
-    // Update service_area if it's NULL
-    if (!$result['service_area']) {
-        $stmt = $pdo->prepare("SELECT admin_role FROM users WHERE user_id = ?");
-        $stmt->execute([$user_id]);
-        $user = $stmt->fetch();
-        
-        $stmt = $pdo->prepare("UPDATE admin_branches SET service_area = ? WHERE user_id = ?");
-        $stmt->execute([$user['admin_role'] ?: 'super', $user_id]);
-    }
-    
-    return $result['branch_name'];
-}
+// Current service
+$currentService = $admin_role === 'super' ? 'all' : $admin_role;
 
-$admin_branch = getOrCreateAdminBranch($pdo, $user_id);
-
-// Update inventory_items table to include admin_id and service_area
+// Create enhanced tables with error handling
 try {
-    $stmt = $pdo->query("SHOW COLUMNS FROM inventory_items LIKE 'admin_id'");
-    if ($stmt->rowCount() == 0) {
-        $pdo->exec("ALTER TABLE `inventory_items` ADD COLUMN `admin_id` int(11) DEFAULT NULL");
-        $pdo->exec("ALTER TABLE `inventory_items` ADD FOREIGN KEY (`admin_id`) REFERENCES `users`(`user_id`) ON DELETE CASCADE");
-    }
-    
-    $stmt = $pdo->query("SHOW COLUMNS FROM inventory_items LIKE 'service_area'");
-    if ($stmt->rowCount() == 0) {
-        $pdo->exec("ALTER TABLE `inventory_items` ADD COLUMN `service_area` enum('health','safety','welfare','disaster','youth','super') DEFAULT NULL");
-    }
-    
-    // Migrate existing items without service_area
-    if ($admin_role !== 'super') {
-        $stmt = $pdo->prepare("UPDATE inventory_items SET admin_id = ?, service_area = ? WHERE admin_id IS NULL OR service_area IS NULL");
-        $stmt->execute([$user_id, $admin_role]);
-    }
-} catch (PDOException $e) {
-    error_log("Inventory migration error: " . $e->getMessage());
-}
+    // Categories table
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `categories` (
+          `category_id` int(11) NOT NULL AUTO_INCREMENT,
+          `category_name` varchar(100) NOT NULL,
+          `category_type` enum('inventory','vehicle','general') DEFAULT 'general',
+          `service_area` enum('health','safety','welfare','disaster','youth','super','shared') DEFAULT 'shared',
+          `created_by` int(11) NOT NULL,
+          `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (`category_id`),
+          INDEX `idx_category_type` (`category_type`),
+          INDEX `idx_category_service` (`service_area`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ");
 
-// Update categories table to include service_area
-try {
-    $stmt = $pdo->query("SHOW COLUMNS FROM categories LIKE 'service_area'");
-    if ($stmt->rowCount() == 0) {
-        $pdo->exec("ALTER TABLE `categories` ADD COLUMN `service_area` enum('health','safety','welfare','disaster','youth','super','shared') DEFAULT 'shared'");
-    }
-    
-    // Create service-specific categories if they don't exist
-    foreach ($serviceCategories as $service => $cats) {
-        foreach ($cats as $catName) {
-            $stmt = $pdo->prepare("SELECT category_id FROM categories WHERE category_name = ? AND (service_area = ? OR service_area = 'shared')");
-            $stmt->execute([$catName, $service]);
-            
-            if (!$stmt->fetch()) {
-                $stmt = $pdo->prepare("INSERT INTO categories (category_name, service_area) VALUES (?, ?)");
-                $stmt->execute([$catName, $service]);
-            }
-        }
-    }
-} catch (PDOException $e) {
-    error_log("Category migration error: " . $e->getMessage());
-}
+    // Inventory categories table
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `inventory_categories` (
+          `category_id` int(11) NOT NULL AUTO_INCREMENT,
+          `category_name` varchar(100) NOT NULL,
+          `service_area` enum('health','safety','welfare','disaster','youth','super','shared') DEFAULT 'shared',
+          `created_by` int(11) NOT NULL,
+          `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (`category_id`),
+          INDEX `idx_service_area` (`service_area`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ");
 
-// Remove bank_id column
-try {
-    $pdo->exec("ALTER TABLE `inventory_items` DROP FOREIGN KEY IF EXISTS `inventory_items_ibfk_2`");
-    $pdo->exec("ALTER TABLE `inventory_items` DROP COLUMN IF EXISTS `bank_id`");
-} catch (PDOException $e) {
-    // Column might not exist, ignore error
-}
+    // Updated inventory items table
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `inventory_items` (
+          `item_id` int(11) NOT NULL AUTO_INCREMENT,
+          `item_code` varchar(50) UNIQUE NOT NULL,
+          `item_name` varchar(255) NOT NULL,
+          `description` text,
+          `category_id` int(11) NOT NULL,
+          `current_stock` int(11) NOT NULL DEFAULT 0,
+          `minimum_stock` int(11) NOT NULL DEFAULT 0,
+          `unit` varchar(50) NOT NULL DEFAULT 'pcs',
+          `location` varchar(255),
+          `service_area` enum('health','safety','welfare','disaster','youth','super') NOT NULL,
+          `status` enum('active','inactive','discontinued') DEFAULT 'active',
+          `created_by` int(11) NOT NULL,
+          `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (`item_id`),
+          INDEX `idx_service_area` (`service_area`),
+          INDEX `idx_status` (`status`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ");
 
-// Create vehicles table with service_area
-$pdo->exec("
+    // Vehicles table
+ $pdo->exec("
     CREATE TABLE IF NOT EXISTS `vehicles` (
       `vehicle_id` int(11) NOT NULL AUTO_INCREMENT,
-      `vehicle_type` enum('ambulance','van','truck','car','motorcycle') NOT NULL,
-      `plate_number` varchar(20) NOT NULL,
+      `vehicle_name` varchar(100) NOT NULL,
+      `vehicle_code` varchar(50) UNIQUE NOT NULL,
+      `category_id` int(11) NOT NULL,
+      `vehicle_type` varchar(50) DEFAULT NULL,
+      `plate_number` varchar(20) NOT NULL UNIQUE,
       `model` varchar(100) NOT NULL,
       `year` int(4) NOT NULL,
-      `status` enum('operational','maintenance','out_of_service') NOT NULL DEFAULT 'operational',
+      `status` enum('operational','maintenance','out_of_service') DEFAULT 'operational',
       `fuel_type` enum('gasoline','diesel','hybrid','electric') NOT NULL,
       `current_mileage` int(11) DEFAULT 0,
-      `admin_id` int(11) NOT NULL,
-      `service_area` enum('health','safety','welfare','disaster','youth','super') DEFAULT NULL,
+      `last_maintenance_date` date DEFAULT NULL,
+      `next_maintenance_date` date DEFAULT NULL,
+      `maintenance_interval` int(11) DEFAULT 5000,
+      `service_area` enum('health','safety','welfare','disaster','youth','super') NOT NULL,
       `branch_name` varchar(100) DEFAULT NULL,
-      `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-      `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+      `location` varchar(255) DEFAULT NULL,
+      `created_by` int(11) NOT NULL,
+      `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (`vehicle_id`),
-      UNIQUE KEY `plate_number_admin` (`plate_number`, `admin_id`),
-      KEY `admin_id` (`admin_id`),
-      KEY `status` (`status`),
-      KEY `service_area` (`service_area`),
-      FOREIGN KEY (`admin_id`) REFERENCES `users`(`user_id`) ON DELETE CASCADE
+      INDEX `idx_vehicles_status` (`status`),
+      INDEX `idx_vehicles_service` (`service_area`),
+      INDEX `idx_vehicles_type` (`vehicle_type`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ");
 
-// Add service_area to existing vehicles table if missing
-try {
-    $stmt = $pdo->query("SHOW COLUMNS FROM vehicles LIKE 'service_area'");
-    if ($stmt->rowCount() == 0) {
-        $pdo->exec("ALTER TABLE `vehicles` ADD COLUMN `service_area` enum('health','safety','welfare','disaster','youth','super') DEFAULT NULL");
-    }
-} catch (PDOException $e) {
-    error_log("Vehicle migration error: " . $e->getMessage());
-}
-
-// Create vehicle_maintenance table
-$pdo->exec("
+    // Vehicle maintenance table
+  $pdo->exec("
     CREATE TABLE IF NOT EXISTS `vehicle_maintenance` (
       `maintenance_id` int(11) NOT NULL AUTO_INCREMENT,
       `vehicle_id` int(11) NOT NULL,
-      `maintenance_type` enum('routine','oil_change','tire_rotation','brake_service','engine_repair','transmission','electrical','bodywork','inspection','other') NOT NULL,
-      `description` text DEFAULT NULL,
+      `maintenance_type` enum('routine','repair','inspection','emergency') NOT NULL,
+      `description` text NOT NULL,
       `cost` decimal(10,2) DEFAULT 0.00,
       `maintenance_date` date NOT NULL,
       `next_maintenance_date` date DEFAULT NULL,
-      `service_provider` varchar(100) DEFAULT NULL,
+      `service_provider` varchar(255) DEFAULT NULL,
       `mileage_at_service` int(11) DEFAULT NULL,
-      `admin_id` int(11) NOT NULL,
-      `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+      `notes` text DEFAULT NULL,
+      `created_by` int(11) NOT NULL,
+      `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (`maintenance_id`),
-      KEY `vehicle_id` (`vehicle_id`),
-      KEY `admin_id` (`admin_id`),
-      FOREIGN KEY (`vehicle_id`) REFERENCES `vehicles`(`vehicle_id`) ON DELETE CASCADE,
-      FOREIGN KEY (`admin_id`) REFERENCES `users`(`user_id`) ON DELETE CASCADE
+      INDEX `idx_maintenance_date` (`maintenance_date`),
+      INDEX `idx_maintenance_type` (`maintenance_type`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ");
+    // Inventory transactions table
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `inventory_transactions` (
+          `transaction_id` int(11) NOT NULL AUTO_INCREMENT,
+          `item_id` int(11) NOT NULL,
+          `transaction_type` enum('in','out','adjustment','transfer') NOT NULL,
+          `quantity` int(11) NOT NULL,
+          `previous_stock` int(11) NOT NULL,
+          `new_stock` int(11) NOT NULL,
+          `reference_number` varchar(100),
+          `notes` text,
+          `transaction_date` date NOT NULL,
+          `created_by` int(11) NOT NULL,
+          `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (`transaction_id`),
+          INDEX `idx_item_id` (`item_id`),
+          INDEX `idx_transaction_type` (`transaction_type`),
+          INDEX `idx_transaction_date` (`transaction_date`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ");
 
-// Handle Category Management (Service-specific)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_category'])) {
-    $category_name = trim($_POST['category_name']);
-    $category_id = isset($_POST['category_id']) ? (int)$_POST['category_id'] : 0;
-    
-    if ($category_name) {
-        try {
-            $service_area = ($admin_role === 'super') ? 'shared' : $admin_role;
-            
-            if ($category_id) {
-                // Check ownership before updating
-                $stmt = $pdo->prepare("SELECT service_area FROM categories WHERE category_id = ?");
-                $stmt->execute([$category_id]);
-                $cat_service = $stmt->fetchColumn();
-                
-                if ($admin_role === 'super' || $cat_service === $admin_role || $cat_service === 'shared') {
-                    $stmt = $pdo->prepare("UPDATE categories SET category_name = ? WHERE category_id = ?");
-                    $stmt->execute([$category_name, $category_id]);
-                    $successMessage = "Category updated successfully!";
-                } else {
-                    $errorMessage = "You don't have permission to edit this category.";
-                }
-            } else {
-                $stmt = $pdo->prepare("INSERT INTO categories (category_name, service_area) VALUES (?, ?)");
-                $stmt->execute([$category_name, $service_area]);
-                $successMessage = "Category added successfully!";
-            }
-        } catch (PDOException $e) {
-            $errorMessage = "Error saving category: " . $e->getMessage();
-        }
-    }
+} catch (PDOException $e) {
+    $errorMessage = "Database setup error: " . $e->getMessage();
 }
 
-// Handle Delete Category (Service-specific)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_category'])) {
-    $category_id = (int)$_POST['category_id'];
-    
+// Initialize default categories
+$defaultInventoryCategories = $serviceCategories[$currentService] ?? ['General Supplies'];
+foreach ($defaultInventoryCategories as $catName) {
     try {
-        // Check ownership
-        $stmt = $pdo->prepare("SELECT service_area FROM categories WHERE category_id = ?");
-        $stmt->execute([$category_id]);
-        $cat_service = $stmt->fetchColumn();
+        $stmt = $pdo->prepare("SELECT category_id FROM inventory_categories WHERE category_name = ? AND service_area = ?");
+        $stmt->execute([$catName, $currentService === 'all' ? 'shared' : $currentService]);
         
-        if ($admin_role === 'super' || $cat_service === $admin_role || $cat_service === 'shared') {
-            $stmt = $pdo->prepare("SELECT COUNT(*) FROM inventory_items WHERE category_id = ?");
-            $stmt->execute([$category_id]);
-            $itemCount = $stmt->fetchColumn();
-            
-            if ($itemCount > 0) {
-                $errorMessage = "Cannot delete category with existing items.";
-            } else {
-                $stmt = $pdo->prepare("DELETE FROM categories WHERE category_id = ?");
-                $stmt->execute([$category_id]);
-                $successMessage = "Category deleted successfully!";
-            }
-        } else {
-            $errorMessage = "You don't have permission to delete this category.";
+        if (!$stmt->fetch()) {
+            $stmt = $pdo->prepare("INSERT IGNORE INTO inventory_categories (category_name, service_area, created_by) VALUES (?, ?, ?)");
+            $stmt->execute([$catName, $currentService === 'all' ? 'shared' : $currentService, $user_id]);
         }
     } catch (PDOException $e) {
-        $errorMessage = "Error deleting category: " . $e->getMessage();
+        // Continue if category creation fails
     }
 }
 
-// Handle Add/Edit Inventory Item (Service-specific)
+$defaultVehicleCategories = $vehicleCategories[$currentService] ?? ['General Transport'];
+foreach ($defaultVehicleCategories as $catName) {
+    try {
+        $stmt = $pdo->prepare("SELECT category_id FROM categories WHERE category_name = ? AND category_type = 'vehicle' AND service_area = ?");
+        $stmt->execute([$catName, $currentService === 'all' ? 'shared' : $currentService]);
+        
+        if (!$stmt->fetch()) {
+            $stmt = $pdo->prepare("INSERT IGNORE INTO categories (category_name, category_type, service_area, created_by) VALUES (?, 'vehicle', ?, ?)");
+            $stmt->execute([$catName, $currentService === 'all' ? 'shared' : $currentService, $user_id]);
+        }
+    } catch (PDOException $e) {
+        // Continue if category creation fails
+    }
+}
+
+// Handle Add/Edit Vehicle
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_vehicle'])) {
+    $vehicle_name = trim($_POST['vehicle_name'] ?? '');
+    $category_id = !empty($_POST['category_id']) ? (int)$_POST['category_id'] : null; // NULL is allowed
+    $vehicle_type = trim($_POST['vehicle_type'] ?? '');
+    $plate_number = trim($_POST['plate_number'] ?? '');
+    $model = trim($_POST['model'] ?? '');
+    $year = (int)($_POST['year'] ?? 0);
+    $fuel_type = $_POST['fuel_type'] ?? '';
+    $current_mileage = (int)($_POST['current_mileage'] ?? 0);
+    $location = trim($_POST['location'] ?? '');
+    $branch_name = trim($_POST['branch_name'] ?? '');
+    $vehicle_id = isset($_POST['vehicle_id']) && !empty($_POST['vehicle_id']) ? (int)$_POST['vehicle_id'] : 0;
+    
+    // Category is optional based on your CREATE TABLE (DEFAULT NULL)
+    if ($vehicle_name && $plate_number && $model && $year && $fuel_type) {
+        try {
+            $service_area = ($admin_role === 'super') ? 'super' : $admin_role;
+            
+            if ($vehicle_id > 0) {
+                // Update existing vehicle - use admin_id as per your actual schema
+                $stmt = $pdo->prepare("
+                    UPDATE vehicles 
+                    SET vehicle_name = ?, category_id = ?, vehicle_type = ?, plate_number = ?, 
+                        model = ?, year = ?, fuel_type = ?, current_mileage = ?, 
+                        location = ?, branch_name = ?
+                    WHERE vehicle_id = ? AND (admin_id = ? OR ? = 'super')
+                ");
+                $stmt->execute([$vehicle_name, $category_id, $vehicle_type, $plate_number, 
+                               $model, $year, $fuel_type, $current_mileage, $location, 
+                               $branch_name, $vehicle_id, $user_id, $admin_role]);
+                $successMessage = "Vehicle updated successfully!";
+            } else {
+                // Generate vehicle code
+                $code_prefix = strtoupper(substr($service_area, 0, 3));
+                $stmt = $pdo->prepare("SELECT COUNT(*) FROM vehicles WHERE service_area = ?");
+                $stmt->execute([$service_area]);
+                $count = $stmt->fetchColumn() + 1;
+                $vehicle_code = $code_prefix . 'V' . str_pad($count, 3, '0', STR_PAD_LEFT);
+                
+                // Insert new vehicle - use admin_id as per your actual schema
+                $stmt = $pdo->prepare("
+                    INSERT INTO vehicles 
+                    (vehicle_code, vehicle_name, category_id, vehicle_type, plate_number, 
+                     model, year, fuel_type, current_mileage, location, branch_name, 
+                     service_area, admin_id) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                $stmt->execute([$vehicle_code, $vehicle_name, $category_id, $vehicle_type, 
+                               $plate_number, $model, $year, $fuel_type, $current_mileage, 
+                               $location, $branch_name, $service_area, $user_id]);
+                $successMessage = "Vehicle added successfully!";
+            }
+        } catch (PDOException $e) {
+            $errorMessage = "Error saving vehicle: " . $e->getMessage();
+        }
+    } else {
+        $errorMessage = "Please fill in all required fields (vehicle name, plate number, model, year, and fuel type).";
+    }
+}
+
+
+// Handle Add/Edit Item
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_item'])) {
-    $item_name = trim($_POST['item_name']);
-    $category_id = (int)$_POST['category_id'];
-    $quantity = (int)$_POST['quantity'];
-    $location = trim($_POST['location']);
-    $expiry_date = $_POST['expiry_date'];
-    $item_id = isset($_POST['item_id']) ? (int)$_POST['item_id'] : 0;
+    $item_name = trim($_POST['item_name'] ?? '');
+    $description = trim($_POST['description'] ?? '');
+    $category_id = (int)($_POST['category_id'] ?? 0);
+    $unit = trim($_POST['unit'] ?? 'pcs');
+    $minimum_stock = (int)($_POST['minimum_stock'] ?? 0);
+    $location = trim($_POST['location'] ?? '');
+    $item_id = isset($_POST['item_id']) && !empty($_POST['item_id']) ? (int)$_POST['item_id'] : 0;
     
     if ($item_name && $category_id) {
         try {
             $service_area = ($admin_role === 'super') ? 'super' : $admin_role;
             
-            if ($item_id) {
-                // Check ownership before updating - more restrictive logic like events
-                $stmt = $pdo->prepare("SELECT service_area, admin_id FROM inventory_items WHERE item_id = ?");
-                $stmt->execute([$item_id]);
-                $item_data = $stmt->fetch();
-                
-                if (!$item_data) {
-                    $errorMessage = "Item not found.";
-                } else {
-                    // Allow update if:
-                    // 1. They are super admin
-                    // 2. They created the item (can update regardless of service)
-                    // 3. Item is in their service area AND they created it
-                    $canUpdate = false;
-                    
-                    if ($admin_role === 'super') {
-                        $canUpdate = true;
-                    } elseif ($item_data['admin_id'] == $user_id) {
-                        // Creator can always update their items
-                        $canUpdate = true;
-                    } else {
-                        // Non-creator cannot update items they didn't create
-                        $canUpdate = false;
-                        $errorMessage = "You can only edit items you created.";
-                    }
-                    
-                    if ($canUpdate) {
-                        $stmt = $pdo->prepare("
-                            UPDATE inventory_items 
-                            SET item_name = ?, category_id = ?, quantity = ?, 
-                                location = ?, expiry_date = ?, service_area = ?
-                            WHERE item_id = ?
-                        ");
-                        $stmt->execute([$item_name, $category_id, $quantity, 
-                                       $location, $expiry_date, $service_area, $item_id]);
-                        $successMessage = "Item updated successfully!";
-                    }
-                }
+            if ($item_id > 0) {
+                // Update existing item
+                $stmt = $pdo->prepare("
+                    UPDATE inventory_items 
+                    SET item_name = ?, description = ?, category_id = ?, unit = ?, 
+                        minimum_stock = ?, location = ?, service_area = ?
+                    WHERE item_id = ? AND (created_by = ? OR ? = 'super')
+                ");
+                $stmt->execute([$item_name, $description, $category_id, $unit, 
+                               $minimum_stock, $location, $service_area, $item_id, $user_id, $admin_role]);
+                $successMessage = "Item updated successfully!";
             } else {
+                // Generate item code
+                $code_prefix = strtoupper(substr($service_area, 0, 3));
+                $stmt = $pdo->prepare("SELECT COUNT(*) FROM inventory_items WHERE service_area = ?");
+                $stmt->execute([$service_area]);
+                $count = $stmt->fetchColumn() + 1;
+                $item_code = $code_prefix . str_pad($count, 4, '0', STR_PAD_LEFT);
+                
+                // Insert new item
                 $stmt = $pdo->prepare("
                     INSERT INTO inventory_items 
-                    (item_name, category_id, quantity, location, expiry_date, admin_id, service_area, created_at) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+                    (item_code, item_name, description, category_id, unit, minimum_stock, 
+                     location, service_area, created_by) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
-                $stmt->execute([$item_name, $category_id, $quantity, 
-                               $location, $expiry_date, $user_id, $service_area]);
-                $successMessage = "Item added successfully to " . ucfirst($service_area) . " inventory!";
+                $stmt->execute([$item_code, $item_name, $description, $category_id, $unit, 
+                               $minimum_stock, $location, $service_area, $user_id]);
+                $successMessage = "Item added successfully!";
             }
         } catch (PDOException $e) {
             $errorMessage = "Error saving item: " . $e->getMessage();
         }
+    } else {
+        $errorMessage = "Please fill in all required fields.";
     }
 }
 
-// Handle Delete Item (Service-specific with creator access)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_item'])) {
-    $item_id = (int)$_POST['item_id'];
+// Handle Stock Transaction
+// FIXED: Handle Stock Transaction - Better validation and error handling
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_transaction'])) {
+    $item_id = (int)($_POST['item_id'] ?? 0);
+    $transaction_type = $_POST['transaction_type'] ?? '';
+    $quantity = (int)($_POST['quantity'] ?? 0);
+    $reference_number = trim($_POST['reference_number'] ?? '');
+    $notes = trim($_POST['notes'] ?? '');
+    $transaction_date = $_POST['transaction_date'] ?? '';
     
-    try {
-        if ($admin_role === 'super') {
-            $stmt = $pdo->prepare("DELETE FROM inventory_items WHERE item_id = ?");
+    // Enhanced validation with specific error messages
+    if (!$item_id) {
+        $errorMessage = "Please select an item.";
+    } elseif (!$transaction_type) {
+        $errorMessage = "Please select a transaction type.";
+    } elseif ($quantity <= 0) {
+        $errorMessage = "Please enter a valid quantity greater than 0.";
+    } elseif (!$transaction_date) {
+        $errorMessage = "Please select a transaction date.";
+    } else {
+        try {
+            $pdo->beginTransaction();
+            
+            // Get current stock and item details
+            $stmt = $pdo->prepare("SELECT current_stock, item_name, item_code FROM inventory_items WHERE item_id = ?");
             $stmt->execute([$item_id]);
-        } else {
-            // Only allow deletion if they created it OR (it's in their service area AND they created it)
-            // Changed to be more restrictive - must be the creator
-            $stmt = $pdo->prepare("DELETE FROM inventory_items WHERE item_id = ? AND admin_id = ?");
-            $stmt->execute([$item_id, $user_id]);
-        }
-        
-        if ($stmt->rowCount() > 0) {
-            $successMessage = "Item deleted successfully!";
-        } else {
-            $errorMessage = "You don't have permission to delete this item or item not found.";
-        }
-    } catch (PDOException $e) {
-        $errorMessage = "Error deleting item: " . $e->getMessage();
-    }
-}
-// Handle Delete Maintenance
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_maintenance'])) {
-    $maintenance_id = (int)$_POST['maintenance_id'];
-    
-    try {
-        if ($admin_role === 'super') {
-            $stmt = $pdo->prepare("DELETE FROM vehicle_maintenance WHERE maintenance_id = ?");
-            $stmt->execute([$maintenance_id]);
-        } else {
-            // Only allow deletion if they created it
-            $stmt = $pdo->prepare("DELETE FROM vehicle_maintenance WHERE maintenance_id = ? AND admin_id = ?");
-            $stmt->execute([$maintenance_id, $user_id]);
-        }
-        
-        if ($stmt->rowCount() > 0) {
-            $successMessage = "Maintenance record deleted successfully!";
-        } else {
-            $errorMessage = "You don't have permission to delete this maintenance record or it was not found.";
-        }
-    } catch (PDOException $e) {
-        $errorMessage = "Error deleting maintenance record: " . $e->getMessage();
-    }
-}
-// Handle Vehicle Operations (Service-specific)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_vehicle'])) {
-    $vehicle_type = trim($_POST['vehicle_type']);
-    $plate_number = trim($_POST['plate_number']);
-    $model = trim($_POST['model']);
-    $year = (int)$_POST['year'];
-    $status = $_POST['status'];
-    $fuel_type = $_POST['fuel_type'];
-    $current_mileage = (int)$_POST['current_mileage'];
-    $vehicle_id = isset($_POST['vehicle_id']) ? (int)$_POST['vehicle_id'] : 0;
-    
-    if ($vehicle_type && $plate_number) {
-        try {
-            $service_area = ($admin_role === 'super') ? 'super' : $admin_role;
+            $item_data = $stmt->fetch(PDO::FETCH_ASSOC);
             
-            if ($vehicle_id) {
-                // Check ownership before updating - more restrictive like events
-                $stmt = $pdo->prepare("SELECT service_area, admin_id FROM vehicles WHERE vehicle_id = ?");
-                $stmt->execute([$vehicle_id]);
-                $vehicle_data = $stmt->fetch();
-                
-                if (!$vehicle_data) {
-                    $errorMessage = "Vehicle not found.";
-                } else {
-                    // Allow update if:
-                    // 1. They are super admin  
-                    // 2. They created the vehicle
-                    $canUpdate = false;
-                    
-                    if ($admin_role === 'super') {
-                        $canUpdate = true;
-                    } elseif ($vehicle_data['admin_id'] == $user_id) {
-                        // Creator can always update their vehicles
-                        $canUpdate = true;
-                    } else {
-                        // Non-creator cannot update vehicles they didn't create
-                        $canUpdate = false;
-                        $errorMessage = "You can only edit vehicles you created.";
-                    }
-                    
-                    if ($canUpdate) {
-                        $stmt = $pdo->prepare("
-                            UPDATE vehicles 
-                            SET vehicle_type = ?, plate_number = ?, model = ?, year = ?, 
-                                status = ?, fuel_type = ?, current_mileage = ?, service_area = ?
-                            WHERE vehicle_id = ? AND admin_id = ?
-                        ");
-                        $stmt->execute([$vehicle_type, $plate_number, $model, $year, 
-                                       $status, $fuel_type, $current_mileage, $service_area, $vehicle_id, $user_id]);
-                        $successMessage = "Vehicle updated successfully!";
-                    }
+            if (!$item_data) {
+                throw new Exception("Item not found.");
+            }
+            
+            $current_stock = (int)$item_data['current_stock'];
+            $item_name = $item_data['item_name'];
+            $item_code = $item_data['item_code'];
+            
+            // Calculate new stock based on transaction type
+            $new_stock = $current_stock;
+            $actual_quantity = $quantity; // This will be the quantity recorded in transactions
+            
+            if ($transaction_type === 'in') {
+                $new_stock = $current_stock + $quantity;
+            } elseif ($transaction_type === 'out') {
+                $new_stock = $current_stock - $quantity;
+                if ($new_stock < 0) {
+                    throw new Exception("Insufficient stock for {$item_code} - {$item_name}. Current stock: {$current_stock}, Requested: {$quantity}");
                 }
+            } elseif ($transaction_type === 'adjustment') {
+                // For adjustment, quantity is the new total stock level
+                $new_stock = $quantity;
+                $actual_quantity = $new_stock - $current_stock; // Calculate the difference
             } else {
-                $stmt = $pdo->prepare("
-                    INSERT INTO vehicles 
-                    (vehicle_type, plate_number, model, year, status, fuel_type, 
-                     current_mileage, admin_id, service_area, branch_name, created_at) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-                ");
-                $stmt->execute([$vehicle_type, $plate_number, $model, $year, 
-                               $status, $fuel_type, $current_mileage, $user_id, $service_area, $admin_branch]);
-                $successMessage = "Vehicle added successfully to " . ucfirst($service_area) . " fleet!";
+                throw new Exception("Invalid transaction type.");
             }
-        } catch (PDOException $e) {
-            $errorMessage = "Error saving vehicle: " . $e->getMessage();
+            
+            // Update item stock
+            $stmt = $pdo->prepare("UPDATE inventory_items SET current_stock = ? WHERE item_id = ?");
+            if (!$stmt->execute([$new_stock, $item_id])) {
+                throw new Exception("Failed to update item stock.");
+            }
+            
+            // Record the transaction
+            $stmt = $pdo->prepare("
+                INSERT INTO inventory_transactions 
+                (item_id, transaction_type, quantity, previous_stock, new_stock, 
+                 reference_number, notes, transaction_date, created_by) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            
+            if (!$stmt->execute([$item_id, $transaction_type, $actual_quantity, $current_stock, 
+                               $new_stock, $reference_number, $notes, $transaction_date, $user_id])) {
+                throw new Exception("Failed to record transaction.");
+            }
+            
+            $pdo->commit();
+            
+            // Success message with details
+            $action = '';
+            if ($transaction_type === 'in') {
+                $action = "Added {$quantity} units";
+            } elseif ($transaction_type === 'out') {
+                $action = "Removed {$quantity} units";
+            } elseif ($transaction_type === 'adjustment') {
+                $action = "Adjusted stock to {$quantity} units";
+            }
+            
+            $successMessage = "{$action} for {$item_code} - {$item_name}. New stock level: {$new_stock}";
+            
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            $errorMessage = "Transaction failed: " . $e->getMessage();
         }
     }
 }
 
-// Handle Delete Vehicle (Service-specific with creator access)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_vehicle'])) {
-    $vehicle_id = (int)$_POST['vehicle_id'];
+// Handle Vehicle Maintenance
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_maintenance'])) {
+    $vehicle_id = (int)($_POST['vehicle_id'] ?? 0);
+    $maintenance_type = $_POST['maintenance_type'] ?? '';
+    $description = trim($_POST['description'] ?? '');
+    $cost = !empty($_POST['cost']) ? (float)$_POST['cost'] : 0.00;
+    $maintenance_date = $_POST['maintenance_date'] ?? '';
+    $next_maintenance_date = !empty($_POST['next_maintenance_date']) ? $_POST['next_maintenance_date'] : null;
+    $service_provider = trim($_POST['service_provider'] ?? '');
+    $mileage_at_service = !empty($_POST['mileage_at_service']) ? (int)$_POST['mileage_at_service'] : null;
     
-    try {
-        if ($admin_role === 'super') {
-            $stmt = $pdo->prepare("DELETE FROM vehicles WHERE vehicle_id = ?");
-            $stmt->execute([$vehicle_id]);
-        } else {
-            // Only allow deletion if they created it
-            $stmt = $pdo->prepare("DELETE FROM vehicles WHERE vehicle_id = ? AND admin_id = ?");
-            $stmt->execute([$vehicle_id, $user_id]);
-        }
-        
-        if ($stmt->rowCount() > 0) {
-            $successMessage = "Vehicle deleted successfully!";
-        } else {
-            $errorMessage = "You don't have permission to delete this vehicle or vehicle not found.";
-        }
-    } catch (PDOException $e) {
-        $errorMessage = "Error deleting vehicle: " . $e->getMessage();
-    }
-}
-
-// Handle Add Maintenance (Service-specific)
-// Handle Add/Edit Maintenance (Service-specific)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_maintenance'])) {
-    $vehicle_id = (int)$_POST['vehicle_id'];
-    $maintenance_type = trim($_POST['maintenance_type']);
-    $description = trim($_POST['description']);
-    $cost = (float)$_POST['cost'];
-    $maintenance_date = $_POST['maintenance_date'];
-    $next_maintenance = $_POST['next_maintenance'] ?: null;
-    $service_provider = trim($_POST['service_provider']);
-    $mileage_at_service = (int)$_POST['mileage_at_service'];
-    $maintenance_id = isset($_POST['maintenance_id']) ? (int)$_POST['maintenance_id'] : 0;
-    
-    if ($vehicle_id && $maintenance_type && $maintenance_date) {
+    if ($vehicle_id && $maintenance_type && $description && $maintenance_date) {
         try {
-            if ($maintenance_id) {
-                // Update existing maintenance record
-                $stmt = $pdo->prepare("
-                    UPDATE vehicle_maintenance 
-                    SET vehicle_id = ?, maintenance_type = ?, description = ?, cost = ?, 
-                        maintenance_date = ?, next_maintenance_date = ?, service_provider = ?, 
-                        mileage_at_service = ?
-                    WHERE maintenance_id = ? AND admin_id = ?
-                ");
-                $stmt->execute([$vehicle_id, $maintenance_type, $description, $cost, 
-                               $maintenance_date, $next_maintenance, $service_provider, 
-                               $mileage_at_service, $maintenance_id, $user_id]);
-                
-                $successMessage = "Maintenance record updated successfully!";
-            } else {
-                // Add new maintenance record
-                $stmt = $pdo->prepare("
-                    INSERT INTO vehicle_maintenance 
-                    (vehicle_id, maintenance_type, description, cost, maintenance_date, 
-                     next_maintenance_date, service_provider, mileage_at_service, admin_id, created_at) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-                ");
-                $stmt->execute([$vehicle_id, $maintenance_type, $description, $cost, 
-                               $maintenance_date, $next_maintenance, $service_provider, 
-                               $mileage_at_service, $user_id]);
-                
-                $successMessage = "Maintenance record added successfully!";
+            $stmt = $pdo->prepare("
+    INSERT INTO vehicle_maintenance 
+    (vehicle_id, maintenance_type, description, cost, maintenance_date, 
+     next_maintenance_date, service_provider, mileage_at_service, created_by) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+");
+            $stmt->execute([$vehicle_id, $maintenance_type, $description, $cost, 
+               $maintenance_date, $next_maintenance_date, $service_provider, 
+               $mileage_at_service, $user_id]);
+            
+            // Update vehicle maintenance dates using correct field names
+            $updateFields = ["last_maintenance_date = ?"];
+            $updateParams = [$maintenance_date];
+            
+            if ($next_maintenance_date) {
+                $updateFields[] = "next_maintenance_date = ?";
+                $updateParams[] = $next_maintenance_date;
             }
             
-            if ($mileage_at_service > 0) {
-                $stmt = $pdo->prepare("
-                    UPDATE vehicles SET current_mileage = ? 
-                    WHERE vehicle_id = ? AND admin_id = ? AND current_mileage < ?
-                ");
-                $stmt->execute([$mileage_at_service, $vehicle_id, $user_id, $mileage_at_service]);
+            if ($mileage_at_service) {
+                $updateFields[] = "current_mileage = ?";
+                $updateParams[] = $mileage_at_service;
             }
             
-            // Redirect to refresh the page and show updated data
-            header("Location: ?tab=vehicles&vehicle=" . $vehicle_id);
-            exit();
+            $updateParams[] = $vehicle_id;
             
+            $stmt = $pdo->prepare("
+                UPDATE vehicles 
+                SET " . implode(", ", $updateFields) . "
+                WHERE vehicle_id = ?
+            ");
+            $stmt->execute($updateParams);
+            
+            $successMessage = "Maintenance record added successfully!";
         } catch (PDOException $e) {
-            $errorMessage = "Error saving maintenance: " . $e->getMessage();
+            $errorMessage = "Error saving maintenance record: " . $e->getMessage();
+        }
+    } else {
+        $errorMessage = "Please fill in all required fields.";
+    }
+}
+// Handle Add/Edit Category
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_category'])) {
+    $category_name = trim($_POST['category_name'] ?? '');
+    $category_type = $_POST['category_type'] ?? '';
+    $description = trim($_POST['description'] ?? '');
+    $category_id = isset($_POST['category_id']) && !empty($_POST['category_id']) ? (int)$_POST['category_id'] : 0;
+    
+    if ($category_name && $category_type) {
+        try {
+            $service_area = ($admin_role === 'super') ? 'shared' : $admin_role;
+            $table = ($category_type === 'inventory') ? 'inventory_categories' : 'categories';
+            
+            if ($category_id > 0) {
+                // Update existing category
+                if ($category_type === 'inventory') {
+                    $stmt = $pdo->prepare("UPDATE inventory_categories SET category_name = ?, service_area = ? WHERE category_id = ?");
+                    $stmt->execute([$category_name, $service_area, $category_id]);
+                } else {
+                    $stmt = $pdo->prepare("UPDATE categories SET category_name = ?, category_type = ?, service_area = ? WHERE category_id = ?");
+                    $stmt->execute([$category_name, $category_type, $service_area, $category_id]);
+                }
+                $successMessage = "Category updated successfully!";
+            } else {
+                // Insert new category
+                if ($category_type === 'inventory') {
+                    $stmt = $pdo->prepare("INSERT INTO inventory_categories (category_name, service_area, created_by) VALUES (?, ?, ?)");
+                    $stmt->execute([$category_name, $service_area, $user_id]);
+                } else {
+                    $stmt = $pdo->prepare("INSERT INTO categories (category_name, category_type, service_area, created_by) VALUES (?, ?, ?, ?)");
+                    $stmt->execute([$category_name, $category_type, $service_area, $user_id]);
+                }
+                $successMessage = "Category added successfully!";
+            }
+        } catch (PDOException $e) {
+            $errorMessage = "Error saving category: " . $e->getMessage();
+        }
+    } else {
+        $errorMessage = "Please fill in all required fields.";
+    }
+}
+
+// Handle Delete Category
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_category'])) {
+    $category_id = (int)($_POST['category_id'] ?? 0);
+    $category_type = $_POST['category_type'] ?? '';
+    
+    if ($category_id && $category_type) {
+        try {
+            $table = ($category_type === 'inventory') ? 'inventory_categories' : 'categories';
+            $stmt = $pdo->prepare("DELETE FROM $table WHERE category_id = ?");
+            $stmt->execute([$category_id]);
+            $successMessage = "Category deleted successfully!";
+        } catch (PDOException $e) {
+            $errorMessage = "Error deleting category: " . $e->getMessage();
         }
     }
 }
 
-// Get data based on active tab and service area
-$categories = [];
-$items = [];
-$vehicles = [];
-$maintenance_records = [];
+// Get data for display
+$search = isset($_GET['search']) ? trim($_GET['search']) : '';
+$category_filter = isset($_GET['category']) ? (int)$_GET['category'] : 0;
+$status_filter = isset($_GET['status']) ? $_GET['status'] : '';
 
-// Get categories (Service-specific)
+// Get categories
 try {
     if ($admin_role === 'super') {
-        $categories = $pdo->query("SELECT * FROM categories ORDER BY service_area, category_name")->fetchAll();
+        $categories = $pdo->query("SELECT * FROM inventory_categories ORDER BY service_area, category_name")->fetchAll();
+        $vehicleCategoriesData = $pdo->query("SELECT * FROM categories WHERE category_type = 'vehicle' ORDER BY service_area, category_name")->fetchAll();
     } else {
-        $stmt = $pdo->prepare("SELECT * FROM categories WHERE service_area = ? OR service_area = 'shared' ORDER BY category_name");
+        $stmt = $pdo->prepare("SELECT * FROM inventory_categories WHERE service_area = ? OR service_area = 'shared' ORDER BY category_name");
         $stmt->execute([$admin_role]);
         $categories = $stmt->fetchAll();
+        
+        $stmt = $pdo->prepare("SELECT * FROM categories WHERE category_type = 'vehicle' AND (service_area = ? OR service_area = 'shared') ORDER BY category_name");
+        $stmt->execute([$admin_role]);
+        $vehicleCategoriesData = $stmt->fetchAll();
     }
 } catch (PDOException $e) {
     $categories = [];
+    $vehicleCategoriesData = [];
 }
 
-// Search and filter
-$search = isset($_GET['search']) ? trim($_GET['search']) : '';
-$category_filter = isset($_GET['category']) ? (int)$_GET['category'] : 0;
-
-// Get inventory items (Service-specific with creator access)
+// Get items with search and filters
 try {
-    if ($admin_role === 'super') {
-        $query = "
-            SELECT i.*, c.category_name, c.service_area as category_service,
-                   u.email as creator_email,
-                   CASE WHEN i.admin_id = ? THEN 1 ELSE 0 END as is_my_item
-            FROM inventory_items i
-            LEFT JOIN categories c ON i.category_id = c.category_id
-            LEFT JOIN users u ON i.admin_id = u.user_id
-            WHERE 1=1
-        ";
-        $params = [$user_id];
-    } else {
-        $query = "
-            SELECT i.*, c.category_name, c.service_area as category_service,
-                   u.email as creator_email,
-                   CASE WHEN i.admin_id = ? THEN 1 ELSE 0 END as is_my_item
-            FROM inventory_items i
-            LEFT JOIN categories c ON i.category_id = c.category_id
-            LEFT JOIN users u ON i.admin_id = u.user_id
-            WHERE (i.service_area = ? OR i.admin_id = ?)
-        ";
-        $params = [$user_id, $admin_role, $user_id];
-        
-        // Debug logging
-        error_log("INVENTORY DEBUG: User ID: $user_id, Admin Role: $admin_role");
-        error_log("INVENTORY DEBUG: Query params: " . implode(', ', $params));
+    $query = "
+        SELECT i.*, c.category_name
+        FROM inventory_items i
+        LEFT JOIN inventory_categories c ON i.category_id = c.category_id
+        WHERE 1=1
+    ";
+    $params = [];
+    
+    if ($admin_role !== 'super') {
+        $query .= " AND (i.service_area = ? OR i.created_by = ?)";
+        $params[] = $admin_role;
+        $params[] = $user_id;
     }
     
     if ($search) {
-        $query .= " AND i.item_name LIKE ?";
+        $query .= " AND (i.item_name LIKE ? OR i.item_code LIKE ? OR i.description LIKE ?)";
+        $params[] = "%$search%";
+        $params[] = "%$search%";
         $params[] = "%$search%";
     }
     
@@ -628,148 +569,106 @@ try {
         $params[] = $category_filter;
     }
     
-    $query .= " ORDER BY i.expiry_date ASC";
+    if ($status_filter) {
+        if ($status_filter === 'low_stock') {
+            $query .= " AND i.current_stock <= i.minimum_stock";
+        } elseif ($status_filter === 'out_of_stock') {
+            $query .= " AND i.current_stock = 0";
+        } else {
+            $query .= " AND i.status = ?";
+            $params[] = $status_filter;
+        }
+    }
+    
+    $query .= " ORDER BY i.item_name";
     
     $stmt = $pdo->prepare($query);
     $stmt->execute($params);
     $items = $stmt->fetchAll();
     
-    // Debug logging for non-super users
-    if ($admin_role !== 'super') {
-        error_log("INVENTORY DEBUG: Found " . count($items) . " items for user $user_id with role $admin_role");
-        foreach ($items as $item) {
-            error_log("INVENTORY DEBUG: Item ID: {$item['item_id']}, Service: {$item['service_area']}, Admin ID: {$item['admin_id']}, Is Mine: {$item['is_my_item']}");
-        }
-    }
+} catch (PDOException $e) {
+    $items = [];
+}
 
-    // Get stats (Service-specific with creator access)
-    if ($admin_role === 'super') {
-        $statsWhere = "";
-        $statsParams = [];
-    } else {
-        $statsWhere = "WHERE (service_area = ? OR admin_id = ?)";
-        $statsParams = [$admin_role, $user_id];
+// Get vehicles
+try {
+    $query = "
+        SELECT v.*, c.category_name
+        FROM vehicles v
+        LEFT JOIN categories c ON v.category_id = c.category_id
+        WHERE 1=1
+    ";
+    $params = [];
+    
+    if ($admin_role !== 'super') {
+        $query .= " AND (v.service_area = ? OR v.admin_id = ?)";
+        $params[] = $admin_role;
+        $params[] = $user_id;
     }
+    
+    if ($search) {
+        $query .= " AND (v.vehicle_name LIKE ? OR v.vehicle_code LIKE ? OR v.plate_number LIKE ?)";
+        $params[] = "%$search%";
+        $params[] = "%$search%";
+        $params[] = "%$search%";
+    }
+    
+    $query .= " ORDER BY v.vehicle_name";
+    
+    $stmt = $pdo->prepare($query);
+    $stmt->execute($params);
+    $vehicles = $stmt->fetchAll();
+    
+} catch (PDOException $e) {
+    $vehicles = [];
+}
+
+// Get statistics
+try {
+    $statsWhere = $admin_role === 'super' ? "" : "WHERE (service_area = ? OR created_by = ?)";
+    $statsParams = $admin_role === 'super' ? [] : [$admin_role, $user_id];
     
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM inventory_items $statsWhere");
     $stmt->execute($statsParams);
     $total_items = $stmt->fetchColumn();
     
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM inventory_items $statsWhere " . 
-                         ($statsWhere ? "AND" : "WHERE") . " expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)");
+                         ($statsWhere ? "AND" : "WHERE") . " current_stock <= minimum_stock");
     $stmt->execute($statsParams);
-    $expiring_soon = $stmt->fetchColumn();
+    $low_stock_items = $stmt->fetchColumn();
     
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM inventory_items $statsWhere " . 
-                         ($statsWhere ? "AND" : "WHERE") . " expiry_date < CURDATE()");
+                         ($statsWhere ? "AND" : "WHERE") . " current_stock = 0");
     $stmt->execute($statsParams);
-    $expired_items = $stmt->fetchColumn();
+    $out_of_stock = $stmt->fetchColumn();
     
-    $stmt = $pdo->prepare("SELECT SUM(quantity) FROM inventory_items $statsWhere");
+    $stmt = $pdo->prepare("SELECT SUM(current_stock) FROM inventory_items $statsWhere");
     $stmt->execute($statsParams);
-    $total_quantity = $stmt->fetchColumn() ?: 0;
+    $total_stock = $stmt->fetchColumn() ?: 0;
+    
+    // Vehicle stats
+    $vehicleStatsWhere = $admin_role === 'super' ? "" : "WHERE (service_area = ? OR created_by = ?)";
+    $vehicleStatsParams = $admin_role === 'super' ? [] : [$admin_role, $user_id];
+    
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM vehicles $vehicleStatsWhere");
+    $stmt->execute($vehicleStatsParams);
+    $total_vehicles = $stmt->fetchColumn();
+    
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM vehicles $vehicleStatsWhere " . 
+                         ($vehicleStatsWhere ? "AND" : "WHERE") . " status = 'maintenance'");
+    $stmt->execute($vehicleStatsParams);
+    $vehicles_in_maintenance = $stmt->fetchColumn();
+    
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM vehicles $vehicleStatsWhere " . 
+                         ($vehicleStatsWhere ? "AND" : "WHERE") . " status = 'operational'");
+    $stmt->execute($vehicleStatsParams);
+    $operational_vehicles = $stmt->fetchColumn();
     
 } catch (PDOException $e) {
-    $items = [];
-    $total_items = 0;
-    $expiring_soon = 0;
-    $expired_items = 0;
-    $total_quantity = 0;
+    $total_items = $low_stock_items = $out_of_stock = $total_stock = 0;
+    $total_vehicles = $vehicles_in_maintenance = $operational_vehicles = 0;
 }
 
-// Get vehicles (Service-specific with creator access)
-try {
-    if ($admin_role === 'super') {
-        $query = "
-            SELECT v.*, u.email as creator_email,
-                   CASE WHEN v.admin_id = ? THEN 1 ELSE 0 END as is_my_vehicle
-            FROM vehicles v
-            LEFT JOIN users u ON v.admin_id = u.user_id
-            WHERE 1=1
-        ";
-        $params = [$user_id];
-    } else {
-        $query = "
-            SELECT v.*, u.email as creator_email,
-                   CASE WHEN v.admin_id = ? THEN 1 ELSE 0 END as is_my_vehicle
-            FROM vehicles v
-            LEFT JOIN users u ON v.admin_id = u.user_id
-            WHERE (v.service_area = ? OR v.admin_id = ?)
-        ";
-        $params = [$user_id, $admin_role, $user_id];
-        
-        // Debug logging
-        error_log("VEHICLE DEBUG: User ID: $user_id, Admin Role: $admin_role");
-        error_log("VEHICLE DEBUG: Query params: " . implode(', ', $params));
-    }
-    
-    if ($search && $activeTab === 'vehicles') {
-        $query .= " AND (plate_number LIKE ? OR model LIKE ?)";
-        $params[] = "%$search%";
-        $params[] = "%$search%";
-    }
-    
-    $query .= " ORDER BY vehicle_type, plate_number";
-    
-    $stmt = $pdo->prepare($query);
-    $stmt->execute($params);
-    $vehicles = $stmt->fetchAll();
-    
-    // Debug logging for non-super users
-    if ($admin_role !== 'super') {
-        error_log("VEHICLE DEBUG: Found " . count($vehicles) . " vehicles for user $user_id with role $admin_role");
-        foreach ($vehicles as $vehicle) {
-            error_log("VEHICLE DEBUG: Vehicle ID: {$vehicle['vehicle_id']}, Service: {$vehicle['service_area']}, Admin ID: {$vehicle['admin_id']}, Is Mine: {$vehicle['is_my_vehicle']}");
-        }
-    }
-    
-    // Get vehicle stats (Service-specific with creator access)
-    if ($admin_role === 'super') {
-        $statsQuery = "
-            SELECT 
-                COUNT(*) as total,
-                SUM(CASE WHEN status = 'operational' THEN 1 ELSE 0 END) as operational,
-                SUM(CASE WHEN status = 'maintenance' THEN 1 ELSE 0 END) as maintenance,
-                SUM(CASE WHEN status = 'out_of_service' THEN 1 ELSE 0 END) as out_of_service
-            FROM vehicles
-        ";
-        $stmt = $pdo->prepare($statsQuery);
-        $stmt->execute();
-    } else {
-        $statsQuery = "
-            SELECT 
-                COUNT(*) as total,
-                SUM(CASE WHEN status = 'operational' THEN 1 ELSE 0 END) as operational,
-                SUM(CASE WHEN status = 'maintenance' THEN 1 ELSE 0 END) as maintenance,
-                SUM(CASE WHEN status = 'out_of_service' THEN 1 ELSE 0 END) as out_of_service
-            FROM vehicles WHERE (service_area = ? OR admin_id = ?)
-        ";
-        $stmt = $pdo->prepare($statsQuery);
-        $stmt->execute([$admin_role, $user_id]);
-    }
-    $vehicle_stats = $stmt->fetch();
-} catch (PDOException $e) {
-    $vehicles = [];
-    $vehicle_stats = ['total' => 0, 'operational' => 0, 'maintenance' => 0, 'out_of_service' => 0];
-}
-
-// Get selected vehicle's maintenance history
-$selected_vehicle_id = isset($_GET['vehicle']) ? (int)$_GET['vehicle'] : 0;
-if ($selected_vehicle_id) {
-    try {
-        $stmt = $pdo->prepare("
-            SELECT * FROM vehicle_maintenance 
-            WHERE vehicle_id = ? AND admin_id = ?
-            ORDER BY maintenance_date DESC
-        ");
-        $stmt->execute([$selected_vehicle_id, $user_id]);
-        $maintenance_records = $stmt->fetchAll();
-    } catch (PDOException $e) {
-        $maintenance_records = [];
-    }
-}
-
-// Get service-specific title
 $serviceTitle = [
     'health' => 'Health Services',
     'safety' => 'Safety Services', 
@@ -780,104 +679,29 @@ $serviceTitle = [
 ];
 
 $currentServiceTitle = $serviceTitle[$admin_role] ?? 'Admin';
-
-// Service icons
-$serviceIcons = [
-    'health' => 'heartbeat',
-    'safety' => 'shield-alt', 
-    'welfare' => 'hands-helping',
-    'disaster' => 'exclamation-triangle',
-    'youth' => 'users',
-    'super' => 'crown'
-];
-
-// Service colors for badges
-$serviceColors = [
-    'health' => '#dc3545, #ff6b6b',
-    'safety' => '#28a745, #20c997', 
-    'welfare' => '#17a2b8, #6f42c1',
-    'disaster' => '#fd7e14, #ffc107',
-    'youth' => '#6f42c1, #e83e8c',
-    'super' => '#343a40, #6c757d'
-];
-
-$badgeColors = [
-    'health' => '#dc3545',
-    'safety' => '#28a745', 
-    'welfare' => '#17a2b8',
-    'disaster' => '#fd7e14',
-    'youth' => '#6f42c1',
-    'super' => '#6c757d'
-];
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title><?= $currentServiceTitle ?> - Inventory & Fleet Management - PRC Admin</title>
-  <?php $collapsed = isset($_COOKIE['sidebarCollapsed']) && $_COOKIE['sidebarCollapsed'] === 'true'; ?>
-  <script>
-    (function() {
-      var collapsed = document.cookie.split('; ').find(row => row.startsWith('sidebarCollapsed='));
-      var root = document.documentElement;
-      if (collapsed && collapsed.split('=')[1] === 'true') {
-        root.style.setProperty('--sidebar-width', '70px');
-      } else {
-        root.style.setProperty('--sidebar-width', '250px');
-      }
-    })();
-  </script>
+  <title><?= $currentServiceTitle ?> - Inventory & Vehicle Management - PRC Admin</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="../assets/sidebar_admin.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/styles.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/manage_inventory.css?v=<?php echo time(); ?>">
-  <style>
-    .service-indicator {
-      background: linear-gradient(135deg, 
-        <?php echo $serviceColors[$admin_role] ?? '#6c757d, #adb5bd'; ?>
-      );
-      color: white;
-      padding: 0.5rem 1rem;
-      border-radius: 0.375rem;
-      font-weight: 600;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    
-    .item-service-badge {
-      background: <?php echo $badgeColors[$admin_role] ?? '#6c757d'; ?>;
-      color: white;
-      padding: 0.25rem 0.5rem;
-      border-radius: 0.25rem;
-      font-size: 0.75rem;
-      font-weight: 500;
-    }
-    
-    .category-service-indicator {
-      font-size: 0.75rem;
-      opacity: 0.7;
-      margin-left: 0.5rem;
-    }
-  </style>
 </head>
 <body>
   <?php include 'sidebar.php'; ?>
   <div class="main-container">
+     <?php include 'header.php'; ?>
     <div class="page-header">
       <div class="header-content">
         <h1>
-          <i class="fas fa-warehouse"></i> 
-          <?= $currentServiceTitle ?> - Inventory & Fleet Management
+          <i class="fas fa-boxes"></i> 
+          <?= $currentServiceTitle ?> - Inventory & Vehicle Management
         </h1>
-        <p>Service-specific management system for <?= htmlspecialchars($admin_branch) ?></p>
-      </div>
-      <div class="branch-indicator">
-        <div class="service-indicator">
-          <i class="fas fa-<?= $serviceIcons[$admin_role] ?? 'building' ?>"></i>
-          <span><?= $currentServiceTitle ?></span>
-        </div>
+        <p>Comprehensive inventory and vehicle tracking with maintenance records</p>
       </div>
     </div>
 
@@ -895,20 +719,32 @@ $badgeColors = [
       </div>
     <?php endif; ?>
 
-    <!-- Tab Navigation -->
-    <div class="tab-navigation">
-      <a href="?tab=inventory" class="tab-link <?= $activeTab === 'inventory' ? 'active' : '' ?>">
+    <!-- Section Navigation -->
+    <div class="section-navigation">
+      <button class="section-toggle <?= $activeTab === 'items' ? 'active' : '' ?>" onclick="switchSection('items')">
         <i class="fas fa-boxes"></i>
-        <span><?= $admin_role === 'health' ? 'Medical' : ucfirst($admin_role) ?> Inventory</span>
-      </a>
-      <a href="?tab=vehicles" class="tab-link <?= $activeTab === 'vehicles' ? 'active' : '' ?>">
+        <span>Inventory Items</span>
+      </button>
+      <button class="section-toggle <?= $activeTab === 'categories' ? 'active' : '' ?>" onclick="switchSection('categories')">
+  <i class="fas fa-tags"></i>
+  <span>Categories</span>
+</button>
+      <button class="section-toggle <?= $activeTab === 'vehicles' ? 'active' : '' ?>" onclick="switchSection('vehicles')">
         <i class="fas fa-truck"></i>
-        <span>Fleet Management</span>
-      </a>
+        <span>Vehicles</span>
+      </button>
+      <button class="section-toggle <?= $activeTab === 'transactions' ? 'active' : '' ?>" onclick="switchSection('transactions')">
+        <i class="fas fa-exchange-alt"></i>
+        <span>Transactions</span>
+      </button>
+      <button class="section-toggle <?= $activeTab === 'maintenance' ? 'active' : '' ?>" onclick="switchSection('maintenance')">
+        <i class="fas fa-tools"></i>
+        <span>Maintenance</span>
+      </button>
     </div>
 
-    <!-- Medical Inventory Tab -->
-    <div class="tab-content <?= $activeTab === 'inventory' ? 'active' : '' ?>" id="inventory-tab">
+    <!-- Items Section -->
+    <div class="section-content <?= $activeTab === 'items' ? 'active' : '' ?>" id="items-section">
       <!-- Stats Overview -->
       <div class="stats-grid">
         <div class="stat-card">
@@ -918,9 +754,6 @@ $badgeColors = [
           <div class="stat-details">
             <div class="stat-number"><?= $total_items ?></div>
             <div class="stat-label">Total Items</div>
-            <?php if ($admin_role !== 'super'): ?>
-              <div class="stat-sublabel"><?= $currentServiceTitle ?></div>
-            <?php endif; ?>
           </div>
         </div>
         
@@ -929,37 +762,37 @@ $badgeColors = [
             <i class="fas fa-layer-group"></i>
           </div>
           <div class="stat-details">
-            <div class="stat-number"><?= $total_quantity ?></div>
-            <div class="stat-label">Total Quantity</div>
+            <div class="stat-number"><?= number_format($total_stock) ?></div>
+            <div class="stat-label">Total Stock</div>
           </div>
         </div>
         
         <div class="stat-card">
           <div class="stat-icon" style="background: linear-gradient(135deg, #ffd93d 0%, #ff9800 100%);">
-            <i class="fas fa-clock"></i>
+            <i class="fas fa-exclamation-triangle"></i>
           </div>
           <div class="stat-details">
-            <div class="stat-number"><?= $expiring_soon ?></div>
-            <div class="stat-label">Expiring Soon</div>
+            <div class="stat-number"><?= $low_stock_items ?></div>
+            <div class="stat-label">Low Stock</div>
           </div>
         </div>
         
         <div class="stat-card">
           <div class="stat-icon" style="background: linear-gradient(135deg, #ff6b6b 0%, #ff8e53 100%);">
-            <i class="fas fa-exclamation-triangle"></i>
+            <i class="fas fa-times-circle"></i>
           </div>
           <div class="stat-details">
-            <div class="stat-number"><?= $expired_items ?></div>
-            <div class="stat-label">Expired Items</div>
+            <div class="stat-number"><?= $out_of_stock ?></div>
+            <div class="stat-label">Out of Stock</div>
           </div>
         </div>
       </div>
 
-      <!-- Category Manager -->
+      <!-- Action Bar -->
       <div class="action-bar">
         <div class="search-filters">
           <form method="GET" class="search-form">
-            <input type="hidden" name="tab" value="inventory">
+            <input type="hidden" name="tab" value="items">
             <div class="search-box">
               <i class="fas fa-search"></i>
               <input type="text" name="search" placeholder="Search items..." value="<?= htmlspecialchars($search) ?>">
@@ -969,111 +802,47 @@ $badgeColors = [
               <?php foreach ($categories as $cat): ?>
                 <option value="<?= $cat['category_id'] ?>" <?= $category_filter == $cat['category_id'] ? 'selected' : '' ?>>
                   <?= htmlspecialchars($cat['category_name']) ?>
-                  <?php if ($admin_role === 'super' && $cat['service_area'] !== 'shared'): ?>
-                    <span class="category-service-indicator">(<?= ucfirst($cat['service_area']) ?>)</span>
-                  <?php endif; ?>
                 </option>
               <?php endforeach; ?>
+            </select>
+            <select name="status" onchange="this.form.submit()">
+              <option value="">All Status</option>
+              <option value="active" <?= $status_filter === 'active' ? 'selected' : '' ?>>Active</option>
+              <option value="low_stock" <?= $status_filter === 'low_stock' ? 'selected' : '' ?>>Low Stock</option>
+              <option value="out_of_stock" <?= $status_filter === 'out_of_stock' ? 'selected' : '' ?>>Out of Stock</option>
+              <option value="inactive" <?= $status_filter === 'inactive' ? 'selected' : '' ?>>Inactive</option>
             </select>
           </form>
         </div>
         
         <div class="action-buttons">
-          <button class="btn-secondary" onclick="toggleCategoryManager()">
-            <i class="fas fa-tags"></i> Manage Categories
-          </button>
           <button class="btn-primary" onclick="openAddItemModal()">
             <i class="fas fa-plus"></i> Add Item
           </button>
         </div>
       </div>
 
-      <!-- Category Manager -->
-      <div id="categoryManager" style="display: none;" class="category-manager">
-        <h3>
-          <i class="fas fa-tags"></i> 
-          Category Management 
-          <?php if ($admin_role !== 'super'): ?>
-            <span class="item-service-badge"><?= $currentServiceTitle ?></span>
-          <?php endif; ?>
-        </h3>
-        <form method="POST" class="category-form">
-          <input type="hidden" name="save_category" value="1">
-          <input type="hidden" name="category_id" id="categoryId">
-          <div class="form-row">
-            <input type="text" name="category_name" id="categoryName" placeholder="Category Name" required>
-            <button type="submit" class="btn-primary">
-              <i class="fas fa-save"></i> Save
-            </button>
-            <button type="button" class="btn-secondary" onclick="resetCategoryForm()">
-              <i class="fas fa-times"></i> Clear
-            </button>
-          </div>
-        </form>
-        
-        <div class="categories-list">
-          <?php foreach ($categories as $cat): ?>
-            <div class="category-item">
-              <span>
-                <?= htmlspecialchars($cat['category_name']) ?>
-                <?php if ($admin_role === 'super'): ?>
-                  <span class="category-service-indicator">[<?= ucfirst($cat['service_area']) ?>]</span>
-                <?php endif; ?>
-              </span>
-              <div class="category-actions">
-                <?php if ($admin_role === 'super' || $cat['service_area'] === $admin_role || $cat['service_area'] === 'shared'): ?>
-                  <button onclick="editCategory(<?= $cat['category_id'] ?>, '<?= htmlspecialchars($cat['category_name']) ?>')" class="btn-sm btn-edit">
-                    <i class="fas fa-edit"></i>
-                  </button>
-                  <form method="POST" style="display: inline;" onsubmit="return confirm('Delete this category?')">
-                    <input type="hidden" name="delete_category" value="1">
-                    <input type="hidden" name="category_id" value="<?= $cat['category_id'] ?>">
-                    <button type="submit" class="btn-sm btn-delete">
-                      <i class="fas fa-trash"></i>
-                    </button>
-                  </form>
-                <?php endif; ?>
-              </div>
-            </div>
-          <?php endforeach; ?>
-        </div>
-      </div>
-
-      <!-- Inventory Items Table -->
+      <!-- Items Table -->
       <div class="items-section">
-        <h3>
-          <i class="fas fa-list"></i> 
-          <?= $admin_role === 'super' ? 'All Service' : $currentServiceTitle ?> Inventory Items
-          <?php if ($admin_role !== 'super'): ?>
-            <small style="color: #666; font-weight: normal; margin-left: 1rem;">
-              (Including items you created in other services)
-            </small>
-          <?php endif; ?>
-        </h3>
+        <h3><i class="fas fa-list"></i> Inventory Items</h3>
         
         <?php if (empty($items)): ?>
           <div class="empty-state">
             <i class="fas fa-boxes"></i>
             <h3>No Items Found</h3>
-            <p>Add your first <?= $admin_role === 'super' ? '' : strtolower($currentServiceTitle) ?> inventory item to get started</p>
-            <?php if ($admin_role !== 'super'): ?>
-              <small style="color: #666; margin-top: 0.5rem; display: block;">
-                You can view items from your service area and items you created in other services
-              </small>
-            <?php endif; ?>
+            <p>Add your first inventory item to get started</p>
           </div>
         <?php else: ?>
           <table class="data-table">
             <thead>
               <tr>
+                <th>Code</th>
                 <th>Item Name</th>
                 <th>Category</th>
-                <?php if ($admin_role === 'super'): ?>
-                  <th>Service</th>
-                <?php endif; ?>
-                <th>Quantity</th>
+                <th>Current Stock</th>
+                <th>Min Stock</th>
+                <th>Unit</th>
                 <th>Location</th>
-                <th>Expiry Date</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -1081,59 +850,52 @@ $badgeColors = [
             <tbody>
               <?php foreach ($items as $item): ?>
                 <?php
-                  $today = new DateTime();
-                  $expiry = new DateTime($item['expiry_date']);
-                  $diff = $today->diff($expiry);
-                  
-                  if ($expiry < $today) {
-                    $status = 'expired';
-                    $statusText = 'Expired';
-                  } elseif ($diff->days <= 30) {
-                    $status = 'expiring';
-                    $statusText = 'Expiring Soon';
-                  } else {
-                    $status = 'good';
-                    $statusText = 'Good';
+                  $stock_status = 'good';
+                  $row_class = '';
+                  if ($item['current_stock'] == 0) {
+                    $stock_status = 'out_of_stock';
+                    $row_class = 'out_of_stock';
+                  } elseif ($item['current_stock'] <= $item['minimum_stock']) {
+                    $stock_status = 'low_stock';
+                    $row_class = 'low_stock';
                   }
                 ?>
-                <tr class="<?= $status ?>">
-                  <td><?= htmlspecialchars($item['item_name']) ?></td>
-                  <td><?= htmlspecialchars($item['category_name'] ?? 'N/A') ?></td>
-                  <?php if ($admin_role === 'super'): ?>
-                    <td>
-                      <span class="item-service-badge" style="background: <?= $badgeColors[$item['service_area'] ?? 'super'] ?? '#6c757d' ?>">
-                        <?= ucfirst($item['service_area'] ?? 'Super') ?>
-                      </span>
-                    </td>
-                  <?php endif; ?>
-                  <td><?= $item['quantity'] ?></td>
-                  <td><?= htmlspecialchars($item['location']) ?></td>
-                  <td><?= date('M d, Y', strtotime($item['expiry_date'])) ?></td>
+                <tr class="<?= $row_class ?>">
+                  <td><strong><?= htmlspecialchars($item['item_code']) ?></strong></td>
                   <td>
-                    <span class="status-badge <?= $status ?>">
-                      <?= $statusText ?>
+                    <div>
+                      <strong><?= htmlspecialchars($item['item_name']) ?></strong>
+                      <?php if ($item['description']): ?>
+                        <br><small class="text-muted"><?= htmlspecialchars($item['description']) ?></small>
+                      <?php endif; ?>
+                    </div>
+                  </td>
+                  <td><?= htmlspecialchars($item['category_name'] ?? 'N/A') ?></td>
+                  <td>
+                    <span class="stock-number <?= $stock_status ?>"><?= $item['current_stock'] ?></span>
+                  </td>
+                  <td><?= $item['minimum_stock'] ?></td>
+                  <td><?= htmlspecialchars($item['unit']) ?></td>
+                  <td><?= htmlspecialchars($item['location'] ?? 'N/A') ?></td>
+                  <td>
+                    <span class="status-badge <?= $item['status'] ?>">
+                      <?= ucfirst($item['status']) ?>
                     </span>
+                    <?php if ($stock_status !== 'good'): ?>
+                      <br><span class="status-badge <?= $stock_status ?>">
+                        <?= $stock_status === 'out_of_stock' ? 'Out of Stock' : 'Low Stock' ?>
+                      </span>
+                    <?php endif; ?>
                   </td>
                   <td>
-                    <?php if ($admin_role === 'super' || $item['service_area'] === $admin_role || $item['admin_id'] == $user_id): ?>
-                      <button onclick='openEditItemModal(<?= json_encode($item) ?>)' class="btn-sm btn-edit">
+                    <div class="actions">
+                      <button onclick='openEditItemModal(<?= json_encode($item) ?>)' class="btn-sm btn-edit" title="Edit">
                         <i class="fas fa-edit"></i>
                       </button>
-                      <form method="POST" style="display: inline;" onsubmit="return confirm('Delete this item?')">
-                        <input type="hidden" name="delete_item" value="1">
-                        <input type="hidden" name="item_id" value="<?= $item['item_id'] ?>">
-                        <button type="submit" class="btn-sm btn-delete">
-                          <i class="fas fa-trash"></i>
-                        </button>
-                      </form>
-                    <?php else: ?>
-                      <span class="text-muted">View Only</span>
-                    <?php endif; ?>
-                    <?php if ($item['admin_id'] == $user_id): ?>
-                      <small style="display: block; color: #28a745; font-size: 0.7rem; margin-top: 0.2rem;">
-                        <i class="fas fa-user"></i> Your Item
-                      </small>
-                    <?php endif; ?>
+                      <button onclick='openTransactionModal(<?= $item['item_id'] ?>, "<?= htmlspecialchars($item['item_name']) ?>")' class="btn-sm btn-primary" title="Add Transaction">
+                        <i class="fas fa-exchange-alt"></i>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               <?php endforeach; ?>
@@ -1143,20 +905,17 @@ $badgeColors = [
       </div>
     </div>
 
-    <!-- Fleet Management Tab -->
-    <div class="tab-content <?= $activeTab === 'vehicles' ? 'active' : '' ?>" id="vehicles-tab">
-      <!-- Stats Overview -->
+    <!-- Vehicles Section -->
+    <div class="section-content <?= $activeTab === 'vehicles' ? 'active' : '' ?>" id="vehicles-section">
+      <!-- Vehicle Stats -->
       <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
             <i class="fas fa-truck"></i>
           </div>
           <div class="stat-details">
-            <div class="stat-number"><?= $vehicle_stats['total'] ?></div>
+            <div class="stat-number"><?= $total_vehicles ?></div>
             <div class="stat-label">Total Vehicles</div>
-            <?php if ($admin_role !== 'super'): ?>
-              <div class="stat-sublabel"><?= $currentServiceTitle ?></div>
-            <?php endif; ?>
           </div>
         </div>
         
@@ -1165,7 +924,7 @@ $badgeColors = [
             <i class="fas fa-check-circle"></i>
           </div>
           <div class="stat-details">
-            <div class="stat-number"><?= $vehicle_stats['operational'] ?></div>
+            <div class="stat-number"><?= $operational_vehicles ?></div>
             <div class="stat-label">Operational</div>
           </div>
         </div>
@@ -1175,23 +934,13 @@ $badgeColors = [
             <i class="fas fa-tools"></i>
           </div>
           <div class="stat-details">
-            <div class="stat-number"><?= $vehicle_stats['maintenance'] ?></div>
+            <div class="stat-number"><?= $vehicles_in_maintenance ?></div>
             <div class="stat-label">In Maintenance</div>
-          </div>
-        </div>
-        
-        <div class="stat-card">
-          <div class="stat-icon" style="background: linear-gradient(135deg, #ff6b6b 0%, #ff8e53 100%);">
-            <i class="fas fa-exclamation-triangle"></i>
-          </div>
-          <div class="stat-details">
-            <div class="stat-number"><?= $vehicle_stats['out_of_service'] ?></div>
-            <div class="stat-label">Out of Service</div>
           </div>
         </div>
       </div>
 
-      <!-- Vehicle Action Bar -->
+      <!-- Action Bar -->
       <div class="action-bar">
         <div class="search-filters">
           <form method="GET" class="search-form">
@@ -1204,173 +953,360 @@ $badgeColors = [
         </div>
         
         <div class="action-buttons">
-          <button class="btn-primary" onclick="openVehicleModal()">
+          <button class="btn-primary" onclick="openAddVehicleModal()">
             <i class="fas fa-plus"></i> Add Vehicle
-          </button>
-          <button class="btn-secondary" onclick="openMaintenanceModal()">
-            <i class="fas fa-wrench"></i> Add Maintenance
           </button>
         </div>
       </div>
 
-      <!-- Vehicles Grid -->
-      <div class="vehicles-grid">
+      <!-- Vehicles Table -->
+      <div class="items-section">
+        <h3><i class="fas fa-truck"></i> Fleet Vehicles</h3>
+        
         <?php if (empty($vehicles)): ?>
           <div class="empty-state">
             <i class="fas fa-truck"></i>
             <h3>No Vehicles Found</h3>
-            <p>Add your first <?= $admin_role === 'super' ? '' : strtolower($currentServiceTitle) ?> vehicle to get started</p>
-            <?php if ($admin_role !== 'super'): ?>
-              <small style="color: #666; margin-top: 0.5rem; display: block;">
-                You can view vehicles from your service area and vehicles you created in other services
-              </small>
-            <?php endif; ?>
+            <p>Add your first vehicle to get started</p>
           </div>
         <?php else: ?>
-          <?php foreach ($vehicles as $vehicle): ?>
-            <div class="vehicle-card <?= $vehicle['status'] ?>">
-              <div class="vehicle-header">
-                <div class="vehicle-type">
-                  <i class="fas fa-<?= $vehicle['vehicle_type'] === 'ambulance' ? 'ambulance' : 'truck' ?>"></i>
-                  <?= ucfirst($vehicle['vehicle_type']) ?>
-                  <?php if ($admin_role === 'super' && $vehicle['service_area']): ?>
-                    <span class="item-service-badge" style="background: <?= $badgeColors[$vehicle['service_area']] ?? '#6c757d' ?>; margin-left: 0.5rem;">
-                      <?= ucfirst($vehicle['service_area']) ?>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Vehicle Name</th>
+                <th>Category</th>
+                <th>Plate Number</th>
+                <th>Model</th>
+                <th>Year</th>
+                <th>Mileage</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($vehicles as $vehicle): ?>
+                <tr class="<?= $vehicle['status'] ?>">
+                  <td><strong><?= htmlspecialchars($vehicle['vehicle_code']) ?></strong></td>
+                  <td>
+                    <div>
+                      <strong><?= htmlspecialchars($vehicle['vehicle_name']) ?></strong>
+                      <?php if ($vehicle['vehicle_type']): ?>
+                        <br><small class="text-muted"><?= htmlspecialchars($vehicle['vehicle_type']) ?></small>
+                      <?php endif; ?>
+                    </div>
+                  </td>
+                  <td><?= htmlspecialchars($vehicle['category_name'] ?? 'N/A') ?></td>
+                  <td><strong><?= htmlspecialchars($vehicle['plate_number']) ?></strong></td>
+                  <td><?= htmlspecialchars($vehicle['model']) ?></td>
+                  <td><?= $vehicle['year'] ?></td>
+                  <td><?= number_format($vehicle['current_mileage']) ?> km</td>
+                  <td>
+                    <span class="status-badge <?= $vehicle['status'] ?>">
+                      <?= ucfirst(str_replace('_', ' ', $vehicle['status'])) ?>
                     </span>
-                  <?php endif; ?>
-                </div>
-                <div class="vehicle-status">
-                  <?php if ($vehicle['status'] === 'operational'): ?>
-                    <i class="fas fa-check-circle" style="color: #28a745;"></i>
-                  <?php elseif ($vehicle['status'] === 'maintenance'): ?>
-                    <i class="fas fa-tools" style="color: #ffc107;"></i>
-                  <?php else: ?>
-                    <i class="fas fa-times-circle" style="color: #dc3545;"></i>
-                  <?php endif; ?>
-                </div>
-              </div>
-              
-              <div class="vehicle-body">
-                <h4><?= htmlspecialchars($vehicle['plate_number']) ?></h4>
-                <p class="vehicle-model"><?= htmlspecialchars($vehicle['model']) ?> (<?= $vehicle['year'] ?>)</p>
-                
-                <div class="vehicle-info">
-                  <div class="info-item">
-                    <i class="fas fa-gas-pump"></i>
-                    <span><?= ucfirst($vehicle['fuel_type']) ?></span>
-                  </div>
-                  <div class="info-item">
-                    <i class="fas fa-tachometer-alt"></i>
-                    <span><?= number_format($vehicle['current_mileage']) ?> km</span>
-                  </div>
-                </div>
-                
-                <div class="vehicle-actions">
-                  <?php if ($admin_role === 'super' || $vehicle['service_area'] === $admin_role || $vehicle['admin_id'] == $user_id): ?>
-                    <button onclick='openEditVehicleModal(<?= json_encode($vehicle) ?>)' class="btn-sm btn-edit">
-                      <i class="fas fa-edit"></i>
-                    </button>
-                    <a href="?tab=vehicles&vehicle=<?= $vehicle['vehicle_id'] ?>" class="btn-sm btn-info">
-                      <i class="fas fa-history"></i>
-                    </a>
-                    <form method="POST" style="display: inline;" onsubmit="return confirm('Delete this vehicle?')">
-                      <input type="hidden" name="delete_vehicle" value="1">
-                      <input type="hidden" name="vehicle_id" value="<?= $vehicle['vehicle_id'] ?>">
-                      <button type="submit" class="btn-sm btn-delete">
-                        <i class="fas fa-trash"></i>
+                  </td>
+                  <td>
+                    <div class="actions">
+                      <button onclick='openEditVehicleModal(<?= json_encode($vehicle) ?>)' class="btn-sm btn-edit" title="Edit">
+                        <i class="fas fa-edit"></i>
                       </button>
-                    </form>
-                  <?php else: ?>
-                    <a href="?tab=vehicles&vehicle=<?= $vehicle['vehicle_id'] ?>" class="btn-sm btn-info">
-                      <i class="fas fa-history"></i>
-                    </a>
-                    <span class="text-muted">View Only</span>
-                  <?php endif; ?>
-                  <?php if ($vehicle['admin_id'] == $user_id): ?>
-                    <small style="display: block; color: #28a745; font-size: 0.7rem; margin-top: 0.2rem; text-align: center;">
-                      <i class="fas fa-user"></i> Your Vehicle
-                    </small>
-                  <?php endif; ?>
-                </div>
-              </div>
-            </div>
-          <?php endforeach; ?>
+                      <button onclick='openMaintenanceModal(<?= $vehicle['vehicle_id'] ?>, "<?= htmlspecialchars($vehicle['vehicle_name']) ?>")' class="btn-sm btn-primary" title="Add Maintenance">
+                        <i class="fas fa-tools"></i>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
         <?php endif; ?>
       </div>
+    </div>
 
-      <!-- Maintenance History -->
-      <!-- Maintenance History -->
-<?php if ($selected_vehicle_id): ?>
-  <div class="maintenance-section">
-    <h3><i class="fas fa-history"></i> Maintenance History</h3>
+    <!-- Transactions Section -->
+    <div class="section-content <?= $activeTab === 'transactions' ? 'active' : '' ?>" id="transactions-section">
+      <div class="action-bar">
+        <h3><i class="fas fa-exchange-alt"></i> Quick Transaction</h3>
+        <div class="action-buttons">
+          <button class="btn-primary" onclick="openTransactionModal()">
+            <i class="fas fa-plus"></i> New Transaction
+          </button>
+        </div>
+      </div>
+
+      <div class="items-section">
+        <h3><i class="fas fa-history"></i> Recent Transactions</h3>
+        
+        <?php
+        // Get recent transactions
+        try {
+          $query = "
+            SELECT t.*, i.item_name, i.item_code, u.email as created_by_email
+            FROM inventory_transactions t
+            LEFT JOIN inventory_items i ON t.item_id = i.item_id
+            LEFT JOIN users u ON t.created_by = u.user_id
+            WHERE 1=1
+          ";
+          $params = [];
+          
+          if ($admin_role !== 'super') {
+            $query .= " AND (i.service_area = ? OR i.created_by = ?)";
+            $params[] = $admin_role;
+            $params[] = $user_id;
+          }
+          
+          $query .= " ORDER BY t.transaction_date DESC, t.created_at DESC LIMIT 100";
+          
+          $stmt = $pdo->prepare($query);
+          $stmt->execute($params);
+          $recent_transactions = $stmt->fetchAll();
+        } catch (PDOException $e) {
+          $recent_transactions = [];
+        }
+        ?>
+        
+        <?php if (empty($recent_transactions)): ?>
+          <div class="empty-state">
+            <i class="fas fa-exchange-alt"></i>
+            <h3>No Transactions Found</h3>
+            <p>Start recording stock movements to see transaction history</p>
+          </div>
+        <?php else: ?>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Item</th>
+                <th>Type</th>
+                <th>Quantity</th>
+                <th>Reference</th>
+                <th>By</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($recent_transactions as $transaction): ?>
+                <tr>
+                  <td><?= date('M d, Y', strtotime($transaction['transaction_date'])) ?></td>
+                  <td>
+                    <strong><?= htmlspecialchars($transaction['item_code']) ?></strong><br>
+                    <small><?= htmlspecialchars($transaction['item_name']) ?></small>
+                  </td>
+                  <td>
+                    <span class="transaction-type <?= $transaction['transaction_type'] ?>">
+                      <?php
+                        $types = [
+                          'in' => ['Stock In', 'fas fa-arrow-up', '#28a745'],
+                          'out' => ['Stock Out', 'fas fa-arrow-down', '#dc3545'],
+                          'adjustment' => ['Adjustment', 'fas fa-edit', '#ffc107'],
+                          'transfer' => ['Transfer', 'fas fa-exchange-alt', '#17a2b8']
+                        ];
+                        $type_info = $types[$transaction['transaction_type']] ?? ['Unknown', 'fas fa-question', '#6c757d'];
+                      ?>
+                      <i class="<?= $type_info[1] ?>" style="color: <?= $type_info[2] ?>"></i>
+                      <?= $type_info[0] ?>
+                    </span>
+                  </td>
+                  <td>
+                    <?php if ($transaction['transaction_type'] === 'out'): ?>
+                      <span class="text-danger">-<?= $transaction['quantity'] ?></span>
+                    <?php elseif ($transaction['transaction_type'] === 'in'): ?>
+                      <span class="text-success">+<?= $transaction['quantity'] ?></span>
+                    <?php else: ?>
+                      <?= $transaction['quantity'] ?>
+                    <?php endif; ?>
+                  </td>
+                  <td><?= htmlspecialchars($transaction['reference_number'] ?? 'N/A') ?></td>
+                  <td><?= htmlspecialchars(explode('@', $transaction['created_by_email'])[0]) ?></td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        <?php endif; ?>
+      </div>
+    </div>
+
+    <!-- Maintenance Section -->
+    <div class="section-content <?= $activeTab === 'maintenance' ? 'active' : '' ?>" id="maintenance-section">
+      <div class="action-bar">
+        <h3><i class="fas fa-tools"></i> Vehicle Maintenance</h3>
+        <div class="action-buttons">
+          <button class="btn-primary" onclick="openMaintenanceModal()">
+            <i class="fas fa-plus"></i> Add Maintenance
+          </button>
+        </div>
+      </div>
+
+      <div class="items-section">
+        <h3><i class="fas fa-history"></i> Maintenance Records</h3>
+        
+        <?php
+        // Get maintenance records
+        try {
+          $query = "
+            SELECT m.*, v.vehicle_name, v.vehicle_code, v.plate_number, u.email as created_by_email
+            FROM vehicle_maintenance m
+            LEFT JOIN vehicles v ON m.vehicle_id = v.vehicle_id
+            LEFT JOIN users u ON m.created_by = u.user_id
+            WHERE 1=1
+          ";
+          $params = [];
+          
+          if ($admin_role !== 'super') {
+            $query .= " AND (v.service_area = ? OR v.created_by = ?)";
+            $params[] = $admin_role;
+            $params[] = $user_id;
+          }
+          
+          $query .= " ORDER BY m.maintenance_date DESC LIMIT 100";
+          
+          $stmt = $pdo->prepare($query);
+          $stmt->execute($params);
+          $maintenance_records = $stmt->fetchAll();
+        } catch (PDOException $e) {
+          $maintenance_records = [];
+        }
+        ?>
+        
+        <?php if (empty($maintenance_records)): ?>
+          <div class="empty-state">
+            <i class="fas fa-tools"></i>
+            <h3>No Maintenance Records Found</h3>
+            <p>Start recording vehicle maintenance to track service history</p>
+          </div>
+        <?php else: ?>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Vehicle</th>
+                <th>Type</th>
+                <th>Description</th>
+                <th>Cost</th>
+                <th>Service Provider</th>
+                <th>By</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($maintenance_records as $record): ?>
+                <tr>
+                  <td><?= date('M d, Y', strtotime($record['maintenance_date'])) ?></td>
+                  <td>
+                    <strong><?= htmlspecialchars($record['vehicle_code']) ?></strong><br>
+                    <small><?= htmlspecialchars($record['vehicle_name']) ?></small><br>
+                    <small class="text-muted"><?= htmlspecialchars($record['plate_number']) ?></small>
+                  </td>
+                  <td>
+                    <span class="status-badge <?= $record['maintenance_type'] ?>">
+                      <?= ucfirst($record['maintenance_type']) ?>
+                    </span>
+                  </td>
+                  <td><?= htmlspecialchars($record['description']) ?></td>
+                  <td><?= $record['cost'] > 0 ? '₱' . number_format($record['cost'], 2) : 'N/A' ?></td>
+                  <td><?= htmlspecialchars($record['service_provider'] ?? 'Internal') ?></td>
+                  <td><?= htmlspecialchars(explode('@', $record['created_by_email'])[0]) ?></td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        <?php endif; ?>
+      </div>
+    </div>
+    <!-- Categories Section -->
+<div class="section-content <?= $activeTab === 'categories' ? 'active' : '' ?>" id="categories-section">
+  <div class="action-bar">
+    <h3><i class="fas fa-tags"></i> Category Management</h3>
+    <div class="action-buttons">
+      <button class="btn-primary" onclick="openAddCategoryModal()">
+        <i class="fas fa-plus"></i> Add Category
+      </button>
+    </div>
+  </div>
+
+  <div class="items-section">
+    <h3><i class="fas fa-list"></i> All Categories</h3>
     
-    <?php 
-    // Get maintenance records for the selected vehicle
+    <?php
+    // Get all categories
     try {
-        $stmt = $pdo->prepare("
-            SELECT vm.*, v.plate_number, v.model 
-            FROM vehicle_maintenance vm
-            JOIN vehicles v ON vm.vehicle_id = v.vehicle_id
-            WHERE vm.vehicle_id = ? 
-            ORDER BY vm.maintenance_date DESC
-        ");
-        $stmt->execute([$selected_vehicle_id]);
-        $maintenance_records = $stmt->fetchAll();
+      $inventory_cats = [];
+      $vehicle_cats = [];
+      
+      if ($admin_role === 'super') {
+        $stmt = $pdo->query("SELECT *, 'inventory' as type FROM inventory_categories ORDER BY service_area, category_name");
+        $inventory_cats = $stmt->fetchAll();
+        
+        $stmt = $pdo->query("SELECT *, 'vehicle' as type FROM categories WHERE category_type = 'vehicle' ORDER BY service_area, category_name");
+        $vehicle_cats = $stmt->fetchAll();
+      } else {
+        $stmt = $pdo->prepare("SELECT *, 'inventory' as type FROM inventory_categories WHERE service_area = ? OR service_area = 'shared' ORDER BY category_name");
+        $stmt->execute([$admin_role]);
+        $inventory_cats = $stmt->fetchAll();
+        
+        $stmt = $pdo->prepare("SELECT *, 'vehicle' as type FROM categories WHERE category_type = 'vehicle' AND (service_area = ? OR service_area = 'shared') ORDER BY category_name");
+        $stmt->execute([$admin_role]);
+        $vehicle_cats = $stmt->fetchAll();
+      }
+      
+      $all_categories = array_merge($inventory_cats, $vehicle_cats);
     } catch (PDOException $e) {
-        $maintenance_records = [];
-        error_log("Maintenance query error: " . $e->getMessage());
+      $all_categories = [];
     }
     ?>
     
-    <?php if (empty($maintenance_records)): ?>
+    <?php if (empty($all_categories)): ?>
       <div class="empty-state">
-        <i class="fas fa-wrench"></i>
-        <h3>No Maintenance Records</h3>
-        <p>No maintenance history found for this vehicle</p>
+        <i class="fas fa-tags"></i>
+        <h3>No Categories Found</h3>
+        <p>Add your first category to get started</p>
       </div>
     <?php else: ?>
       <table class="data-table">
         <thead>
           <tr>
-            <th>Date</th>
+            <th>Name</th>
             <th>Type</th>
-            <th>Description</th>
-            <th>Provider</th>
-            <th>Mileage</th>
-            <th>Cost</th>
-            <th>Next Due</th>
+            <th>Service Area</th>
+            <th>Items Count</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          <?php foreach ($maintenance_records as $record): ?>
+          <?php foreach ($all_categories as $cat): ?>
+            <?php
+            // Count items in this category
+            try {
+              if ($cat['type'] === 'inventory') {
+                $stmt = $pdo->prepare("SELECT COUNT(*) FROM inventory_items WHERE category_id = ?");
+              } else {
+                $stmt = $pdo->prepare("SELECT COUNT(*) FROM vehicles WHERE category_id = ?");
+              }
+              $stmt->execute([$cat['category_id']]);
+              $item_count = $stmt->fetchColumn();
+            } catch (PDOException $e) {
+              $item_count = 0;
+            }
+            ?>
             <tr>
-              <td><?= date('M d, Y', strtotime($record['maintenance_date'])) ?></td>
-              <td><?= ucfirst(str_replace('_', ' ', $record['maintenance_type'])) ?></td>
-              <td><?= htmlspecialchars($record['description']) ?></td>
-              <td><?= htmlspecialchars($record['service_provider']) ?></td>
-              <td><?= number_format($record['mileage_at_service']) ?> km</td>
-              <td>₱<?= number_format($record['cost'], 2) ?></td>
+              <td><strong><?= htmlspecialchars($cat['category_name']) ?></strong></td>
               <td>
-                <?= $record['next_maintenance_date'] ? 
-                    date('M d, Y', strtotime($record['next_maintenance_date'])) : 
-                    '-' ?>
+                <span class="status-badge <?= $cat['type'] ?>">
+                  <?= ucfirst($cat['type']) ?>
+                </span>
               </td>
+              <td><?= ucfirst($cat['service_area']) ?></td>
+              <td><?= $item_count ?> items</td>
               <td>
-                <?php if ($admin_role === 'super' || $record['admin_id'] == $user_id): ?>
-                  <button onclick='editMaintenance(<?= json_encode($record) ?>)' class="btn-sm btn-edit">
+                <div class="actions">
+                  <button onclick='openEditCategoryModal(<?= json_encode($cat) ?>)' class="btn-sm btn-edit" title="Edit">
                     <i class="fas fa-edit"></i>
                   </button>
-                  <form method="POST" style="display: inline;" onsubmit="return confirm('Delete this maintenance record?')">
-                    <input type="hidden" name="delete_maintenance" value="1">
-                    <input type="hidden" name="maintenance_id" value="<?= $record['maintenance_id'] ?>">
-                    <button type="submit" class="btn-sm btn-delete">
+                  <?php if ($item_count == 0): ?>
+                    <button onclick='deleteCategory(<?= $cat['category_id'] ?>, "<?= $cat['type'] ?>", "<?= htmlspecialchars($cat['category_name']) ?>")' class="btn-sm btn-danger" title="Delete">
                       <i class="fas fa-trash"></i>
                     </button>
-                  </form>
-                <?php else: ?>
-                  <span class="text-muted">View Only</span>
-                <?php endif; ?>
+                  <?php endif; ?>
+                </div>
               </td>
             </tr>
           <?php endforeach; ?>
@@ -1378,7 +1314,8 @@ $badgeColors = [
       </table>
     <?php endif; ?>
   </div>
-<?php endif; ?>
+</div>
+  </div>
 
   <!-- MODALS -->
   
@@ -1401,6 +1338,11 @@ $badgeColors = [
           <input type="text" name="item_name" id="itemName" required>
         </div>
         
+        <div class="form-group">
+          <label>Description</label>
+          <textarea name="description" id="itemDescription" rows="3"></textarea>
+        </div>
+        
         <div class="form-row">
           <div class="form-group">
             <label>Category *</label>
@@ -1409,38 +1351,28 @@ $badgeColors = [
               <?php foreach ($categories as $cat): ?>
                 <option value="<?= $cat['category_id'] ?>">
                   <?= htmlspecialchars($cat['category_name']) ?>
-                  <?php if ($admin_role === 'super' && $cat['service_area'] !== 'shared'): ?>
-                    (<?= ucfirst($cat['service_area']) ?>)
-                  <?php endif; ?>
                 </option>
               <?php endforeach; ?>
             </select>
           </div>
           
           <div class="form-group">
-            <label>Quantity *</label>
-            <input type="number" name="quantity" id="itemQuantity" min="0" required>
+            <label>Unit *</label>
+            <input type="text" name="unit" id="itemUnit" value="pcs" required>
           </div>
         </div>
         
-        <div class="form-group">
-          <label>Storage Location *</label>
-          <input type="text" name="location" id="itemLocation" placeholder="e.g., Room A, Shelf 1" required>
-        </div>
-        
-        <div class="form-group">
-          <label>Expiry Date *</label>
-          <input type="date" name="expiry_date" id="itemExpiry" required>
-        </div>
-        
-        <?php if ($admin_role !== 'super'): ?>
+        <div class="form-row">
           <div class="form-group">
-            <div class="service-indicator">
-              <i class="fas fa-<?= $serviceIcons[$admin_role] ?>"></i>
-              This item will be added to <?= $currentServiceTitle ?> inventory
-            </div>
+            <label>Minimum Stock *</label>
+            <input type="number" name="minimum_stock" id="itemMinStock" min="0" value="10" required>
           </div>
-        <?php endif; ?>
+          
+          <div class="form-group">
+            <label>Storage Location</label>
+            <input type="text" name="location" id="itemLocation" placeholder="e.g., Room A, Shelf 1">
+          </div>
+        </div>
         
         <div class="modal-footer">
           <button type="submit" class="btn-primary">
@@ -1454,7 +1386,7 @@ $badgeColors = [
     </div>
   </div>
 
-  <!-- Vehicle Modal -->
+  <!-- Add/Edit Vehicle Modal -->
   <div class="modal" id="vehicleModal">
     <div class="modal-content">
       <div class="modal-header">
@@ -1468,51 +1400,52 @@ $badgeColors = [
         <input type="hidden" name="save_vehicle" value="1">
         <input type="hidden" name="vehicle_id" id="vehicleId">
         
+        <div class="form-group">
+          <label>Vehicle Name *</label>
+          <input type="text" name="vehicle_name" id="vehicleName" required>
+        </div>
+        
         <div class="form-row">
           <div class="form-group">
-            <label>Vehicle Type *</label>
-            <select name="vehicle_type" id="vehicleType" required>
-              <?php if ($admin_role === 'health' || $admin_role === 'super'): ?>
-                <option value="ambulance">Ambulance</option>
-              <?php endif; ?>
-              <option value="van">Van</option>
-              <option value="truck">Truck</option>
-              <option value="car">Car</option>
-              <option value="motorcycle">Motorcycle</option>
+            <label>Category *</label>
+            <select name="category_id" id="vehicleCategory" required>
+              <option value="">Select Category</option>
+              <?php foreach ($vehicleCategoriesData as $cat): ?>
+                <option value="<?= $cat['category_id'] ?>">
+                  <?= htmlspecialchars($cat['category_name']) ?>
+                </option>
+              <?php endforeach; ?>
             </select>
           </div>
           
           <div class="form-group">
-            <label>Plate Number *</label>
-            <input type="text" name="plate_number" id="plateNumber" required>
+            <label>Vehicle Type</label>
+            <input type="text" name="vehicle_type" id="vehicleType" placeholder="e.g., Ambulance, Truck">
           </div>
         </div>
         
         <div class="form-row">
+          <div class="form-group">
+            <label>Plate Number *</label>
+            <input type="text" name="plate_number" id="vehiclePlate" required>
+          </div>
+          
           <div class="form-group">
             <label>Model *</label>
             <input type="text" name="model" id="vehicleModel" required>
           </div>
-          
-          <div class="form-group">
-            <label>Year *</label>
-            <input type="number" name="year" id="vehicleYear" min="1900" max="<?= date('Y') + 1 ?>" required>
-          </div>
         </div>
         
         <div class="form-row">
           <div class="form-group">
-            <label>Status *</label>
-            <select name="status" id="vehicleStatus" required>
-              <option value="operational">Operational</option>
-              <option value="maintenance">In Maintenance</option>
-              <option value="out_of_service">Out of Service</option>
-            </select>
+            <label>Year *</label>
+            <input type="number" name="year" id="vehicleYear" min="1900" max="2030" required>
           </div>
           
           <div class="form-group">
             <label>Fuel Type *</label>
-            <select name="fuel_type" id="fuelType" required>
+            <select name="fuel_type" id="vehicleFuelType" required>
+              <option value="">Select Fuel Type</option>
               <option value="gasoline">Gasoline</option>
               <option value="diesel">Diesel</option>
               <option value="hybrid">Hybrid</option>
@@ -1521,25 +1454,99 @@ $badgeColors = [
           </div>
         </div>
         
-        <div class="form-group">
-          <label>Current Mileage (km)</label>
-          <input type="number" name="current_mileage" id="currentMileage" min="0" value="0">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Current Mileage</label>
+            <input type="number" name="current_mileage" id="vehicleMileage" min="0" value="0">
+          </div>
+          
+          <div class="form-group">
+            <label>Branch</label>
+            <input type="text" name="branch_name" id="vehicleBranch" placeholder="e.g., Main Branch">
+          </div>
         </div>
         
-        <?php if ($admin_role !== 'super'): ?>
-          <div class="form-group">
-            <div class="service-indicator">
-              <i class="fas fa-<?= $serviceIcons[$admin_role] ?>"></i>
-              This vehicle will be added to <?= $currentServiceTitle ?> fleet
-            </div>
-          </div>
-        <?php endif; ?>
+        <div class="form-group">
+          <label>Location</label>
+          <input type="text" name="location" id="vehicleLocation" placeholder="e.g., Garage Bay 1">
+        </div>
         
         <div class="modal-footer">
           <button type="submit" class="btn-primary">
             <i class="fas fa-save"></i> Save Vehicle
           </button>
           <button type="button" class="btn-secondary" onclick="closeModal('vehicleModal')">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Transaction Modal -->
+  <div class="modal" id="transactionModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Record Transaction</h2>
+        <button class="close-btn" onclick="closeModal('transactionModal')">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      
+      <form method="POST">
+        <input type="hidden" name="save_transaction" value="1">
+        
+        <div class="form-group">
+          <label>Item *</label>
+          <select name="item_id" id="transactionItem" required>
+            <option value="">Select Item</option>
+            <?php foreach ($items as $item): ?>
+              <option value="<?= $item['item_id'] ?>" data-stock="<?= $item['current_stock'] ?>">
+                <?= htmlspecialchars($item['item_code']) ?> - <?= htmlspecialchars($item['item_name']) ?>
+                (Stock: <?= $item['current_stock'] ?>)
+              </option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>Transaction Type *</label>
+            <select name="transaction_type" id="transactionType" required>
+              <option value="in">Stock In (+)</option>
+              <option value="out">Stock Out (-)</option>
+              <option value="adjustment">Stock Adjustment</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label>Quantity *</label>
+            <input type="number" name="quantity" id="transactionQuantity" min="1" required>
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>Reference Number</label>
+            <input type="text" name="reference_number" id="transactionRef" placeholder="e.g., PO-001, DR-123">
+          </div>
+          
+          <div class="form-group">
+            <label>Transaction Date *</label>
+            <input type="date" name="transaction_date" id="transactionDate" required>
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea name="notes" id="transactionNotes" rows="3" placeholder="Additional notes about this transaction..."></textarea>
+        </div>
+        
+        <div class="modal-footer">
+          <button type="submit" class="btn-primary">
+            <i class="fas fa-save"></i> Record Transaction
+          </button>
+          <button type="button" class="btn-secondary" onclick="closeModal('transactionModal')">
             Cancel
           </button>
         </div>
@@ -1558,24 +1565,17 @@ $badgeColors = [
       </div>
       
       <form method="POST">
-        <input type="hidden" name="add_maintenance" value="1">
+        <input type="hidden" name="save_maintenance" value="1">
         
         <div class="form-group">
           <label>Vehicle *</label>
-          <select name="vehicle_id" required>
+          <select name="vehicle_id" id="maintenanceVehicle" required>
             <option value="">Select Vehicle</option>
             <?php foreach ($vehicles as $vehicle): ?>
-              <?php if ($admin_role === 'super' || $vehicle['service_area'] === $admin_role || $vehicle['admin_id'] == $user_id): ?>
-                <option value="<?= $vehicle['vehicle_id'] ?>">
-                  <?= htmlspecialchars($vehicle['vehicle_type']) ?> - 
-                  <?= htmlspecialchars($vehicle['plate_number']) ?>
-                  <?php if ($admin_role === 'super'): ?>
-                    (<?= ucfirst($vehicle['service_area']) ?><?= $vehicle['admin_id'] == $user_id ? ' - Yours' : '' ?>)
-                  <?php elseif ($vehicle['admin_id'] == $user_id): ?>
-                    (Your Vehicle)
-                  <?php endif; ?>
-                </option>
-              <?php endif; ?>
+              <option value="<?= $vehicle['vehicle_id'] ?>">
+                <?= htmlspecialchars($vehicle['vehicle_code']) ?> - <?= htmlspecialchars($vehicle['vehicle_name']) ?>
+                (<?= htmlspecialchars($vehicle['plate_number']) ?>)
+              </option>
             <?php endforeach; ?>
           </select>
         </div>
@@ -1584,28 +1584,35 @@ $badgeColors = [
           <div class="form-group">
             <label>Maintenance Type *</label>
             <select name="maintenance_type" required>
-              <option value="routine">Routine Service</option>
-              <option value="oil_change">Oil Change</option>
-              <option value="tire_rotation">Tire Rotation</option>
-              <option value="brake_service">Brake Service</option>
-              <option value="engine_repair">Engine Repair</option>
-              <option value="transmission">Transmission Service</option>
-              <option value="electrical">Electrical Repair</option>
-              <option value="bodywork">Bodywork</option>
+              <option value="">Select Type</option>
+              <option value="routine">Routine Maintenance</option>
+              <option value="repair">Repair</option>
               <option value="inspection">Inspection</option>
-              <option value="other">Other</option>
+              <option value="emergency">Emergency Repair</option>
             </select>
           </div>
           
           <div class="form-group">
-            <label>Maintenance Date *</label>
-            <input type="date" name="maintenance_date" required max="<?= date('Y-m-d') ?>">
+            <label>Cost</label>
+            <input type="number" name="cost" step="0.01" min="0" placeholder="0.00">
           </div>
         </div>
         
         <div class="form-group">
-          <label>Description</label>
-          <textarea name="description" rows="3" placeholder="Describe the maintenance work performed..."></textarea>
+          <label>Description *</label>
+          <textarea name="description" rows="3" required placeholder="Describe the maintenance work performed..."></textarea>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>Maintenance Date *</label>
+            <input type="date" name="maintenance_date" required>
+          </div>
+          
+          <div class="form-group">
+            <label>Next Maintenance Date</label>
+            <input type="date" name="next_maintenance_date">
+          </div>
         </div>
         
         <div class="form-row">
@@ -1615,26 +1622,14 @@ $badgeColors = [
           </div>
           
           <div class="form-group">
-            <label>Cost (₱)</label>
-            <input type="number" name="cost" min="0" step="0.01" placeholder="0.00">
-          </div>
-        </div>
-        
-        <div class="form-row">
-          <div class="form-group">
             <label>Mileage at Service</label>
-            <input type="number" name="mileage_at_service" min="0" placeholder="Current odometer reading">
-          </div>
-          
-          <div class="form-group">
-            <label>Next Maintenance Date</label>
-            <input type="date" name="next_maintenance" min="<?= date('Y-m-d') ?>">
+            <input type="number" name="mileage_at_service" min="0">
           </div>
         </div>
         
         <div class="modal-footer">
           <button type="submit" class="btn-primary">
-            <i class="fas fa-save"></i> Save Record
+            <i class="fas fa-save"></i> Save Maintenance
           </button>
           <button type="button" class="btn-secondary" onclick="closeModal('maintenanceModal')">
             Cancel
@@ -1643,560 +1638,264 @@ $badgeColors = [
       </form>
     </div>
   </div>
-  <script src="../admin/js/notification_frontend.js?v=<?php echo time(); ?>"></script>
+<!-- Add/Edit Category Modal -->
+<div class="modal" id="categoryModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 id="categoryModalTitle">Add New Category</h2>
+      <button class="close-btn" onclick="closeModal('categoryModal')">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    
+    <form method="POST">
+      <input type="hidden" name="save_category" value="1">
+      <input type="hidden" name="category_id" id="categoryId">
+      
+      <div class="form-group">
+        <label>Category Name *</label>
+        <input type="text" name="category_name" id="categoryName" required>
+      </div>
+      
+      <div class="form-group">
+        <label>Category Type *</label>
+        <select name="category_type" id="categoryType" required>
+          <option value="">Select Type</option>
+          <option value="inventory">Inventory Category</option>
+          <option value="vehicle">Vehicle Category</option>
+        </select>
+      </div>
+      
+      <div class="form-group">
+        <label>Description</label>
+        <textarea name="description" id="categoryDescription" rows="3" placeholder="Optional description..."></textarea>
+      </div>
+      
+      <div class="modal-footer">
+        <button type="submit" class="btn-primary">
+          <i class="fas fa-save"></i> Save Category
+        </button>
+        <button type="button" class="btn-secondary" onclick="closeModal('categoryModal')">
+          Cancel
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+<script src="./js/event-notifications.js?v=<?= time() ?>"></script>
+<script src="../admin/js/notification_frontend.js?v=<?php echo time(); ?>"></script>
   <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
-  <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
+<script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
+  <?php include 'chat_widget.php'; ?>
   <script>
-// Service-Specific Inventory & Fleet Management JavaScript
-
-// Service configuration
-const currentService = '<?= $admin_role ?>';
-const isSuper = currentService === 'super';
-
-// Toggle Category Manager
-function toggleCategoryManager() {
-    const manager = document.getElementById('categoryManager');
-    if (manager) {
-        manager.style.display = manager.style.display === 'none' ? 'block' : 'none';
-    }
-}
-
-// Category Management
-function editCategory(id, name) {
-    document.getElementById('categoryId').value = id;
-    document.getElementById('categoryName').value = name;
+    // JavaScript for the inventory and vehicle management system
     
-    // Show category manager if hidden
-    const manager = document.getElementById('categoryManager');
-    if (manager && manager.style.display === 'none') {
-        manager.style.display = 'block';
-    }
-    
-    // Focus on input
-    document.getElementById('categoryName').focus();
-}
-
-function resetCategoryForm() {
-    document.getElementById('categoryId').value = '';
-    document.getElementById('categoryName').value = '';
-}
-
-// Item Management
-function openAddItemModal() {
-    document.getElementById('itemModalTitle').textContent = `Add New ${isSuper ? '' : '<?= $currentServiceTitle ?>'} Item`;
-    document.getElementById('itemId').value = '';
-    document.getElementById('itemName').value = '';
-    document.getElementById('itemCategory').value = '';
-    document.getElementById('itemQuantity').value = '';
-    document.getElementById('itemLocation').value = '';
-    document.getElementById('itemExpiry').value = '';
-    
-    // Set default expiry date to 6 months from now
-    const futureDate = new Date();
-    futureDate.setMonth(futureDate.getMonth() + 6);
-    document.getElementById('itemExpiry').value = futureDate.toISOString().split('T')[0];
-    
-    // Filter categories based on service
-    filterCategoriesForService();
-    
-    openModal('itemModal');
-}
-function editMaintenance(record) {
-    // Populate the maintenance form with existing data
-    document.querySelector('select[name="vehicle_id"]').value = record.vehicle_id;
-    document.querySelector('select[name="maintenance_type"]').value = record.maintenance_type;
-    document.querySelector('input[name="maintenance_date"]').value = record.maintenance_date;
-    document.querySelector('textarea[name="description"]').value = record.description || '';
-    document.querySelector('input[name="service_provider"]').value = record.service_provider || '';
-    document.querySelector('input[name="cost"]').value = record.cost || '0.00';
-    document.querySelector('input[name="mileage_at_service"]').value = record.mileage_at_service || '';
-    
-    if (record.next_maintenance_date) {
-        document.querySelector('input[name="next_maintenance"]').value = record.next_maintenance_date;
-    }
-    
-    // Add hidden field for editing
-    let hiddenInput = document.createElement('input');
-    hiddenInput.type = 'hidden';
-    hiddenInput.name = 'maintenance_id';
-    hiddenInput.value = record.maintenance_id;
-    document.querySelector('#maintenanceModal form').appendChild(hiddenInput);
-    
-    // Change form action to update
-    document.querySelector('#maintenanceModal form').setAttribute('action', '?tab=vehicles&vehicle=' + record.vehicle_id);
-    
-    openModal('maintenanceModal');
-}
-function openEditItemModal(item) {
-    document.getElementById('itemModalTitle').textContent = `Edit ${isSuper ? '' : '<?= $currentServiceTitle ?>'} Item`;
-    document.getElementById('itemId').value = item.item_id;
-    document.getElementById('itemName').value = item.item_name;
-    document.getElementById('itemCategory').value = item.category_id || '';
-    document.getElementById('itemQuantity').value = item.quantity;
-    document.getElementById('itemLocation').value = item.location || '';
-    document.getElementById('itemExpiry').value = item.expiry_date;
-    
-    filterCategoriesForService();
-    
-    openModal('itemModal');
-}
-
-// Filter categories based on current service
-function filterCategoriesForService() {
-    const categorySelect = document.getElementById('itemCategory');
-    const options = categorySelect.querySelectorAll('option');
-    
-    if (!isSuper) {
-        options.forEach(option => {
-            if (option.value === '') return; // Keep the "Select Category" option
-            
-            const text = option.textContent;
-            const isServiceSpecific = text.includes('(<?= ucfirst($admin_role) ?>)') || 
-                                    !text.includes('(') || 
-                                    text.includes('(Shared)');
-            
-            option.style.display = isServiceSpecific ? 'block' : 'none';
-        });
-    }
-}
-
-// Vehicle Management
-function openVehicleModal() {
-    console.log('Opening vehicle modal...'); // Debug log
-    
-    const modal = document.getElementById('vehicleModal');
-    if (!modal) {
-        console.error('Vehicle modal not found!');
-        return;
-    }
-    
-    // Reset form
-    document.getElementById('vehicleModalTitle').textContent = `Add New ${isSuper ? '' : '<?= $currentServiceTitle ?>'} Vehicle`;
-    document.getElementById('vehicleId').value = '';
-    document.getElementById('plateNumber').value = '';
-    document.getElementById('vehicleModel').value = '';
-    document.getElementById('vehicleYear').value = new Date().getFullYear();
-    document.getElementById('vehicleStatus').value = 'operational';
-    document.getElementById('fuelType').value = 'gasoline';
-    document.getElementById('currentMileage').value = '0';
-    
-    // Set default vehicle type based on service
-    const vehicleTypeSelect = document.getElementById('vehicleType');
-    if (vehicleTypeSelect) {
-        if ('<?= $admin_role ?>' === 'health') {
-            vehicleTypeSelect.value = 'ambulance';
-        } else {
-            vehicleTypeSelect.value = 'van';
+    function switchSection(sectionName) {
+      // Hide all sections
+      document.querySelectorAll('.section-content').forEach(section => {
+        section.classList.remove('active');
+      });
+      
+      // Deactivate all toggles
+      document.querySelectorAll('.section-toggle').forEach(toggle => {
+        toggle.classList.remove('active');
+      });
+      
+      // Show selected section
+      const targetSection = document.getElementById(sectionName + '-section');
+      if (targetSection) {
+        targetSection.classList.add('active');
+      }
+      
+      // Activate selected toggle
+      if (event && event.target) {
+        const toggle = event.target.closest('.section-toggle');
+        if (toggle) {
+          toggle.classList.add('active');
         }
+      }
+      
+      // Update URL
+      const url = new URL(window.location);
+      url.searchParams.set('tab', sectionName);
+      window.history.pushState({}, '', url);
     }
     
-    openModal('vehicleModal');
-}
-
-function openEditVehicleModal(vehicle) {
-    console.log('Opening edit vehicle modal...', vehicle); // Debug log
-    
-    const modal = document.getElementById('vehicleModal');
-    if (!modal) {
-        console.error('Vehicle modal not found!');
-        return;
-    }
-    
-    // Populate form with vehicle data
-    document.getElementById('vehicleModalTitle').textContent = `Edit ${isSuper ? '' : '<?= $currentServiceTitle ?>'} Vehicle`;
-    document.getElementById('vehicleId').value = vehicle.vehicle_id || '';
-    document.getElementById('vehicleType').value = vehicle.vehicle_type || 'van';
-    document.getElementById('plateNumber').value = vehicle.plate_number || '';
-    document.getElementById('vehicleModel').value = vehicle.model || '';
-    document.getElementById('vehicleYear').value = vehicle.year || new Date().getFullYear();
-    document.getElementById('vehicleStatus').value = vehicle.status || 'operational';
-    document.getElementById('fuelType').value = vehicle.fuel_type || 'gasoline';
-    document.getElementById('currentMileage').value = vehicle.current_mileage || '0';
-    
-    openModal('vehicleModal');
-}
-
-function openMaintenanceModal() {
-    // Filter vehicles based on service
-    const vehicleSelect = document.querySelector('select[name="vehicle_id"]');
-    const options = vehicleSelect.querySelectorAll('option');
-    
-    if (!isSuper) {
-        options.forEach(option => {
-            if (option.value === '') return; // Keep the "Select Vehicle" option
-            
-            const text = option.textContent;
-            const isServiceSpecific = !text.includes('(') || text.includes('(<?= ucfirst($admin_role) ?>)');
-            
-            option.style.display = isServiceSpecific ? 'block' : 'none';
-        });
-    }
-    
-    openModal('maintenanceModal');
-}
-
-// Modal Management
-function openModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (modal) {
+    function openModal(modalId) {
+      const modal = document.getElementById(modalId);
+      if (modal) {
         modal.style.display = 'flex';
         modal.classList.add('active');
-        
-        // Add service-specific styling
-        if (!isSuper) {
-            modal.classList.add('service-modal');
-            modal.classList.add(`service-${currentService}`);
-        }
-        
-        // Focus on first input
-        setTimeout(() => {
-            const firstInput = modal.querySelector('input, select');
-            if (firstInput) {
-                firstInput.focus();
-            }
-        }, 100);
+        document.body.style.overflow = 'hidden';
+      }
     }
-}
-
-function closeModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (modal) {
+    
+    function closeModal(modalId) {
+      const modal = document.getElementById(modalId);
+      if (modal) {
+        modal.style.display = 'none';
         modal.classList.remove('active');
-        setTimeout(() => {
-            modal.style.display = 'none';
-            modal.classList.remove('service-modal');
-            modal.classList.remove(`service-${currentService}`);
-        }, 300);
+        document.body.style.overflow = '';
+      }
     }
+    
+    function openAddItemModal() {
+      document.getElementById('itemModalTitle').textContent = 'Add New Item';
+      document.getElementById('itemId').value = '';
+      document.getElementById('itemName').value = '';
+      document.getElementById('itemDescription').value = '';
+      document.getElementById('itemCategory').value = '';
+      document.getElementById('itemUnit').value = 'pcs';
+      document.getElementById('itemMinStock').value = '10';
+      document.getElementById('itemLocation').value = '';
+      openModal('itemModal');
+    }
+    
+    function openEditItemModal(item) {
+      document.getElementById('itemModalTitle').textContent = 'Edit Item';
+      document.getElementById('itemId').value = item.item_id;
+      document.getElementById('itemName').value = item.item_name;
+      document.getElementById('itemDescription').value = item.description || '';
+      document.getElementById('itemCategory').value = item.category_id;
+      document.getElementById('itemUnit').value = item.unit;
+      document.getElementById('itemMinStock').value = item.minimum_stock;
+      document.getElementById('itemLocation').value = item.location || '';
+      openModal('itemModal');
+    }
+    
+    function openAddVehicleModal() {
+      document.getElementById('vehicleModalTitle').textContent = 'Add New Vehicle';
+      document.getElementById('vehicleId').value = '';
+      document.getElementById('vehicleName').value = '';
+      document.getElementById('vehicleCategory').value = '';
+      document.getElementById('vehicleType').value = '';
+      document.getElementById('vehiclePlate').value = '';
+      document.getElementById('vehicleModel').value = '';
+      document.getElementById('vehicleYear').value = '';
+      document.getElementById('vehicleFuelType').value = '';
+      document.getElementById('vehicleMileage').value = '0';
+      document.getElementById('vehicleBranch').value = '';
+      document.getElementById('vehicleLocation').value = '';
+      openModal('vehicleModal');
+    }
+    
+    function openEditVehicleModal(vehicle) {
+      document.getElementById('vehicleModalTitle').textContent = 'Edit Vehicle';
+      document.getElementById('vehicleId').value = vehicle.vehicle_id;
+      document.getElementById('vehicleName').value = vehicle.vehicle_name;
+      document.getElementById('vehicleCategory').value = vehicle.category_id || '';
+      document.getElementById('vehicleType').value = vehicle.vehicle_type || '';
+      document.getElementById('vehiclePlate').value = vehicle.plate_number;
+      document.getElementById('vehicleModel').value = vehicle.model;
+      document.getElementById('vehicleYear').value = vehicle.year;
+      document.getElementById('vehicleFuelType').value = vehicle.fuel_type;
+      document.getElementById('vehicleMileage').value = vehicle.current_mileage;
+      document.getElementById('vehicleBranch').value = vehicle.branch_name || '';
+      document.getElementById('vehicleLocation').value = vehicle.location || '';
+      openModal('vehicleModal');
+    }
+    function openAddCategoryModal() {
+  document.getElementById('categoryModalTitle').textContent = 'Add New Category';
+  document.getElementById('categoryId').value = '';
+  document.getElementById('categoryName').value = '';
+  document.getElementById('categoryType').value = '';
+  document.getElementById('categoryDescription').value = '';
+  openModal('categoryModal');
 }
 
-// Service-specific validation
-function validateServiceAccess(action, itemService = null) {
-    if (isSuper) return true;
-    
-    if (itemService && itemService !== currentService && itemService !== 'shared') {
-        alert(`You can only ${action} items belonging to <?= $currentServiceTitle ?>.`);
-        return false;
-    }
-    
-    return true;
+function openEditCategoryModal(category) {
+  document.getElementById('categoryModalTitle').textContent = 'Edit Category';
+  document.getElementById('categoryId').value = category.category_id;
+  document.getElementById('categoryName').value = category.category_name;
+  document.getElementById('categoryType').value = category.type;
+  document.getElementById('categoryDescription').value = category.description || '';
+  openModal('categoryModal');
 }
 
-// Enhanced form validation with service-specific rules
-function validateItemForm(form) {
-    const requiredFields = form.querySelectorAll('[required]');
-    let valid = true;
-    
-    requiredFields.forEach(field => {
-        if (!field.value.trim()) {
-            valid = false;
-            field.style.borderColor = '#dc3545';
-            field.classList.add('is-invalid');
-        } else {
-            field.style.borderColor = '#e0e0e0';
-            field.classList.remove('is-invalid');
-        }
-    });
-    
-    // Service-specific validation
-    if (!isSuper) {
-        const categorySelect = document.getElementById('itemCategory');
-        const selectedOption = categorySelect.options[categorySelect.selectedIndex];
-        
-        if (selectedOption && selectedOption.textContent.includes('(') && 
-            !selectedOption.textContent.includes(`(<?= ucfirst($admin_role) ?>)`) &&
-            !selectedOption.textContent.includes('(Shared)')) {
-            valid = false;
-            categorySelect.style.borderColor = '#dc3545';
-            alert('Please select a category available for <?= $currentServiceTitle ?>.');
-        }
-    }
-    
-    return valid;
-}
-
-// Close modal when clicking outside
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('DOM loaded, initializing scripts...');
-    
-    // Modal click outside to close
-    document.querySelectorAll('.modal').forEach(modal => {
-        modal.addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeModal(this.id);
-            }
-        });
-    });
-
-    // Auto-dismiss alerts after 5 seconds
-    const alerts = document.querySelectorAll('.alert');
-    alerts.forEach(alert => {
-        setTimeout(() => {
-            alert.style.opacity = '0';
-            alert.style.transform = 'translateY(-20px)';
-            setTimeout(() => {
-                alert.remove();
-            }, 300);
-        }, 5000);
-    });
-
-    // Tab persistence based on URL parameter
-    const urlParams = new URLSearchParams(window.location.search);
-    const activeTab = urlParams.get('tab') || 'inventory';
-    
-    // Ensure the correct tab is shown
-    document.querySelectorAll('.tab-content').forEach(content => {
-        content.classList.remove('active');
-    });
-    document.querySelectorAll('.tab-link').forEach(link => {
-        link.classList.remove('active');
-    });
-    
-    const activeContent = document.getElementById(activeTab + '-tab');
-    if (activeContent) {
-        activeContent.classList.add('active');
-    }
-    
-    const activeLink = document.querySelector(`.tab-link[href*="tab=${activeTab}"]`);
-    if (activeLink) {
-        activeLink.classList.add('active');
-    }
-
-    // Enhanced form validation
-    const forms = document.querySelectorAll('form');
-    forms.forEach(form => {
-        form.addEventListener('submit', function(e) {
-            if (this.querySelector('[name="save_item"]')) {
-                if (!validateItemForm(this)) {
-                    e.preventDefault();
-                }
-            } else if (this.querySelector('[name="save_vehicle"]')) {
-                console.log('Vehicle form submitting...'); // Debug log
-                
-                const requiredFields = this.querySelectorAll('[required]');
-                let isValid = true;
-                
-                requiredFields.forEach(field => {
-                    if (!field.value.trim()) {
-                        isValid = false;
-                        field.classList.add('is-invalid');
-                        field.style.borderColor = '#dc3545';
-                    } else {
-                        field.classList.remove('is-invalid');
-                        field.style.borderColor = '#28a745';
-                        field.classList.add('is-valid');
-                    }
-                });
-                
-                if (!isValid) {
-                    e.preventDefault();
-                    alert('Please fill all required fields');
-                    return false;
-                }
-                
-                // Show loading state
-                const submitBtn = this.querySelector('button[type="submit"]');
-                if (submitBtn) {
-                    submitBtn.disabled = true;
-                    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-                }
-                
-                console.log('Form validation passed, submitting...'); // Debug log
-            } else {
-                // Standard validation for other forms
-                const requiredFields = this.querySelectorAll('[required]');
-                let valid = true;
-                
-                requiredFields.forEach(field => {
-                    if (!field.value.trim()) {
-                        valid = false;
-                        field.style.borderColor = '#dc3545';
-                    } else {
-                        field.style.borderColor = '#e0e0e0';
-                    }
-                });
-                
-                if (!valid) {
-                    e.preventDefault();
-                    alert('Please fill all required fields');
-                }
-            }
-        });
-    });
-
-    // Clear form validation styles on input
-    document.querySelectorAll('input, select, textarea').forEach(field => {
-        field.addEventListener('input', function() {
-            if (this.value.trim()) {
-                this.style.borderColor = '#e0e0e0';
-                this.classList.remove('is-invalid');
-            }
-        });
-        
-        field.addEventListener('change', function() {
-            if (this.value.trim()) {
-                this.style.borderColor = '#e0e0e0';
-                this.classList.remove('is-invalid');
-            }
-        });
-    });
-
-    // Initialize date inputs with min/max values
-    const today = new Date().toISOString().split('T')[0];
-    
-    // Set min date for expiry dates (today)
-    document.querySelectorAll('input[type="date"][name="expiry_date"]').forEach(input => {
-        input.min = today;
-    });
-    
-    // Set max date for maintenance dates (today)
-    document.querySelectorAll('input[type="date"][name="maintenance_date"]').forEach(input => {
-        input.max = today;
-    });
-    
-    // Set min date for next maintenance dates (tomorrow)
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    document.querySelectorAll('input[type="date"][name="next_maintenance"]').forEach(input => {
-        input.min = tomorrow.toISOString().split('T')[0];
-    });
-
-    // Service-specific UI enhancements
-    if (!isSuper) {
-        // Add service-specific class to body for styling
-        document.body.classList.add(`service-${currentService}`);
-        
-        // Highlight service-specific items
-        document.querySelectorAll('.item-service-badge').forEach(badge => {
-            if (badge.textContent.toLowerCase().includes(currentService.toLowerCase())) {
-                badge.style.fontWeight = 'bold';
-                badge.style.boxShadow = '0 0 0 2px rgba(255,255,255,0.3)';
-            }
-        });
-    }
-
-    // Add service context to forms
-    const serviceContexts = document.querySelectorAll('.service-indicator');
-    serviceContexts.forEach(context => {
-        context.style.animation = 'fadeIn 0.5s ease-in';
-    });
-    
-    console.log('All scripts initialized successfully');
-});
-
-// Service-specific keyboard shortcuts
-document.addEventListener('keydown', function(e) {
-    // Escape key to close modals
-    if (e.key === 'Escape') {
-        document.querySelectorAll('.modal.active').forEach(modal => {
-            closeModal(modal.id);
-        });
-    }
-    
-    // Ctrl/Cmd + I to add inventory item
-    if ((e.ctrlKey || e.metaKey) && e.key === 'i') {
-        e.preventDefault();
-        const activeTab = document.querySelector('.tab-content.active');
-        if (activeTab && activeTab.id === 'inventory-tab') {
-            openAddItemModal();
-        }
-    }
-    
-    // Ctrl/Cmd + V to add vehicle
-    if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
-        e.preventDefault();
-        const activeTab = document.querySelector('.tab-content.active');
-        if (activeTab && activeTab.id === 'vehicles-tab') {
-            openVehicleModal();
-        }
-    }
-    
-    // Ctrl/Cmd + M to add maintenance (service-specific)
-    if ((e.ctrlKey || e.metaKey) && e.key === 'm') {
-        e.preventDefault();
-        const activeTab = document.querySelector('.tab-content.active');
-        if (activeTab && activeTab.id === 'vehicles-tab') {
-            openMaintenanceModal();
-        }
-    }
-});
-
-// Service-specific tooltips and help text
-function initServiceTooltips() {
-    const serviceHelp = {
-        'health': {
-            'inventory': 'Manage medical supplies, medications, and blood collection materials for health services.',
-            'vehicles': 'Manage ambulances and medical transport vehicles for emergency response.'
-        },
-        'safety': {
-            'inventory': 'Manage safety equipment, PPE, and emergency response materials.',
-            'vehicles': 'Manage rescue vehicles and safety equipment transport.'
-        },
-        'welfare': {
-            'inventory': 'Manage relief goods, food supplies, and community assistance materials.',
-            'vehicles': 'Manage distribution vehicles for community welfare programs.'
-        },
-        'disaster': {
-            'inventory': 'Manage emergency equipment, rescue tools, and disaster response supplies.',
-            'vehicles': 'Manage emergency response vehicles and mobile command units.'
-        },
-        'youth': {
-            'inventory': 'Manage training materials, educational supplies, and youth program resources.',
-            'vehicles': 'Manage vehicles for youth activities and educational programs.'
-        }
-    };
-    
-    if (serviceHelp[currentService]) {
-        const inventorySection = document.querySelector('#inventory-tab .items-section h3');
-        const vehicleSection = document.querySelector('#vehicles-tab .vehicles-grid');
-        
-        if (inventorySection) {
-            inventorySection.title = serviceHelp[currentService].inventory;
-        }
-        
-        if (vehicleSection) {
-            vehicleSection.title = serviceHelp[currentService].vehicles;
-        }
-    }
-}
-
-// Initialize service-specific features
-window.addEventListener('load', function() {
-    initServiceTooltips();
-    
-    // Add CSS animations
-    const style = document.createElement('style');
-    style.textContent = `
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .service-modal {
-            animation: slideIn 0.3s ease-out;
-        }
-        
-        @keyframes slideIn {
-            from { transform: scale(0.9) translateY(-20px); opacity: 0; }
-            to { transform: scale(1) translateY(0); opacity: 1; }
-        }
-        
-        .service-${currentService} .btn-primary {
-            background: <?= $serviceColors[$admin_role] ?? '#007bff, #0056b3' ?>;
-        }
-        
-        .is-invalid {
-            animation: shake 0.5s ease-in-out;
-        }
-        
-        @keyframes shake {
-            0%, 100% { transform: translateX(0); }
-            25% { transform: translateX(-5px); }
-            75% { transform: translateX(5px); }
-        }
+function deleteCategory(categoryId, categoryType, categoryName) {
+  if (confirm('Are you sure you want to delete the category "' + categoryName + '"?')) {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.innerHTML = `
+      <input type="hidden" name="delete_category" value="1">
+      <input type="hidden" name="category_id" value="${categoryId}">
+      <input type="hidden" name="category_type" value="${categoryType}">
     `;
-    document.head.appendChild(style);
-});
-</script>
+    document.body.appendChild(form);
+    form.submit();
+  }
+}
+   function openTransactionModal(itemId = null, itemName = '') {
+    // Reset form first
+    const form = document.querySelector('form[method="POST"]:has(input[name="save_transaction"])');
+    if (form) form.reset();
+    
+    if (itemId) {
+        document.getElementById('transactionItem').value = itemId;
+        // Don't disable - just mark as readonly instead
+        document.getElementById('transactionItem').setAttribute('readonly', true);
+        document.getElementById('transactionItem').style.backgroundColor = '#f5f5f5';
+    } else {
+        document.getElementById('transactionItem').removeAttribute('readonly');
+        document.getElementById('transactionItem').style.backgroundColor = '';
+    }
+    
+    // Set today's date
+    document.getElementById('transactionDate').value = new Date().toISOString().split('T')[0];
+    
+    openModal('transactionModal');
+}
+    
+    function openMaintenanceModal(vehicleId = null, vehicleName = '') {
+    if (vehicleId) {
+        document.getElementById('maintenanceVehicle').value = vehicleId;
+        // Don't disable - just make it look disabled
+        document.getElementById('maintenanceVehicle').style.backgroundColor = '#f5f5f5';
+        document.getElementById('maintenanceVehicle').style.pointerEvents = 'none';
+    } else {
+        document.getElementById('maintenanceVehicle').style.backgroundColor = '';
+        document.getElementById('maintenanceVehicle').style.pointerEvents = '';
+    }
+    
+    // Set today's date
+    document.querySelector('input[name="maintenance_date"]').value = new Date().toISOString().split('T')[0];
+    
+    openModal('maintenanceModal');
+}
+    
+    // Initialize
+    document.addEventListener('DOMContentLoaded', function() {
+      // Set up modal close on outside click
+      document.addEventListener('click', function(e) {
+        if (e.target.classList.contains('modal')) {
+          closeModal(e.target.id);
+        }
+      });
+      
+      // Set up transaction type change handler
+      const transactionType = document.getElementById('transactionType');
+      const quantityLabel = document.querySelector('label[for="transactionQuantity"]');
+      
+      if (transactionType && quantityLabel) {
+        transactionType.addEventListener('change', function() {
+          const type = this.value;
+          if (type === 'adjustment') {
+            quantityLabel.textContent = 'New Stock Level *';
+          } else {
+            quantityLabel.textContent = 'Quantity *';
+          }
+        });
+      }
+      
+      // Auto-dismiss alerts
+      setTimeout(() => {
+        document.querySelectorAll('.alert').forEach(alert => {
+          alert.style.transition = 'opacity 0.3s';
+          alert.style.opacity = '0';
+          setTimeout(() => alert.remove(), 300);
+        });
+      }, 5000);
+    });
+  </script>
 </body>
 </html>
