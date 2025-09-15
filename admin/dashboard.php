@@ -563,40 +563,54 @@ $role_display = $role_info['name'];
   <link rel="stylesheet" href="../assets/sidebar_admin.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/header.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/admin.css?v=<?php echo time(); ?>">
-  <link rel="stylesheet" href="../assets/calendar-enhanced.css?v=<?php echo time(); ?>">
 </head>
 <body class="admin-<?= htmlspecialchars($user_role) ?>">
   <?php include 'sidebar.php'; ?>
+  
   <div class="header-content">
     <div class="dashboard-container">
-      <!-- Welcome Section -->
-      <div class="welcome-section">
-        <div class="welcome-content">
-          <h1>
-            Welcome back, <?= htmlspecialchars($username) ?>!
-            <span class="user-type-badge admin-<?= htmlspecialchars($user_role) ?>">
-              <i class="fas fa-user-shield"></i>
-              <?= htmlspecialchars(strtoupper($user_role)) ?> ADMIN
-            </span>
-          </h1>
-          <p>Philippine Red Cross Administration Portal - Streamlined operations management for efficient service delivery.</p>
-        </div>
-        <div class="date-display">
-          <div class="current-date">
-            <i class="fas fa-calendar-day"></i>
-            <?php echo date('F d, Y'); ?>
+      
+      <!-- Hero Welcome Section -->
+      <section class="dashboard-hero">
+        <div class="hero-background">
+          <div class="hero-overlay"></div>
+          <div class="hero-particles">
+            <div class="particle"></div>
+            <div class="particle"></div>
+            <div class="particle"></div>
+            <div class="particle"></div>
+            <div class="particle"></div>
           </div>
+        </div>
+        <div class="hero-content">
+          <div class="hero-badge">
+            <i class="fas fa-user-shield"></i>
+            <span><?= htmlspecialchars(strtoupper($user_role)) ?> ADMIN</span>
+          </div>
+          <h1 class="hero-title">
+            Welcome back, 
+            <span class="title-highlight"><?= htmlspecialchars($username) ?></span>
+          </h1>
+          <p class="hero-subtitle">
+            Philippine Red Cross Administration Portal - Streamlined operations management for efficient service delivery.
+          </p>
+
           <div class="live-indicator">
             <i class="fas fa-circle" id="liveIndicator"></i>
-            <span>Live Dashboard</span>
+            <span>Live Dashboard - <?php echo date('F d, Y'); ?></span>
           </div>
         </div>
-      </div>
- <!-- Priority Notifications Section - Now Scrollable -->
+      </section>
+
+      <!-- Priority Notifications Section -->
       <?php if (!empty($adminNotifications)): ?>
-      <div class="notifications-priority-section">
-        <div class="notifications-header">
-          <h2><i class="fas fa-bell"></i> System Notifications</h2>
+      <section class="notifications-section">
+        <div class="section-header">
+          <div class="header-badge">
+            <i class="fas fa-bell"></i>
+            <span>System Alerts</span>
+          </div>
+          <h2>Priority Notifications</h2>
           <div class="notification-summary">
             <?php 
             $criticalCount = count(array_filter($adminNotifications, function($n) { return $n['priority'] === 'critical'; }));
@@ -604,27 +618,29 @@ $role_display = $role_info['name'];
             $mediumCount = count(array_filter($adminNotifications, function($n) { return $n['priority'] === 'medium'; }));
             $lowCount = count(array_filter($adminNotifications, function($n) { return $n['priority'] === 'low'; }));
             ?>
-            <?php if ($criticalCount > 0): ?>
-              <span class="priority-badge critical"><?= $criticalCount ?> Critical</span>
-            <?php endif; ?>
-            <?php if ($highCount > 0): ?>
-              <span class="priority-badge high"><?= $highCount ?> High</span>
-            <?php endif; ?>
-            <?php if ($mediumCount > 0): ?>
-              <span class="priority-badge medium"><?= $mediumCount ?> Medium</span>
-            <?php endif; ?>
-            <?php if ($lowCount > 0): ?>
-              <span class="priority-badge low"><?= $lowCount ?> Low</span>
-            <?php endif; ?>
-            <span class="notification-count"><?= count($adminNotifications) ?> total</span>
+            <div class="summary-badges">
+              <?php if ($criticalCount > 0): ?>
+                <span class="priority-badge critical"><?= $criticalCount ?> Critical</span>
+              <?php endif; ?>
+              <?php if ($highCount > 0): ?>
+                <span class="priority-badge high"><?= $highCount ?> High</span>
+              <?php endif; ?>
+              <?php if ($mediumCount > 0): ?>
+                <span class="priority-badge medium"><?= $mediumCount ?> Medium</span>
+              <?php endif; ?>
+              <?php if ($lowCount > 0): ?>
+                <span class="priority-badge low"><?= $lowCount ?> Low</span>
+              <?php endif; ?>
+              <span class="total-count"><?= count($adminNotifications) ?> total notifications</span>
+            </div>
           </div>
         </div>
         
-        <div class="notifications-scroll-container">
-          <div class="notifications-grid">
-            <?php foreach ($adminNotifications as $notification): ?>
-              <div class="notification-card priority-<?= $notification['priority'] ?> <?= $notification['type'] ?>">
-                <div class="notification-priority-indicator">
+        <div class="notifications-grid">
+          <?php foreach ($adminNotifications as $notification): ?>
+            <div class="notification-card priority-<?= $notification['priority'] ?> <?= $notification['type'] ?>">
+              <div class="notification-priority">
+                <div class="priority-indicator priority-<?= $notification['priority'] ?>">
                   <?php if ($notification['priority'] === 'critical'): ?>
                     <i class="fas fa-exclamation-triangle"></i>
                   <?php elseif ($notification['priority'] === 'high'): ?>
@@ -635,516 +651,531 @@ $role_display = $role_info['name'];
                     <i class="fas fa-check-circle"></i>
                   <?php endif; ?>
                 </div>
-                
-                <div class="notification-icon">
-                  <i class="fas fa-<?= $notification['icon'] ?>"></i>
-                </div>
-                
-                <div class="notification-content">
-                  <h3><?= htmlspecialchars($notification['title']) ?></h3>
-                  <p><?= $notification['message'] ?></p>
-                  
-                  <?php if (isset($notification['action'])): ?>
-                    <div class="notification-action">
-                      <a href="<?= htmlspecialchars($notification['action']['link']) ?>" class="action-button">
-                        <i class="fas fa-arrow-right"></i>
-                        <?= htmlspecialchars($notification['action']['text']) ?>
-                      </a>
-                    </div>
-                  <?php endif; ?>
-                </div>
-                
-                <div class="notification-timestamp">
-                  <?= date('g:i A', $notification['timestamp']) ?>
-                </div>
               </div>
-            <?php endforeach; ?>
-          </div>
+              
+              <div class="notification-icon">
+                <i class="fas fa-<?= $notification['icon'] ?>"></i>
+              </div>
+              
+              <div class="notification-content">
+                <h3><?= htmlspecialchars($notification['title']) ?></h3>
+                <p><?= $notification['message'] ?></p>
+                
+                <?php if (isset($notification['action'])): ?>
+                  <div class="notification-action">
+                    <a href="<?= htmlspecialchars($notification['action']['link']) ?>" class="action-btn">
+                      <span><?= htmlspecialchars($notification['action']['text']) ?></span>
+                      <i class="fas fa-arrow-right"></i>
+                    </a>
+                  </div>
+                <?php endif; ?>
+              </div>
+              
+              <div class="notification-timestamp">
+                <?= date('g:i A', $notification['timestamp']) ?>
+              </div>
+            </div>
+          <?php endforeach; ?>
         </div>
         
-        <!-- Add a filter/toggle for notification priorities -->
-        <div class="notification-filters">
+        <div class="notification-controls">
           <div class="filter-toggles">
             <button class="filter-btn active" data-priority="all">
-              <i class="fas fa-list"></i> All (<?= count($adminNotifications) ?>)
+              <i class="fas fa-list"></i> All
             </button>
             <?php if ($criticalCount > 0): ?>
               <button class="filter-btn" data-priority="critical">
-                <i class="fas fa-exclamation-triangle"></i> Critical (<?= $criticalCount ?>)
+                <i class="fas fa-exclamation-triangle"></i> Critical
               </button>
             <?php endif; ?>
             <?php if ($highCount > 0): ?>
               <button class="filter-btn" data-priority="high">
-                <i class="fas fa-exclamation-circle"></i> High (<?= $highCount ?>)
-              </button>
-            <?php endif; ?>
-            <?php if ($mediumCount > 0): ?>
-              <button class="filter-btn" data-priority="medium">
-                <i class="fas fa-info-circle"></i> Medium (<?= $mediumCount ?>)
-              </button>
-            <?php endif; ?>
-            <?php if ($lowCount > 0): ?>
-              <button class="filter-btn" data-priority="low">
-                <i class="fas fa-check-circle"></i> Low (<?= $lowCount ?>)
+                <i class="fas fa-exclamation-circle"></i> High
               </button>
             <?php endif; ?>
           </div>
           
-          <div class="filter-actions">
-            <button class="action-btn secondary" onclick="refreshNotifications()">
+          <div class="control-actions">
+            <button class="control-btn" onclick="refreshNotifications()">
               <i class="fas fa-sync-alt"></i> Refresh
             </button>
-            <button class="action-btn secondary" onclick="markAllNotificationsRead()">
+            <button class="control-btn" onclick="markAllNotificationsRead()">
               <i class="fas fa-check-double"></i> Mark All Read
             </button>
           </div>
         </div>
-      </div>
+      </section>
       <?php else: ?>
-      <!-- No Notifications State -->
-      <div class="notifications-priority-section">
-        <div class="notifications-header">
-          <h2><i class="fas fa-bell"></i> System Notifications</h2>
-          <div class="notification-summary">
-            <span class="notification-count success">All Clear</span>
-          </div>
-        </div>
-        
-        <div class="notifications-empty">
-          <div class="empty-state">
+      <section class="notifications-section empty">
+        <div class="empty-state">
+          <div class="empty-icon">
             <i class="fas fa-bell-slash"></i>
-            <h3>No Active Notifications</h3>
-            <p>All systems are running smoothly. No immediate attention required.</p>
-            <div class="empty-actions">
-              <button class="action-btn primary" onclick="refreshNotifications()">
-                <i class="fas fa-sync-alt"></i> Check for Updates
-              </button>
-            </div>
+          </div>
+          <h3>All Clear</h3>
+          <p>No active notifications. All systems are running smoothly.</p>
+          <div class="empty-actions">
+            <button class="control-btn primary" onclick="refreshNotifications()">
+              <i class="fas fa-sync-alt"></i> Check for Updates
+            </button>
           </div>
         </div>
-      </div>
+      </section>
       <?php endif; ?>
 
-      <!-- Main Dashboard Content -->
+      <!-- Main Content Grid -->
       <div class="dashboard-main">
-        <!-- Recent Activity Section -->
-        <div class="recent-activity-section">
+        
+        <!-- Activity Feed -->
+        <section class="activity-section">
           <div class="section-header">
-            <h2><i class="fas fa-activity"></i> Recent Activity</h2>
+            <div class="header-badge">
+              <i class="fas fa-activity"></i>
+              <span>Recent Activity</span>
+            </div>
+            <h2>System Activity Feed</h2>
             <div class="activity-controls">
-              <button class="refresh-btn" onclick="refreshActivity()">
+              <button class="control-btn" onclick="refreshActivity()">
                 <i class="fas fa-sync-alt"></i>
               </button>
-              <button class="calendar-btn" onclick="openCalendar()">
+              <button class="control-btn" onclick="openCalendar()">
                 <i class="fas fa-calendar"></i>
               </button>
-              <div class="auto-refresh-indicator">
+              <div class="auto-refresh-status">
                 <i class="fas fa-circle" id="activityIndicator"></i>
                 <span>Auto-refresh: ON</span>
               </div>
             </div>
           </div>
           
-          <div class="activity-scroll-container">
-            <!-- Enhanced Activity Cards -->
+          <div class="activity-feed">
+            
             <!-- Events Activity -->
             <?php if (!empty($activity['events'])): ?>
             <div class="activity-card featured">
-              <div class="activity-header">
-                <h3><i class="fas fa-calendar"></i> Recent Events</h3>
-                <a href="manage_events.php" class="view-all">Manage All</a>
-              </div>
-              <div class="activity-body">
-                <div class="activity-list">
-                  <?php foreach ($activity['events'] as $event): ?>
-                    <div class="activity-item enhanced" data-status="<?= $event['status'] ?>">
-                      <div class="activity-icon event-icon">
-                        <i class="fas fa-calendar"></i>
-                      </div>
-                      <div class="activity-details">
-                        <div class="activity-main"><?= htmlspecialchars($event['title']) ?></div>
-                        <div class="activity-meta">
-                          <span class="service-tag"><?= htmlspecialchars($event['major_service']) ?></span>
-                          <span class="location"><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars(substr($event['location'], 0, 30)) ?>...</span>
-                          <span class="registrations"><i class="fas fa-users"></i> <?= $event['registration_count'] ?> registered</span>
-                        </div>
-                        <div class="activity-time"><?= date('M d, Y', strtotime($event['event_date'])) ?></div>
-                      </div>
-                      <div class="activity-status status-<?= $event['status'] ?>">
-                        <?= ucfirst($event['status']) ?>
-                      </div>
-                      <div class="activity-action">
-                        <i class="fas fa-chevron-right"></i>
-                      </div>
-                    </div>
-                  <?php endforeach; ?>
+              <div class="card-header">
+                <div class="card-icon events">
+                  <i class="fas fa-calendar"></i>
                 </div>
+                <div class="card-title">
+                  <h3>Recent Events</h3>
+                  <span class="card-count"><?= count($activity['events']) ?> items</span>
+                </div>
+                <a href="manage_events.php" class="card-action">
+                  <span>Manage All</span>
+                  <i class="fas fa-arrow-right"></i>
+                </a>
+              </div>
+              <div class="card-content">
+                <?php foreach ($activity['events'] as $event): ?>
+                  <div class="activity-item" data-status="<?= $event['status'] ?>">
+                    <div class="item-status status-<?= $event['status'] ?>"></div>
+                    <div class="item-content">
+                      <h4><?= htmlspecialchars($event['title']) ?></h4>
+                      <div class="item-meta">
+                        <span class="service-tag"><?= htmlspecialchars($event['major_service']) ?></span>
+                        <span class="location"><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars(substr($event['location'], 0, 30)) ?>...</span>
+                        <span class="registrations"><i class="fas fa-users"></i> <?= $event['registration_count'] ?> registered</span>
+                      </div>
+                      <div class="item-date"><?= date('M d, Y', strtotime($event['event_date'])) ?></div>
+                    </div>
+                    <div class="item-badge badge-<?= $event['status'] ?>">
+                      <?= ucfirst($event['status']) ?>
+                    </div>
+                  </div>
+                <?php endforeach; ?>
               </div>
             </div>
             <?php endif; ?>
 
-            <!-- Training Requests Activity -->
+            <!-- Training Requests -->
             <?php if (!empty($activity['training_requests'])): ?>
-            <div class="activity-card featured">
-              <div class="activity-header">
-                <h3><i class="fas fa-clipboard-list"></i> Training Requests</h3>
-                <a href="manage_training_requests.php" class="view-all">Manage All</a>
-              </div>
-              <div class="activity-body">
-                <div class="activity-list">
-                  <?php foreach ($activity['training_requests'] as $request): ?>
-                    <div class="activity-item enhanced" data-status="<?= $request['status'] ?>">
-                      <div class="activity-icon training-icon">
-                        <i class="fas fa-clipboard-list"></i>
-                      </div>
-                      <div class="activity-details">
-                        <div class="activity-main"><?= htmlspecialchars($request['training_program']) ?></div>
-                        <div class="activity-meta">
-                          <span class="service-tag"><?= htmlspecialchars($request['service_type']) ?></span>
-                          <span class="organization"><i class="fas fa-building"></i> <?= htmlspecialchars($request['organization_name'] ?: 'Individual') ?></span>
-                          <span class="participants"><i class="fas fa-users"></i> <?= $request['participant_count'] ?> participants</span>
-                        </div>
-                        <div class="activity-time"><?= date('M d, Y g:i A', strtotime($request['created_at'])) ?></div>
-                      </div>
-                      <div class="activity-status status-<?= $request['status'] ?>">
-                        <?= ucfirst(str_replace('_', ' ', $request['status'])) ?>
-                      </div>
-                      <div class="activity-action">
-                        <i class="fas fa-chevron-right"></i>
-                      </div>
-                    </div>
-                  <?php endforeach; ?>
-                </div>
-              </div>
-            </div>
-            <?php endif; ?>
-
-            <!-- Training Sessions Activity -->
-            <?php if (!empty($activity['sessions'])): ?>
-            <div class="activity-card featured">
-              <div class="activity-header">
-                <h3><i class="fas fa-graduation-cap"></i> Training Sessions</h3>
-                <a href="manage_sessions.php" class="view-all">Manage All</a>
-              </div>
-              <div class="activity-body">
-                <div class="activity-list">
-                  <?php foreach ($activity['sessions'] as $session): ?>
-                    <div class="activity-item enhanced" data-status="<?= $session['status'] ?>">
-                      <div class="activity-icon training-icon">
-                        <i class="fas fa-graduation-cap"></i>
-                      </div>
-                      <div class="activity-details">
-                        <div class="activity-main"><?= htmlspecialchars($session['title']) ?></div>
-                        <div class="activity-meta">
-                          <span class="service-tag"><?= htmlspecialchars($session['major_service']) ?></span>
-                          <span class="venue"><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars(substr($session['venue'], 0, 30)) ?>...</span>
-                          <span class="participants"><i class="fas fa-users"></i> <?= $session['participant_count'] ?> participants</span>
-                        </div>
-                        <div class="activity-time"><?= date('M d, Y g:i A', strtotime($session['session_date'] . ' ' . $session['start_time'])) ?></div>
-                      </div>
-                      <div class="activity-status status-<?= $session['status'] ?>">
-                        <?= ucfirst($session['status']) ?>
-                      </div>
-                      <div class="activity-action">
-                        <i class="fas fa-chevron-right"></i>
-                      </div>
-                    </div>
-                  <?php endforeach; ?>
-                </div>
-              </div>
-            </div>
-            <?php endif; ?>
-
-            <!-- Volunteer Activities -->
-            <?php if (!empty($activity['volunteers'])): ?>
             <div class="activity-card">
-              <div class="activity-header">
-                <h3><i class="fas fa-hands-helping"></i> Recent Volunteers</h3>
-                <a href="manage_volunteers.php" class="view-all">Manage All</a>
-              </div>
-              <div class="activity-body">
-                <div class="activity-list">
-                  <?php foreach ($activity['volunteers'] as $volunteer): ?>
-                    <div class="activity-item" data-type="volunteer">
-                      <div class="activity-icon user-icon">
-                        <i class="fas fa-hands-helping"></i>
-                      </div>
-                      <div class="activity-details">
-                        <div class="activity-main"><?= htmlspecialchars($volunteer['full_name']) ?></div>
-                        <div class="activity-meta">
-                          <span class="service-tag"><?= htmlspecialchars($volunteer['service']) ?></span>
-                          <span class="location"><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($volunteer['location']) ?></span>
-                          <span class="status"><i class="fas fa-user-check"></i> <?= ucfirst($volunteer['status']) ?></span>
-                        </div>
-                        <div class="activity-time"><?= date('M d, Y', strtotime($volunteer['created_at'])) ?></div>
-                      </div>
-                    </div>
-                  <?php endforeach; ?>
+              <div class="card-header">
+                <div class="card-icon training">
+                  <i class="fas fa-clipboard-list"></i>
                 </div>
+                <div class="card-title">
+                  <h3>Training Requests</h3>
+                  <span class="card-count"><?= count($activity['training_requests']) ?> items</span>
+                </div>
+                <a href="manage_training_requests.php" class="card-action">
+                  <span>Manage All</span>
+                  <i class="fas fa-arrow-right"></i>
+                </a>
+              </div>
+              <div class="card-content">
+                <?php foreach ($activity['training_requests'] as $request): ?>
+                  <div class="activity-item" data-status="<?= $request['status'] ?>">
+                    <div class="item-status status-<?= $request['status'] ?>"></div>
+                    <div class="item-content">
+                      <h4><?= htmlspecialchars($request['training_program']) ?></h4>
+                      <div class="item-meta">
+                        <span class="service-tag"><?= htmlspecialchars($request['service_type']) ?></span>
+                        <span class="organization"><i class="fas fa-building"></i> <?= htmlspecialchars($request['organization_name'] ?: 'Individual') ?></span>
+                        <span class="participants"><i class="fas fa-users"></i> <?= $request['participant_count'] ?> participants</span>
+                      </div>
+                      <div class="item-date"><?= date('M d, Y g:i A', strtotime($request['created_at'])) ?></div>
+                    </div>
+                    <div class="item-badge badge-<?= $request['status'] ?>">
+                      <?= ucfirst(str_replace('_', ' ', $request['status'])) ?>
+                    </div>
+                  </div>
+                <?php endforeach; ?>
               </div>
             </div>
             <?php endif; ?>
 
-            <!-- Donations Activity -->
-            <?php if (!empty($activity['donations']) || !empty($activity['blood_donations'])): ?>
-            <div class="activity-card">
-              <div class="activity-header">
-                <h3><i class="fas fa-hand-holding-heart"></i> Recent Donations</h3>
-                <a href="manage_donations.php" class="view-all">View All</a>
-              </div>
-              <div class="activity-body">
-                <div class="activity-list">
-                  <?php foreach ($activity['donations'] as $donation): ?>
-                    <div class="activity-item" data-type="monetary">
-                      <div class="activity-icon donation-icon">
-                        <i class="fas fa-donate"></i>
-                      </div>
-                      <div class="activity-details">
-                        <div class="activity-main">₱<?= number_format($donation['amount'], 2) ?> from <?= htmlspecialchars($donation['donor_name']) ?></div>
-                        <div class="activity-meta">
-                          <span class="payment-method"><i class="fas fa-credit-card"></i> <?= ucfirst($donation['payment_method']) ?></span>
-                          <span class="status-badge status-<?= $donation['status'] ?>"><?= ucfirst($donation['status']) ?></span>
-                        </div>
-                        <div class="activity-time"><?= date('M d, Y', strtotime($donation['donation_date'])) ?></div>
-                      </div>
-                    </div>
-                  <?php endforeach; ?>
-                  
-                  <?php foreach ($activity['blood_donations'] as $blood): ?>
-                    <div class="activity-item" data-type="blood">
-                      <div class="activity-icon blood-icon">
-                        <i class="fas fa-tint"></i>
-                      </div>
-                      <div class="activity-details">
-                        <div class="activity-main">Blood donation from <?= htmlspecialchars($blood['donor_name']) ?></div>
-                        <div class="activity-meta">
-                          <span class="blood-type"><i class="fas fa-tint"></i> <?= $blood['blood_type'] ?></span>
-                          <span class="status-badge status-<?= $blood['status'] ?>"><?= ucfirst($blood['status']) ?></span>
-                        </div>
-                        <div class="activity-time"><?= date('M d, Y', strtotime($blood['donation_date'])) ?></div>
-                      </div>
-                    </div>
-                  <?php endforeach; ?>
-                </div>
-              </div>
-            </div>
-            <?php endif; ?>
-
-            <!-- Critical Inventory -->
+            <!-- Inventory Alerts -->
             <?php if (!empty($activity['inventory'])): ?>
-            <div class="activity-card warning">
-              <div class="activity-header">
-                <h3><i class="fas fa-exclamation-triangle"></i> Inventory Alerts</h3>
-                <a href="manage_inventory.php" class="view-all">Manage Stock</a>
+            <div class="activity-card alert">
+              <div class="card-header">
+                <div class="card-icon inventory">
+                  <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <div class="card-title">
+                  <h3>Inventory Alerts</h3>
+                  <span class="card-count"><?= count($activity['inventory']) ?> items</span>
+                </div>
+                <a href="manage_inventory.php" class="card-action">
+                  <span>Manage Stock</span>
+                  <i class="fas fa-arrow-right"></i>
+                </a>
               </div>
-              <div class="activity-body">
-                <div class="activity-list">
-                  <?php foreach ($activity['inventory'] as $item): ?>
-                    <div class="activity-item inventory-alert" data-status="<?= $item['stock_status'] ?>">
-                      <div class="activity-icon inventory-icon stock-<?= $item['stock_status'] ?>">
-                        <i class="fas fa-<?= $item['stock_status'] === 'out_of_stock' ? 'times' : ($item['stock_status'] === 'critical' ? 'exclamation' : 'box') ?>"></i>
-                      </div>
-                      <div class="activity-details">
-                        <div class="activity-main"><?= htmlspecialchars($item['item_name']) ?></div>
-                        <div class="activity-meta">
-                          <span class="quantity quantity-<?= $item['stock_status'] ?>">
-                            <i class="fas fa-cubes"></i> <?= $item['current_stock'] ?> remaining
-                          </span>
-                          <span class="location"><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($item['location'] ?? 'N/A') ?></span>
-                          <span class="minimum-stock"><i class="fas fa-level-down-alt"></i> Min: <?= $item['minimum_stock'] ?></span>
-                        </div>
-                      </div>
-                      <div class="stock-status status-<?= $item['stock_status'] ?>">
-                        <?= ucfirst(str_replace('_', ' ', $item['stock_status'])) ?>
+              <div class="card-content">
+                <?php foreach ($activity['inventory'] as $item): ?>
+                  <div class="activity-item inventory-alert" data-status="<?= $item['stock_status'] ?>">
+                    <div class="item-status status-<?= $item['stock_status'] ?>"></div>
+                    <div class="item-content">
+                      <h4><?= htmlspecialchars($item['item_name']) ?></h4>
+                      <div class="item-meta">
+                        <span class="quantity stock-<?= $item['stock_status'] ?>">
+                          <i class="fas fa-cubes"></i> <?= $item['current_stock'] ?> remaining
+                        </span>
+                        <span class="location"><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($item['location'] ?? 'N/A') ?></span>
+                        <span class="minimum"><i class="fas fa-level-down-alt"></i> Min: <?= $item['minimum_stock'] ?></span>
                       </div>
                     </div>
-                  <?php endforeach; ?>
-                </div>
+                    <div class="item-badge badge-<?= $item['stock_status'] ?>">
+                      <?= ucfirst(str_replace('_', ' ', $item['stock_status'])) ?>
+                    </div>
+                  </div>
+                <?php endforeach; ?>
               </div>
             </div>
             <?php endif; ?>
 
-            <!-- Recent Users -->
-            <?php if (!empty($activity['users'])): ?>
-            <div class="activity-card">
-              <div class="activity-header">
-                <h3><i class="fas fa-users"></i> New Users</h3>
-                <a href="manage_users.php" class="view-all">View All</a>
-              </div>
-              <div class="activity-body">
-                <div class="activity-list">
-                  <?php foreach ($activity['users'] as $user): ?>
-                    <div class="activity-item">
-                      <div class="activity-icon user-icon">
-                        <i class="fas fa-user"></i>
-                      </div>
-                      <div class="activity-details">
-                        <div class="activity-main"><?= htmlspecialchars($user['full_name'] ?: $user['username']) ?></div>
-                        <div class="activity-meta">
-                          <span class="email"><i class="fas fa-envelope"></i> <?= htmlspecialchars($user['email']) ?></span>
+            <!-- Additional activity cards for other types -->
+            <?php if (!empty($activity['users']) || !empty($activity['donations']) || !empty($activity['volunteers'])): ?>
+            <div class="activity-grid">
+              
+              <!-- Users -->
+              <?php if (!empty($activity['users'])): ?>
+              <div class="activity-card compact">
+                <div class="card-header">
+                  <div class="card-icon users">
+                    <i class="fas fa-users"></i>
+                  </div>
+                  <div class="card-title">
+                    <h3>New Users</h3>
+                    <span class="card-count"><?= count($activity['users']) ?> items</span>
+                  </div>
+                </div>
+                <div class="card-content">
+                  <?php foreach (array_slice($activity['users'], 0, 3) as $user): ?>
+                    <div class="activity-item compact">
+                      <div class="item-content">
+                        <h4><?= htmlspecialchars($user['full_name'] ?: $user['username']) ?></h4>
+                        <div class="item-meta">
                           <span class="registrations"><i class="fas fa-calendar-check"></i> <?= $user['total_registrations'] ?> registrations</span>
                         </div>
-                        <div class="activity-time"><?= date('M d, Y', strtotime($user['created_at'])) ?></div>
+                        <div class="item-date"><?= date('M d, Y', strtotime($user['created_at'])) ?></div>
                       </div>
                     </div>
                   <?php endforeach; ?>
                 </div>
               </div>
-            </div>
-            <?php endif; ?>
+              <?php endif; ?>
 
-            <!-- Recent Announcements -->
-            <?php if (!empty($activity['announcements'])): ?>
-            <div class="activity-card">
-              <div class="activity-header">
-                <h3><i class="fas fa-bullhorn"></i> Recent Announcements</h3>
-                <a href="manage_announcements.php" class="view-all">Manage All</a>
-              </div>
-              <div class="activity-body">
-                <div class="activity-list">
-                  <?php foreach ($activity['announcements'] as $announcement): ?>
-                    <div class="activity-item">
-                      <div class="activity-icon announcement-icon">
-                        <i class="fas fa-bullhorn"></i>
-                      </div>
-                      <div class="activity-details">
-                        <div class="activity-main"><?= htmlspecialchars($announcement['title']) ?></div>
-                        <div class="activity-content">
-                          <?= htmlspecialchars(substr($announcement['content'], 0, 100)) ?><?= strlen($announcement['content']) > 100 ? '...' : '' ?>
+              <!-- Donations -->
+              <?php if (!empty($activity['donations'])): ?>
+              <div class="activity-card compact">
+                <div class="card-header">
+                  <div class="card-icon donations">
+                    <i class="fas fa-hand-holding-heart"></i>
+                  </div>
+                  <div class="card-title">
+                    <h3>Recent Donations</h3>
+                    <span class="card-count"><?= count($activity['donations']) ?> items</span>
+                  </div>
+                </div>
+                <div class="card-content">
+                  <?php foreach (array_slice($activity['donations'], 0, 3) as $donation): ?>
+                    <div class="activity-item compact">
+                      <div class="item-content">
+                        <h4>₱<?= number_format($donation['amount'], 2) ?></h4>
+                        <div class="item-meta">
+                          <span class="donor"><?= htmlspecialchars($donation['donor_name']) ?></span>
+                          <span class="status-badge status-<?= $donation['status'] ?>"><?= ucfirst($donation['status']) ?></span>
                         </div>
-                        <div class="activity-meta">
-                          <span class="age">
-                            <i class="fas fa-clock"></i> 
-                            <?php if ($announcement['days_ago'] == 0): ?>
-                              Today
-                            <?php elseif ($announcement['days_ago'] == 1): ?>
-                              Yesterday
-                            <?php else: ?>
-                              <?= $announcement['days_ago'] ?> days ago
-                            <?php endif; ?>
-                          </span>
-                        </div>
+                        <div class="item-date"><?= date('M d, Y', strtotime($donation['donation_date'])) ?></div>
                       </div>
                     </div>
                   <?php endforeach; ?>
                 </div>
               </div>
+              <?php endif; ?>
+
+              <!-- Volunteers -->
+              <?php if (!empty($activity['volunteers'])): ?>
+              <div class="activity-card compact">
+                <div class="card-header">
+                  <div class="card-icon volunteers">
+                    <i class="fas fa-hands-helping"></i>
+                  </div>
+                  <div class="card-title">
+                    <h3>New Volunteers</h3>
+                    <span class="card-count"><?= count($activity['volunteers']) ?> items</span>
+                  </div>
+                </div>
+                <div class="card-content">
+                  <?php foreach (array_slice($activity['volunteers'], 0, 3) as $volunteer): ?>
+                    <div class="activity-item compact">
+                      <div class="item-content">
+                        <h4><?= htmlspecialchars($volunteer['full_name']) ?></h4>
+                        <div class="item-meta">
+                          <span class="service-tag"><?= htmlspecialchars($volunteer['service']) ?></span>
+                          <span class="location"><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($volunteer['location']) ?></span>
+                        </div>
+                        <div class="item-date"><?= date('M d, Y', strtotime($volunteer['created_at'])) ?></div>
+                      </div>
+                    </div>
+                  <?php endforeach; ?>
+                </div>
+              </div>
+              <?php endif; ?>
+
             </div>
             <?php endif; ?>
 
-            <!-- No Activity Message -->
+            <!-- No Activity State -->
             <?php if (empty($activity['events']) && empty($activity['sessions']) && empty($activity['training_requests']) && 
-                       empty($activity['users']) && empty($activity['donations']) && empty($activity['blood_donations']) && 
-                       empty($activity['volunteers']) && empty($activity['inventory']) && empty($activity['announcements'])): ?>
-            <div class="activity-card">
-              <div class="activity-body">
-                <div class="no-data">
+                       empty($activity['users']) && empty($activity['donations']) && empty($activity['volunteers']) && 
+                       empty($activity['inventory'])): ?>
+            <div class="empty-state">
+              <div class="empty-icon">
+                <i class="fas fa-calendar-alt"></i>
+              </div>
+              <h3>No Recent Activity</h3>
+              <p>System is ready for new operations</p>
+            </div>
+            <?php endif; ?>
+
+          </div>
+        </section>
+
+        <!-- Management Hub -->
+        <section class="management-section">
+          <div class="section-header">
+            <div class="header-badge">
+              <i class="fas fa-cogs"></i>
+              <span>Quick Actions</span>
+            </div>
+            <h2>Management Hub</h2>
+          </div>
+
+          <div class="management-grid">
+            
+            <!-- Primary Actions -->
+            <div class="action-group">
+              <h3>
+                <i class="fas fa-star"></i>
+                Primary Operations
+              </h3>
+              <div class="action-cards">
+                <a href="manage_events.php" class="action-card primary">
+                  <div class="action-icon">
+                    <i class="fas fa-calendar-plus"></i>
+                  </div>
+                  <div class="action-content">
+                    <h4>Manage Events</h4>
+                    <p>Create and oversee community events</p>
+                  </div>
+                  <div class="action-arrow">
+                    <i class="fas fa-arrow-right"></i>
+                  </div>
+                </a>
+
+                <a href="manage_sessions.php" class="action-card primary">
+                  <div class="action-icon">
+                    <i class="fas fa-graduation-cap"></i>
+                  </div>
+                  <div class="action-content">
+                    <h4>Training Sessions</h4>
+                    <p>Manage educational programs</p>
+                  </div>
+                  <div class="action-arrow">
+                    <i class="fas fa-arrow-right"></i>
+                  </div>
+                </a>
+
+                <a href="manage_users.php" class="action-card primary">
+                  <div class="action-icon">
+                    <i class="fas fa-users-cog"></i>
+                  </div>
+                  <div class="action-content">
+                    <h4>User Management</h4>
+                    <p>Oversee user accounts and permissions</p>
+                  </div>
+                  <div class="action-arrow">
+                    <i class="fas fa-arrow-right"></i>
+                  </div>
+                </a>
+              </div>
+            </div>
+
+            <!-- Secondary Actions -->
+            <div class="action-group">
+              <h3>
+                <i class="fas fa-tools"></i>
+                System Tools
+              </h3>
+              <div class="action-cards">
+                <a href="manage_donations.php" class="action-card">
+                  <div class="action-icon">
+                    <i class="fas fa-donate"></i>
+                  </div>
+                  <div class="action-content">
+                    <h4>Donations</h4>
+                    <p>Track and manage contributions</p>
+                  </div>
+                  <div class="action-arrow">
+                    <i class="fas fa-arrow-right"></i>
+                  </div>
+                </a>
+
+                <a href="manage_inventory.php" class="action-card">
+                  <div class="action-icon">
+                    <i class="fas fa-boxes"></i>
+                  </div>
+                  <div class="action-content">
+                    <h4>Inventory</h4>
+                    <p>Monitor stock and supplies</p>
+                  </div>
+                  <div class="action-arrow">
+                    <i class="fas fa-arrow-right"></i>
+                  </div>
+                </a>
+
+                <a href="manage_volunteers.php" class="action-card">
+                  <div class="action-icon">
+                    <i class="fas fa-hands-helping"></i>
+                  </div>
+                  <div class="action-content">
+                    <h4>Volunteers</h4>
+                    <p>Coordinate volunteer activities</p>
+                  </div>
+                  <div class="action-arrow">
+                    <i class="fas fa-arrow-right"></i>
+                  </div>
+                </a>
+              </div>
+            </div>
+
+            <!-- Calendar Widget -->
+            <div class="calendar-widget">
+              <div class="widget-header">
+                <h3>
                   <i class="fas fa-calendar-alt"></i>
-                  <h3>No Recent Activity</h3>
-                  <p>System is ready for new operations</p>
+                  Event Calendar
+                </h3>
+                <button class="expand-btn" onclick="openCalendar()">
+                  <i class="fas fa-expand"></i>
+                </button>
+              </div>
+              
+              <div class="mini-calendar">
+                <div class="calendar-header">
+                  <button class="nav-btn" onclick="previousMonth()">&lt;</button>
+                  <span class="month-year"><?= date('F Y') ?></span>
+                  <button class="nav-btn" onclick="nextMonth()">&gt;</button>
+                </div>
+                
+                <div class="calendar-grid" id="miniCalendarGrid">
+                  <div class="day-header">Sun</div>
+                  <div class="day-header">Mon</div>
+                  <div class="day-header">Tue</div>
+                  <div class="day-header">Wed</div>
+                  <div class="day-header">Thu</div>
+                  <div class="day-header">Fri</div>
+                  <div class="day-header">Sat</div>
+                  <!-- Days will be generated by JavaScript -->
+                </div>
+              </div>
+
+              <div class="upcoming-events">
+                <h4>Upcoming This Week</h4>
+                <div class="event-list">
+                  <?php
+                  try {
+                    $stmt = $pdo->prepare("
+                      SELECT title, event_date as date, location, major_service, 'event' as type, description
+                      FROM events 
+                      WHERE event_date >= CURDATE()
+                      UNION ALL
+                      SELECT title, session_date as date, venue as location, major_service, 'training' as type, description
+                      FROM training_sessions 
+                      WHERE session_date >= CURDATE()
+                      ORDER BY date ASC
+                      LIMIT 4
+                    ");
+                    $stmt->execute();
+                    $upcomingItems = $stmt->fetchAll();
+                    
+                    if (!empty($upcomingItems)):
+                      foreach ($upcomingItems as $item):
+                        $isTraining = $item['type'] === 'training' || 
+                                     (isset($item['major_service']) && (
+                                       stripos($item['major_service'], 'training') !== false ||
+                                       stripos($item['major_service'], 'safety') !== false ||
+                                       stripos($item['major_service'], 'education') !== false
+                                     ));
+                  ?>
+                  <div class="event-item <?= $isTraining ? 'training-event' : '' ?>">
+                    <div class="event-date">
+                      <span class="day"><?= date('j', strtotime($item['date'])) ?></span>
+                      <span class="month"><?= date('M', strtotime($item['date'])) ?></span>
+                    </div>
+                    <div class="event-details">
+                      <div class="event-type"><?= $isTraining ? 'Training' : 'Event' ?></div>
+                      <h5><?= htmlspecialchars($item['title']) ?></h5>
+                      <div class="event-meta">
+                        <span class="location"><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($item['location']) ?></span>
+                        <span class="time"><i class="fas fa-clock"></i> <?= date('M j, Y', strtotime($item['date'])) ?></span>
+                      </div>
+                    </div>
+                  </div>
+                  <?php
+                      endforeach;
+                    else:
+                  ?>
+                  <div class="no-events">
+                    <i class="fas fa-calendar-alt"></i>
+                    <h5>No Upcoming Events</h5>
+                    <p>Schedule new events to see them here</p>
+                  </div>
+                  <?php
+                    endif;
+                  } catch (Exception $e) {
+                    echo '<div class="no-events"><h5>Unable to load events</h5></div>';
+                  }
+                  ?>
                 </div>
               </div>
             </div>
-            <?php endif; ?>
-          </div>
-        </div>
 
-        <!-- Calendar Widget -->
-        <div class="calendar-widget-section">
-          <div class="section-header">
-            <h2><i class="fas fa-calendar-alt"></i> Calendar</h2>
-            <button class="expand-calendar" onclick="openCalendar()">
-              <i class="fas fa-expand"></i>
-            </button>
           </div>
-          
-          <div class="mini-calendar">
-            <div class="calendar-header">
-              <button class="nav-btn" onclick="previousMonth()">&lt;</button>
-              <span class="month-year"><?= date('F Y') ?></span>
-              <button class="nav-btn" onclick="nextMonth()">&gt;</button>
-            </div>
-            
-            <div class="calendar-grid" id="miniCalendarGrid">
-              <div class="day-header">Sun</div>
-              <div class="day-header">Mon</div>
-              <div class="day-header">Tue</div>
-              <div class="day-header">Wed</div>
-              <div class="day-header">Thu</div>
-              <div class="day-header">Fri</div>
-              <div class="day-header">Sat</div>
-              <!-- Days will be generated by JavaScript -->
-            </div>
-          </div>
+        </section>
 
-         <div class="upcoming-events">
-  <h4>Upcoming Events & Training</h4>
-  <div class="event-list">
-   <?php
-try {
-  // Get both events and training sessions with better type detection
-  $stmt = $pdo->prepare("
-    SELECT title, event_date as date, location, major_service, 'event' as type, description
-    FROM events 
-    WHERE event_date >= CURDATE()
-    UNION ALL
-    SELECT title, session_date as date, venue as location, major_service, 'training' as type, description
-    FROM training_sessions 
-    WHERE session_date >= CURDATE()
-    ORDER BY date ASC
-    LIMIT 6
-  ");
-  $stmt->execute();
-  $upcomingItems = $stmt->fetchAll();
-  
-  if (!empty($upcomingItems)):
-    foreach ($upcomingItems as $item):
-      // Better training detection
-      $isTraining = $item['type'] === 'training' || 
-                   (isset($item['major_service']) && (
-                     stripos($item['major_service'], 'training') !== false ||
-                     stripos($item['major_service'], 'safety') !== false ||
-                     stripos($item['major_service'], 'education') !== false
-                   ));
-?>
-<div class="event-item <?= $isTraining ? 'training-event' : '' ?>">
-  <div class="event-date <?= $isTraining ? 'training-date' : '' ?>">
-    <div class="day-number"><?= date('j', strtotime($item['date'])) ?></div>
-    <div class="month-abbr"><?= date('M', strtotime($item['date'])) ?></div>
-  </div>
-  <div class="event-details">
-    <div class="event-type <?= $isTraining ? 'training' : '' ?>">
-      <?= $isTraining ? 'Training' : 'Event' ?>
-    </div>
-    <div class="event-title"><?= htmlspecialchars($item['title']) ?></div>
-    <div class="event-location">
-      <i class="fas fa-map-marker-alt"></i> 
-      <?= htmlspecialchars($item['location']) ?>
-    </div>
-    <div class="event-time">
-      <i class="fas fa-clock"></i> 
-      <?= date('M j, Y', strtotime($item['date'])) ?>
-    </div>
-  </div>
-</div>
-<?php
-    endforeach;
-  else:
-?>
-<div class="no-upcoming-events">
-  <i class="fas fa-calendar-alt"></i>
-  <h5>No Upcoming Events</h5>
-  <p>Schedule new events or training to see them here</p>
-</div>
-<?php
-  endif;
-} catch (Exception $e) {
-  echo '<div class="no-upcoming-events"><h5>Unable to load events</h5></div>';
-}
-?>
-  </div>
-</div>
-        </div>
       </div>
     </div>
   </div>
@@ -1200,11 +1231,17 @@ try {
   <?php include 'chat_widget.php'; ?>
 
   <script>
-    // Calendar functionality
+   // ========================================
+    // GLOBAL VARIABLES
+    // ========================================
     let currentMonth = <?= date('n') - 1 ?>; // JavaScript months are 0-indexed
     let currentYear = <?= date('Y') ?>;
     let events = []; // Will be populated with events from database
 
+    // ========================================
+    // CALENDAR FUNCTIONALITY
+    // ========================================
+    
     // Fetch events from database
     async function fetchEvents() {
       try {
@@ -1217,6 +1254,7 @@ try {
       }
     }
 
+    // Calendar modal controls
     function openCalendar() {
       document.getElementById('calendarModal').style.display = 'flex';
       document.body.style.overflow = 'hidden';
@@ -1228,6 +1266,7 @@ try {
       document.body.style.overflow = 'auto';
     }
 
+    // Navigation functions
     function previousMonth() {
       if (currentMonth === 0) {
         currentMonth = 11;
@@ -1268,167 +1307,405 @@ try {
       updateModalCalendar();
     }
 
+    // Calendar update functions
     function updateMiniCalendar() {
       const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
         'July', 'August', 'September', 'October', 'November', 'December'];
-      document.querySelector('.month-year').textContent = monthNames[currentMonth] + ' ' + currentYear;
+      const monthYearElement = document.querySelector('.month-year');
+      if (monthYearElement) {
+        monthYearElement.textContent = monthNames[currentMonth] + ' ' + currentYear;
+      }
       
       const grid = document.getElementById('miniCalendarGrid');
-      const dayHeaders = grid.querySelectorAll('.day-header');
-      
-      // Clear existing days
-      const existingDays = grid.querySelectorAll('.day');
-      existingDays.forEach(day => day.remove());
-      
-      generateCalendarDays(grid, true);
+      if (grid) {
+        // Clear existing days
+        const existingDays = grid.querySelectorAll('.day');
+        existingDays.forEach(day => day.remove());
+        generateCalendarDays(grid, true);
+      }
     }
 
     function updateModalCalendar() {
       const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
         'July', 'August', 'September', 'October', 'November', 'December'];
-      document.querySelector('.modal-month-year').textContent = monthNames[currentMonth] + ' ' + currentYear;
+      const modalMonthElement = document.querySelector('.modal-month-year');
+      if (modalMonthElement) {
+        modalMonthElement.textContent = monthNames[currentMonth] + ' ' + currentYear;
+      }
       
       const grid = document.getElementById('modalCalendarGrid');
-      const dayHeaders = grid.querySelectorAll('.day-header');
-      
-      // Clear existing days
-      const existingDays = grid.querySelectorAll('.day');
-      existingDays.forEach(day => day.remove());
-      
-      generateCalendarDays(grid, false);
+      if (grid) {
+        // Clear existing days
+        const existingDays = grid.querySelectorAll('.day');
+        existingDays.forEach(day => day.remove());
+        generateCalendarDays(grid, false);
+      }
     }
 
-function generateCalendarDays(grid, isMini) {
-  const firstDay = new Date(currentYear, currentMonth, 1);
-  const startDate = new Date(firstDay);
-  startDate.setDate(startDate.getDate() - firstDay.getDay());
-  
-  const today = new Date();
-  
-  for (let i = 0; i < 42; i++) {
-    const cellDate = new Date(startDate);
-    cellDate.setDate(startDate.getDate() + i);
-    
-    const day = document.createElement('div');
-    day.className = 'day';
-    day.textContent = cellDate.getDate();
-    
-    // Add classes based on date
-    if (cellDate.getMonth() !== currentMonth) {
-      day.className += ' other-month';
-    }
-    
-    if (cellDate.toDateString() === today.toDateString()) {
-      day.className += ' today';
-    }
-    
-    // Check for events and training on this date
-    const dateStr = cellDate.getFullYear() + '-' + 
-                   String(cellDate.getMonth() + 1).padStart(2, '0') + '-' + 
-                   String(cellDate.getDate()).padStart(2, '0');
-    
-    const dayEvents = events.filter(event => event.event_date === dateStr);
-    
-    if (dayEvents.length > 0) {
-      // Separate events and training
-      const regularEvents = dayEvents.filter(event => event.major_service && !event.major_service.includes('Training'));
-      const trainingSessions = dayEvents.filter(event => event.major_service && event.major_service.includes('Training'));
+    function generateCalendarDays(grid, isMini) {
+      const firstDay = new Date(currentYear, currentMonth, 1);
+      const startDate = new Date(firstDay);
+      startDate.setDate(startDate.getDate() - firstDay.getDay());
       
-      // Apply appropriate classes
-      if (regularEvents.length > 0 && trainingSessions.length > 0) {
-        day.className += ' has-both';
-      } else if (trainingSessions.length > 0) {
-        day.className += ' has-training';
-      } else {
-        day.className += ' has-event';
+      const today = new Date();
+      
+      for (let i = 0; i < 42; i++) {
+        const cellDate = new Date(startDate);
+        cellDate.setDate(startDate.getDate() + i);
+        
+        const day = document.createElement('div');
+        day.className = 'day';
+        day.textContent = cellDate.getDate();
+        
+        // Add classes based on date
+        if (cellDate.getMonth() !== currentMonth) {
+          day.className += ' other-month';
+        }
+        
+        if (cellDate.toDateString() === today.toDateString()) {
+          day.className += ' today';
+        }
+        
+        // Check for events and training on this date
+        const dateStr = cellDate.getFullYear() + '-' + 
+                       String(cellDate.getMonth() + 1).padStart(2, '0') + '-' + 
+                       String(cellDate.getDate()).padStart(2, '0');
+        
+        const dayEvents = events.filter(event => event.event_date === dateStr);
+        
+        if (dayEvents.length > 0) {
+          // Separate events and training
+          const regularEvents = dayEvents.filter(event => event.major_service && !event.major_service.includes('Training'));
+          const trainingSessions = dayEvents.filter(event => event.major_service && event.major_service.includes('Training'));
+          
+          // Apply appropriate classes
+          if (regularEvents.length > 0 && trainingSessions.length > 0) {
+            day.className += ' has-both';
+          } else if (trainingSessions.length > 0) {
+            day.className += ' has-training';
+          } else {
+            day.className += ' has-event';
+          }
+          
+          // Add count indicator for multiple items
+          if (dayEvents.length > 1) {
+            day.className += ' has-multiple';
+            day.setAttribute('data-count', dayEvents.length);
+          }
+          
+          day.setAttribute('data-events', JSON.stringify(dayEvents));
+          
+          // Add click event for event details
+          day.addEventListener('click', function() {
+            showEventDetails(dayEvents);
+          });
+        }
+        
+        grid.appendChild(day);
+      }
+    }
+
+    function showEventDetails(dayEvents) {
+      const detailsPanel = document.getElementById('selectedEventDetails');
+      
+      if (!detailsPanel) return;
+      
+      if (!dayEvents || dayEvents.length === 0) {
+        detailsPanel.innerHTML = `
+          <div class="empty-details">
+            <i class="fas fa-calendar-alt"></i>
+            <h5>No Events Selected</h5>
+            <p>Click on a date with events to view details</p>
+          </div>
+        `;
+        return;
       }
       
-      // Add count indicator for multiple items
-      if (dayEvents.length > 1) {
-        day.className += ' has-multiple';
-        day.setAttribute('data-count', dayEvents.length);
-      }
+      let html = '';
       
-      day.setAttribute('data-events', JSON.stringify(dayEvents));
-      
-      // Add click event for event details
-      day.addEventListener('click', function() {
-        showEventDetails(dayEvents);
+      dayEvents.forEach(event => {
+        const isTraining = event.major_service && (
+          event.major_service.toLowerCase().includes('training') || 
+          event.major_service.toLowerCase().includes('safety') ||
+          event.major_service.toLowerCase().includes('education')
+        );
+        
+        const icon = isTraining ? 'graduation-cap' : 'calendar';
+        const typeClass = isTraining ? 'training-event' : 'regular-event';
+        const eventType = isTraining ? 'Training' : 'Event';
+        
+        html += `
+          <div class="selected-event ${typeClass}">
+            <div class="event-type ${isTraining ? 'training' : ''}">${eventType}</div>
+            <h5><i class="fas fa-${icon}"></i> ${event.title || 'Untitled Event'}</h5>
+            <p><i class="fas fa-calendar"></i> ${new Date(event.event_date).toLocaleDateString('en-US', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric'
+            })}</p>
+            <p><i class="fas fa-map-marker-alt"></i> ${event.location || event.venue || 'Location TBA'}</p>
+            <p><i class="fas fa-tags"></i> ${event.major_service || 'General Service'}</p>
+            ${event.description ? `<p class="event-description"><i class="fas fa-info-circle"></i> ${event.description.substring(0, 150)}${event.description.length > 150 ? '...' : ''}</p>` : ''}
+          </div>
+        `;
       });
+      
+      detailsPanel.innerHTML = html;
     }
-    
-    grid.appendChild(day);
-  }
-}
-
-
-function showEventDetails(dayEvents) {
-  const detailsPanel = document.getElementById('selectedEventDetails');
-  
-  if (!dayEvents || dayEvents.length === 0) {
-    detailsPanel.innerHTML = `
-      <div class="empty-details">
-        <i class="fas fa-calendar-alt"></i>
-        <h5>No Events Selected</h5>
-        <p>Click on a date with events to view details</p>
-      </div>
-    `;
-    return;
-  }
-  
-  let html = '';
-  
-  dayEvents.forEach(event => {
-    const isTraining = event.major_service && (
-      event.major_service.toLowerCase().includes('training') || 
-      event.major_service.toLowerCase().includes('safety') ||
-      event.major_service.toLowerCase().includes('education')
-    );
-    
-    const icon = isTraining ? 'graduation-cap' : 'calendar';
-    const typeClass = isTraining ? 'training-event' : 'regular-event';
-    const eventType = isTraining ? 'Training' : 'Event';
-    
-    html += `
-      <div class="selected-event ${typeClass}">
-        <div class="event-type ${isTraining ? 'training' : ''}">${eventType}</div>
-        <h5><i class="fas fa-${icon}"></i> ${event.title || 'Untitled Event'}</h5>
-        <p><i class="fas fa-calendar"></i> ${new Date(event.event_date).toLocaleDateString('en-US', {
-          weekday: 'long',
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric'
-        })}</p>
-        <p><i class="fas fa-map-marker-alt"></i> ${event.location || event.venue || 'Location TBA'}</p>
-        <p><i class="fas fa-tags"></i> ${event.major_service || 'General Service'}</p>
-        ${event.description ? `<p class="event-description"><i class="fas fa-info-circle"></i> ${event.description.substring(0, 150)}${event.description.length > 150 ? '...' : ''}</p>` : ''}
-      </div>
-    `;
-  });
-  
-  detailsPanel.innerHTML = html;
-}
 
     function updateCalendars() {
       updateMiniCalendar();
-      if (document.getElementById('calendarModal').style.display === 'flex') {
+      if (document.getElementById('calendarModal') && document.getElementById('calendarModal').style.display === 'flex') {
         updateModalCalendar();
       }
     }
 
-    function refreshActivity() {
-      const refreshBtn = document.querySelector('.refresh-btn i');
-      const activityIndicator = document.getElementById('activityIndicator');
+    function addNewEvent() {
+      window.location.href = 'manage_events.php?action=add';
+    }
+
+    // ========================================
+    // NOTIFICATION FUNCTIONALITY
+    // ========================================
+    
+    function refreshNotifications() {
+      const btn = event.target.closest('button');
+      const icon = btn ? btn.querySelector('i') : event.target;
       
-      if (refreshBtn) {
-        refreshBtn.style.animation = 'spin 1s linear';
+      if (icon) {
+        icon.style.animation = 'spin 1s linear';
         setTimeout(() => {
-          refreshBtn.style.animation = '';
+          icon.style.animation = '';
         }, 1000);
       }
       
+      // Trigger refresh indicator
+      const indicator = document.getElementById('liveIndicator');
+      if (indicator) {
+        indicator.style.color = '#10b981';
+        setTimeout(() => {
+          indicator.style.color = '';
+        }, 500);
+      }
+      
+      console.log('Refreshing notifications...');
+    }
+
+    function markAllNotificationsRead() {
+      const cards = document.querySelectorAll('.notification-card');
+      
+      if (cards.length === 0) return;
+      
+      // Hide all notification cards with animation
+      cards.forEach((card, index) => {
+        setTimeout(() => {
+          card.style.opacity = '0.5';
+          card.style.transform = 'translateX(20px)';
+          setTimeout(() => {
+            card.style.display = 'none';
+          }, 300);
+        }, index * 100);
+      });
+      
+      // Update summary badges
+      setTimeout(() => {
+        const summaryBadges = document.querySelector('.summary-badges');
+        if (summaryBadges) {
+          summaryBadges.innerHTML = '<span class="total-count">All notifications cleared</span>';
+        }
+        
+        // Show empty state after a delay
+        setTimeout(() => {
+          const notificationsSection = document.querySelector('.notifications-section');
+          if (notificationsSection && !notificationsSection.classList.contains('empty')) {
+            notificationsSection.classList.add('empty');
+            notificationsSection.innerHTML = `
+              <div class="empty-state">
+                <div class="empty-icon">
+                  <i class="fas fa-bell-slash"></i>
+                </div>
+                <h3>All Clear</h3>
+                <p>No active notifications. All systems are running smoothly.</p>
+                <div class="empty-actions">
+                  <button class="control-btn primary" onclick="refreshNotifications()">
+                     Check for Updates
+                  </button>
+                </div>
+              </div>
+            `;
+          }
+        }, 1000);
+      }, cards.length * 100 + 300);
+    }
+
+    function initializeNotificationFilters() {
+      const filterButtons = document.querySelectorAll('.filter-btn');
+      const notificationCards = document.querySelectorAll('.notification-card');
+      
+      filterButtons.forEach(btn => {
+        btn.addEventListener('click', function() {
+          // Remove active class from all buttons
+          filterButtons.forEach(b => b.classList.remove('active'));
+          
+          // Add active class to clicked button
+          this.classList.add('active');
+          
+          const priority = this.getAttribute('data-priority');
+          
+          // Filter notification cards
+          notificationCards.forEach(card => {
+            if (priority === 'all') {
+              // Show all cards
+              card.style.display = 'flex';
+              card.style.opacity = '1';
+              card.style.transform = 'translateX(0)';
+            } else if (card.classList.contains(`priority-${priority}`)) {
+              // Show cards matching the priority
+              card.style.display = 'flex';
+              card.style.opacity = '1';
+              card.style.transform = 'translateX(0)';
+            } else {
+              // Hide cards that don't match
+              card.style.opacity = '0.3';
+              card.style.transform = 'translateX(-10px)';
+              setTimeout(() => {
+                if (!card.classList.contains(`priority-${priority}`) && priority !== 'all') {
+                  card.style.display = 'none';
+                }
+              }, 200);
+            }
+          });
+          
+          // Update visible count
+          setTimeout(() => {
+            const visibleCards = Array.from(notificationCards).filter(card => 
+              card.style.display !== 'none' && card.style.opacity !== '0.3'
+            );
+            
+            console.log(`Showing ${visibleCards.length} notifications for priority: ${priority}`);
+          }, 300);
+        });
+      });
+    }
+
+    function initializeNotificationInteractions() {
+      const notificationCards = document.querySelectorAll('.notification-card');
+      
+      notificationCards.forEach(card => {
+        // Add hover effects
+        card.addEventListener('mouseenter', function() {
+          this.style.transform = 'translateY(-2px)';
+          this.style.boxShadow = '0 8px 25px rgba(0, 0, 0, 0.15)';
+        });
+        
+        card.addEventListener('mouseleave', function() {
+          this.style.transform = 'translateY(0)';
+          this.style.boxShadow = '';
+        });
+        
+        // Add click to dismiss functionality
+        const priorityIndicator = card.querySelector('.priority-indicator');
+        if (priorityIndicator) {
+          priorityIndicator.addEventListener('click', function(e) {
+            e.stopPropagation();
+            
+            // Animate card removal
+            card.style.opacity = '0';
+            card.style.transform = 'translateX(100px)';
+            
+            setTimeout(() => {
+              card.remove();
+              updateNotificationCounts();
+            }, 300);
+          });
+          
+          // Add tooltip
+          priorityIndicator.title = 'Click to dismiss this notification';
+        }
+      });
+    }
+
+    function updateNotificationCounts() {
+      const remainingCards = document.querySelectorAll('.notification-card');
+      const totalCount = remainingCards.length;
+      
+      // Count by priority
+      const criticalCount = document.querySelectorAll('.notification-card.priority-critical').length;
+      const highCount = document.querySelectorAll('.notification-card.priority-high').length;
+      const mediumCount = document.querySelectorAll('.notification-card.priority-medium').length;
+      const lowCount = document.querySelectorAll('.notification-card.priority-low').length;
+      
+      // Update summary badges
+      const summaryBadges = document.querySelector('.summary-badges');
+      if (summaryBadges && totalCount > 0) {
+        let badgesHTML = '';
+        
+        if (criticalCount > 0) {
+          badgesHTML += `<span class="priority-badge critical">${criticalCount} Critical</span>`;
+        }
+        if (highCount > 0) {
+          badgesHTML += `<span class="priority-badge high">${highCount} High</span>`;
+        }
+        if (mediumCount > 0) {
+          badgesHTML += `<span class="priority-badge medium">${mediumCount} Medium</span>`;
+        }
+        if (lowCount > 0) {
+          badgesHTML += `<span class="priority-badge low">${lowCount} Low</span>`;
+        }
+        
+        badgesHTML += `<span class="total-count">${totalCount} total notifications</span>`;
+        summaryBadges.innerHTML = badgesHTML;
+      } else if (totalCount === 0) {
+        // Show empty state
+        const notificationsSection = document.querySelector('.notifications-section');
+        if (notificationsSection) {
+          notificationsSection.classList.add('empty');
+          notificationsSection.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-icon">
+                <i class="fas fa-bell-slash"></i>
+              </div>
+              <h3>All Clear</h3>
+              <p>No active notifications. All systems are running smoothly.</p>
+              <div class="empty-actions">
+                <button class="control-btn primary" onclick="refreshNotifications()">
+                  <i class="fas fa-sync-alt"></i> Check for Updates
+                </button>
+              </div>
+            </div>
+          `;
+        }
+      }
+      
+      // Update filter button counts
+      const filterButtons = document.querySelectorAll('.filter-btn');
+      filterButtons.forEach(btn => {
+        const priority = btn.getAttribute('data-priority');
+        
+        if (priority === 'all') {
+          btn.innerHTML = `<i class="fas fa-list"></i> All (${totalCount})`;
+        } else if (priority === 'critical' && criticalCount > 0) {
+          btn.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Critical (${criticalCount})`;
+        } else if (priority === 'high' && highCount > 0) {
+          btn.innerHTML = `<i class="fas fa-exclamation-circle"></i> High (${highCount})`;
+        } else if (priority === 'medium' && mediumCount > 0) {
+          btn.innerHTML = `<i class="fas fa-info-circle"></i> Medium (${mediumCount})`;
+        } else if (priority === 'low' && lowCount > 0) {
+          btn.innerHTML = `<i class="fas fa-check-circle"></i> Low (${lowCount})`;
+        }
+      });
+    }
+
+    // ========================================
+    // ACTIVITY & REFRESH FUNCTIONALITY
+    // ========================================
+    
+    function refreshActivity() {
+      const activityIndicator = document.getElementById('activityIndicator');
+      
       if (activityIndicator) {
-        activityIndicator.style.color = '#28a745';
+        activityIndicator.style.color = '#10b981';
         setTimeout(() => {
           activityIndicator.style.color = '';
         }, 500);
@@ -1436,10 +1713,6 @@ function showEventDetails(dayEvents) {
       
       // Refresh events
       fetchEvents();
-    }
-
-    function addNewEvent() {
-      window.location.href = 'manage_events.php?action=add';
     }
 
     function startAutoRefresh() {
@@ -1454,30 +1727,48 @@ function showEventDetails(dayEvents) {
       
       setInterval(() => {
         if (liveIndicator) {
-          liveIndicator.style.color = liveIndicator.style.color === 'rgb(40, 167, 69)' ? '#dc3545' : '#28a745';
+          liveIndicator.style.color = liveIndicator.style.color === 'rgb(16, 185, 129)' ? '#dc3545' : '#10b981';
         }
         if (activityIndicator) {
-          activityIndicator.style.color = '#28a745';
+          activityIndicator.style.color = '#10b981';
         }
       }, 2000);
     }
 
-    // Event listeners
-    document.addEventListener('DOMContentLoaded', function() {
-      startAutoRefresh();
-      fetchEvents();
-      
-      // Close modal on outside click
-      document.getElementById('calendarModal').addEventListener('click', function(e) {
-        if (e.target === this) {
-          closeCalendar();
-        }
+    // ========================================
+    // ANIMATION & UI ENHANCEMENTS
+    // ========================================
+    
+    function animateCounters() {
+      const counters = document.querySelectorAll('.stat-number');
+      counters.forEach(counter => {
+        const target = parseInt(counter.getAttribute('data-target')) || parseInt(counter.textContent);
+        const duration = 2000;
+        const steps = 60;
+        const increment = target / steps;
+        
+        let current = 0;
+        let step = 0;
+
+        const timer = setInterval(() => {
+          current += increment;
+          step++;
+          
+          if (step >= steps) {
+            current = target;
+            clearInterval(timer);
+          }
+          
+          counter.textContent = Math.floor(current);
+        }, duration / steps);
       });
-      
-      // Activity item interactions
-      document.querySelectorAll('.activity-item').forEach(item => {
+    }
+
+    function initializeActivityInteractions() {
+      const activityItems = document.querySelectorAll('.activity-item');
+      activityItems.forEach(item => {
         item.addEventListener('click', function() {
-          const link = this.closest('.activity-card').querySelector('.view-all');
+          const link = this.closest('.activity-card').querySelector('.card-action');
           if (link) {
             window.location.href = link.href;
           }
@@ -1485,7 +1776,8 @@ function showEventDetails(dayEvents) {
       });
 
       // Action button enhancements
-      document.querySelectorAll('.notification-action').forEach(btn => {
+      const notificationActions = document.querySelectorAll('.notification-action');
+      notificationActions.forEach(btn => {
         btn.addEventListener('mouseenter', function() {
           this.style.transform = 'translateY(-1px)';
         });
@@ -1494,48 +1786,683 @@ function showEventDetails(dayEvents) {
           this.style.transform = 'translateY(0)';
         });
       });
+    }
+
+    // ========================================
+    // KEYBOARD SHORTCUTS
+    // ========================================
+    
+    function initializeKeyboardShortcuts() {
+      document.addEventListener('keydown', function(e) {
+        if (e.ctrlKey || e.metaKey) {
+          switch(e.key) {
+            case 'e':
+              e.preventDefault();
+              window.location.href = 'manage_events.php';
+              break;
+            case 't':
+              e.preventDefault();
+              window.location.href = 'manage_sessions.php';
+              break;
+            case 'd':
+              e.preventDefault();
+              window.location.href = 'manage_donations.php';
+              break;
+            case 'u':
+              e.preventDefault();
+              window.location.href = 'manage_users.php';
+              break;
+            case 'r':
+              e.preventDefault();
+              refreshActivity();
+              break;
+            case 'c':
+              e.preventDefault();
+              openCalendar();
+              break;
+          }
+        }
+        
+        // ESC to close modal
+        if (e.key === 'Escape') {
+          closeCalendar();
+        }
+      });
+    }
+
+    // ========================================
+    // INITIALIZATION
+    // ========================================
+    
+    document.addEventListener('DOMContentLoaded', function() {
+      // Initialize auto-refresh and fetch initial data
+      startAutoRefresh();
+      fetchEvents();
+      
+      // Animate counters on load
+      setTimeout(animateCounters, 500);
+      
+      // Initialize all functionality
+      initializeNotificationFilters();
+      initializeNotificationInteractions();
+      initializeActivityInteractions();
+      initializeKeyboardShortcuts();
+      
+      // Close modal on outside click
+      const calendarModal = document.getElementById('calendarModal');
+      if (calendarModal) {
+        calendarModal.addEventListener('click', function(e) {
+          if (e.target === this) {
+            closeCalendar();
+          }
+        });
+      }
+      
+      console.log('Modern dashboard initialized successfully');
     });
 
-    // Keyboard shortcuts
-    document.addEventListener('keydown', function(e) {
-      if (e.ctrlKey || e.metaKey) {
-        switch(e.key) {
-          case 'e':
-            e.preventDefault();
-            window.location.href = 'manage_events.php';
-            break;
-          case 't':
-            e.preventDefault();
-            window.location.href = 'manage_sessions.php';
-            break;
-          case 'd':
-            e.preventDefault();
-            window.location.href = 'manage_donations.php';
-            break;
-          case 'u':
-            e.preventDefault();
-            window.location.href = 'manage_users.php';
-            break;
-          case 'r':
-            e.preventDefault();
-            refreshActivity();
-            break;
-          case 'c':
-            e.preventDefault();
-            openCalendar();
-            break;
+    // ========================================
+    // DYNAMIC STYLES
+    // ========================================
+    
+    const dashboardStyles = document.createElement('style');
+    dashboardStyles.textContent = `
+      .notification-card {
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      
+      .priority-indicator {
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      
+      .priority-indicator:hover {
+        transform: scale(1.1);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      }
+      
+      .filter-btn {
+        transition: all 0.2s ease;
+      }
+      
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      
+      .activity-item {
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      
+      .activity-item:hover {
+        background-color: rgba(160, 0, 0, 0.05);
+      }
+    `;
+    document.head.appendChild(dashboardStyles);
+  </script>
+  <script src="../admin/js/notification_frontend.js?v=<?php echo time(); ?>">numeric',
+              month: 'long',
+              day: 'numeric'
+            })}</p>
+            <p><i class="fas fa-map-marker-alt"></i> ${event.location || event.venue || 'Location TBA'}</p>
+            <p><i class="fas fa-tags"></i> ${event.major_service || 'General Service'}</p>
+            ${event.description ? `<p class="event-description"><i class="fas fa-info-circle"></i> ${event.description.substring(0, 150)}${event.description.length > 150 ? '...' : ''}</p>` : ''}
+          </div>
+        `;
+      });
+      
+      detailsPanel.innerHTML = html;
+    }
+
+    function updateCalendars() {
+      updateMiniCalendar();
+      if (document.getElementById('calendarModal') && document.getElementById('calendarModal').style.display === 'flex') {
+        updateModalCalendar();
+      }
+    }
+
+    function addNewEvent() {
+      window.location.href = 'manage_events.php?action=add';
+    }
+
+    // ========================================
+    // NOTIFICATION FUNCTIONALITY
+    // ========================================
+    
+    function refreshNotifications() {
+      const btn = event.target.closest('button');
+      const icon = btn ? btn.querySelector('i') : event.target;
+      
+      if (icon) {
+        icon.style.animation = 'spin 1s linear';
+        setTimeout(() => {
+          icon.style.animation = '';
+        }, 1000);
+      }
+      
+      // Trigger refresh indicator
+      const indicator = document.getElementById('liveIndicator');
+      if (indicator) {
+        indicator.style.color = '#10b981';
+        setTimeout(() => {
+          indicator.style.color = '';
+        }, 500);
+      }
+      
+      console.log('Refreshing notifications...');
+    }
+
+    function markAllNotificationsRead() {
+      const cards = document.querySelectorAll('.notification-card');
+      
+      if (cards.length === 0) return;
+      
+      // Hide all notification cards with animation
+      cards.forEach((card, index) => {
+        setTimeout(() => {
+          card.style.opacity = '0.5';
+          card.style.transform = 'translateX(20px)';
+          setTimeout(() => {
+            card.style.display = 'none';
+          }, 300);
+        }, index * 100);
+      });
+      
+      // Update summary badges
+      setTimeout(() => {
+        const summaryBadges = document.querySelector('.summary-badges');
+        if (summaryBadges) {
+          summaryBadges.innerHTML = '<span class="total-count">All notifications cleared</span>';
+        }
+        
+        // Show empty state after a delay
+        setTimeout(() => {
+          const notificationsSection = document.querySelector('.notifications-section');
+          if (notificationsSection && !notificationsSection.classList.contains('empty')) {
+            notificationsSection.classList.add('empty');
+            notificationsSection.innerHTML = `
+              <div class="empty-state">
+                <div class="empty-icon">
+                  <i class="fas fa-bell-slash"></i>
+                </div>
+                <h3>All Clear</h3>
+                <p>No active notifications. All systems are running smoothly.</p>
+                <div class="empty-actions">
+                  <button class="control-btn primary" onclick="refreshNotifications()">
+                     Check for Updates
+                  </button>
+                </div>
+              </div>
+            `;
+          }
+        }, 1000);
+      }, cards.length * 100 + 300);
+    }
+
+    function initializeNotificationFilters() {
+      const filterButtons = document.querySelectorAll('.filter-btn');
+      const notificationCards = document.querySelectorAll('.notification-card');
+      
+      filterButtons.forEach(btn => {
+        btn.addEventListener('click', function() {
+          // Remove active class from all buttons
+          filterButtons.forEach(b => b.classList.remove('active'));
+          
+          // Add active class to clicked button
+          this.classList.add('active');
+          
+          const priority = this.getAttribute('data-priority');
+          
+          // Filter notification cards
+          notificationCards.forEach(card => {
+            if (priority === 'all') {
+              // Show all cards
+              card.style.display = 'flex';
+              card.style.opacity = '1';
+              card.style.transform = 'translateX(0)';
+            } else if (card.classList.contains(`priority-${priority}`)) {
+              // Show cards matching the priority
+              card.style.display = 'flex';
+              card.style.opacity = '1';
+              card.style.transform = 'translateX(0)';
+            } else {
+              // Hide cards that don't match
+              card.style.opacity = '0.3';
+              card.style.transform = 'translateX(-10px)';
+              setTimeout(() => {
+                if (!card.classList.contains(`priority-${priority}`) && priority !== 'all') {
+                  card.style.display = 'none';
+                }
+              }, 200);
+            }
+          });
+          
+          // Update visible count
+          setTimeout(() => {
+            const visibleCards = Array.from(notificationCards).filter(card => 
+              card.style.display !== 'none' && card.style.opacity !== '0.3'
+            );
+            
+            console.log(`Showing ${visibleCards.length} notifications for priority: ${priority}`);
+          }, 300);
+        });
+      });
+    }
+
+    function initializeNotificationInteractions() {
+      const notificationCards = document.querySelectorAll('.notification-card');
+      
+      notificationCards.forEach(card => {
+        // Add hover effects
+        card.addEventListener('mouseenter', function() {
+          this.style.transform = 'translateY(-2px)';
+          this.style.boxShadow = '0 8px 25px rgba(0, 0, 0, 0.15)';
+        });
+        
+        card.addEventListener('mouseleave', function() {
+          this.style.transform = 'translateY(0)';
+          this.style.boxShadow = '';
+        });
+        
+        // Add click to dismiss functionality
+        const priorityIndicator = card.querySelector('.priority-indicator');
+        if (priorityIndicator) {
+          priorityIndicator.addEventListener('click', function(e) {
+            e.stopPropagation();
+            
+            // Animate card removal
+            card.style.opacity = '0';
+            card.style.transform = 'translateX(100px)';
+            
+            setTimeout(() => {
+              card.remove();
+              updateNotificationCounts();
+            }, 300);
+          });
+          
+          // Add tooltip
+          priorityIndicator.title = 'Click to dismiss this notification';
+        }
+      });
+    }
+
+    function updateNotificationCounts() {
+      const remainingCards = document.querySelectorAll('.notification-card');
+      const totalCount = remainingCards.length;
+      
+      // Count by priority
+      const criticalCount = document.querySelectorAll('.notification-card.priority-critical').length;
+      const highCount = document.querySelectorAll('.notification-card.priority-high').length;
+      const mediumCount = document.querySelectorAll('.notification-card.priority-medium').length;
+      const lowCount = document.querySelectorAll('.notification-card.priority-low').length;
+      
+      // Update summary badges
+      const summaryBadges = document.querySelector('.summary-badges');
+      if (summaryBadges && totalCount > 0) {
+        let badgesHTML = '';
+        
+        if (criticalCount > 0) {
+          badgesHTML += `<span class="priority-badge critical">${criticalCount} Critical</span>`;
+        }
+        if (highCount > 0) {
+          badgesHTML += `<span class="priority-badge high">${highCount} High</span>`;
+        }
+        if (mediumCount > 0) {
+          badgesHTML += `<span class="priority-badge medium">${mediumCount} Medium</span>`;
+        }
+        if (lowCount > 0) {
+          badgesHTML += `<span class="priority-badge low">${lowCount} Low</span>`;
+        }
+        
+        badgesHTML += `<span class="total-count">${totalCount} total notifications</span>`;
+        summaryBadges.innerHTML = badgesHTML;
+      } else if (totalCount === 0) {
+        // Show empty state
+        const notificationsSection = document.querySelector('.notifications-section');
+        if (notificationsSection) {
+          notificationsSection.classList.add('empty');
+          notificationsSection.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-icon">
+                <i class="fas fa-bell-slash"></i>
+              </div>
+              <h3>All Clear</h3>
+              <p>No active notifications. All systems are running smoothly.</p>
+              <div class="empty-actions">
+                <button class="control-btn primary" onclick="refreshNotifications()">
+                  <i class="fas fa-sync-alt"></i> Check for Updates
+                </button>
+              </div>
+            </div>
+          `;
         }
       }
       
-      // ESC to close modal
-      if (e.key === 'Escape') {
-        closeCalendar();
+      // Update filter button counts
+      const filterButtons = document.querySelectorAll('.filter-btn');
+      filterButtons.forEach(btn => {
+        const priority = btn.getAttribute('data-priority');
+        
+        if (priority === 'all') {
+          btn.innerHTML = `<i class="fas fa-list"></i> All (${totalCount})`;
+        } else if (priority === 'critical' && criticalCount > 0) {
+          btn.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Critical (${criticalCount})`;
+        } else if (priority === 'high' && highCount > 0) {
+          btn.innerHTML = `<i class="fas fa-exclamation-circle"></i> High (${highCount})`;
+        } else if (priority === 'medium' && mediumCount > 0) {
+          btn.innerHTML = `<i class="fas fa-info-circle"></i> Medium (${mediumCount})`;
+        } else if (priority === 'low' && lowCount > 0) {
+          btn.innerHTML = `<i class="fas fa-check-circle"></i> Low (${lowCount})`;
+        }
+      });
+    }
+
+    // ========================================
+    // ACTIVITY & REFRESH FUNCTIONALITY
+    // ========================================
+    
+    function refreshActivity() {
+      const activityIndicator = document.getElementById('activityIndicator');
+      
+      if (activityIndicator) {
+        activityIndicator.style.color = '#10b981';
+        setTimeout(() => {
+          activityIndicator.style.color = '';
+        }, 500);
       }
+      
+      // Refresh events
+      fetchEvents();
+    }
+
+    function startAutoRefresh() {
+      // Refresh every 30 seconds
+      setInterval(() => {
+        refreshActivity();
+      }, 30000);
+      
+      // Update live indicators
+      const liveIndicator = document.getElementById('liveIndicator');
+      const activityIndicator = document.getElementById('activityIndicator');
+      
+      setInterval(() => {
+        if (liveIndicator) {
+          liveIndicator.style.color = liveIndicator.style.color === 'rgb(16, 185, 129)' ? '#dc3545' : '#10b981';
+        }
+        if (activityIndicator) {
+          activityIndicator.style.color = '#10b981';
+        }
+      }, 2000);
+    }
+
+    // ========================================
+    // ANIMATION & UI ENHANCEMENTS
+    // ========================================
+    
+    function animateCounters() {
+      const counters = document.querySelectorAll('.stat-number');
+      counters.forEach(counter => {
+        const target = parseInt(counter.getAttribute('data-target')) || parseInt(counter.textContent);
+        const duration = 2000;
+        const steps = 60;
+        const increment = target / steps;
+        
+        let current = 0;
+        let step = 0;
+
+        const timer = setInterval(() => {
+          current += increment;
+          step++;
+          
+          if (step >= steps) {
+            current = target;
+            clearInterval(timer);
+          }
+          
+          counter.textContent = Math.floor(current);
+        }, duration / steps);
+      });
+    }
+
+    function initializeActivityInteractions() {
+      const activityItems = document.querySelectorAll('.activity-item');
+      activityItems.forEach(item => {
+        item.addEventListener('click', function() {
+          const link = this.closest('.activity-card').querySelector('.card-action');
+          if (link) {
+            window.location.href = link.href;
+          }
+        });
+      });
+
+      // Action button enhancements
+      const notificationActions = document.querySelectorAll('.notification-action');
+      notificationActions.forEach(btn => {
+        btn.addEventListener('mouseenter', function() {
+          this.style.transform = 'translateY(-1px)';
+        });
+        
+        btn.addEventListener('mouseleave', function() {
+          this.style.transform = 'translateY(0)';
+        });
+      });
+    }
+
+    // ========================================
+    // KEYBOARD SHORTCUTS
+    // ========================================
+    
+    function initializeKeyboardShortcuts() {
+      document.addEventListener('keydown', function(e) {
+        if (e.ctrlKey || e.metaKey) {
+          switch(e.key) {
+            case 'e':
+              e.preventDefault();
+              window.location.href = 'manage_events.php';
+              break;
+            case 't':
+              e.preventDefault();
+              window.location.href = 'manage_sessions.php';
+              break;
+            case 'd':
+              e.preventDefault();
+              window.location.href = 'manage_donations.php';
+              break;
+            case 'u':
+              e.preventDefault();
+              window.location.href = 'manage_users.php';
+              break;
+            case 'r':
+              e.preventDefault();
+              refreshActivity();
+              break;
+            case 'c':
+              e.preventDefault();
+              openCalendar();
+              break;
+          }
+        }
+        
+        // ESC to close modal
+        if (e.key === 'Escape') {
+          closeCalendar();
+        }
+      });
+    }
+
+    // ========================================
+    // INITIALIZATION
+    // ========================================
+    
+    document.addEventListener('DOMContentLoaded', function() {
+      // Initialize auto-refresh and fetch initial data
+      startAutoRefresh();
+      fetchEvents();
+      
+      // Animate counters on load
+      setTimeout(animateCounters, 500);
+      
+      // Initialize all functionality
+      initializeNotificationFilters();
+      initializeNotificationInteractions();
+      initializeActivityInteractions();
+      initializeKeyboardShortcuts();
+      
+      // Close modal on outside click
+      const calendarModal = document.getElementById('calendarModal');
+      if (calendarModal) {
+        calendarModal.addEventListener('click', function(e) {
+          if (e.target === this) {
+            closeCalendar();
+          }
+        });
+      }
+      
+      console.log('Modern dashboard initialized successfully');
     });
 
-    // CSS animations
+    // ========================================
+    // DYNAMIC STYLES
+    // ========================================
+    
+    const dashboardStyles = document.createElement('style');
+    dashboardStyles.textContent = `
+      .notification-card {
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      
+      .priority-indicator {
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      
+      .priority-indicator:hover {
+        transform: scale(1.1);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      }
+      
+      .filter-btn {
+        transition: all 0.2s ease;
+      }
+      
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      
+      .activity-item {
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      
+      .activity-item:hover {
+        background-color: rgba(160, 0, 0, 0.05);
+      }
+    `;
+    document.head.appendChild(dashboardStyles);
+  </script>
+  <script src="../admin/js/notification_frontend.js?v=<?php echo time(); ?>">criticalCount} Critical</span>`;
+        }
+        if (highCount > 0) {
+          badgesHTML += `<span class="priority-badge high">${highCount} High</span>`;
+        }
+        if (mediumCount > 0) {
+          badgesHTML += `<span class="priority-badge medium">${mediumCount} Medium</span>`;
+        }
+        if (lowCount > 0) {
+          badgesHTML += `<span class="priority-badge low">${lowCount} Low</span>`;
+        }
+        
+        badgesHTML += `<span class="total-count">${totalCount} total notifications</span>`;
+        summaryBadges.innerHTML = badgesHTML;
+      } else if (totalCount === 0) {
+        // Show empty state
+        const notificationsSection = document.querySelector('.notifications-section');
+        if (notificationsSection) {
+          notificationsSection.classList.add('empty');
+          notificationsSection.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-icon">
+                <i class="fas fa-bell-slash"></i>
+              </div>
+              <h3>All Clear</h3>
+              <p>No active notifications. All systems are running smoothly.</p>
+              <div class="empty-actions">
+                <button class="control-btn primary" onclick="refreshNotifications()">
+                  <i class="fas fa-sync-alt"></i> Check for Updates
+                </button>
+              </div>
+            </div>
+          `;
+        }
+      }
+      
+      // Update filter button counts
+      const filterButtons = document.querySelectorAll('.filter-btn');
+      filterButtons.forEach(btn => {
+        const priority = btn.getAttribute('data-priority');
+        const icon = btn.querySelector('i');
+        const text = btn.textContent.trim();
+        
+        if (priority === 'all') {
+          btn.innerHTML = `<i class="fas fa-list"></i> All (${totalCount})`;
+        } else if (priority === 'critical' && criticalCount > 0) {
+          btn.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Critical (${criticalCount})`;
+        } else if (priority === 'high' && highCount > 0) {
+          btn.innerHTML = `<i class="fas fa-exclamation-circle"></i> High (${highCount})`;
+        } else if (priority === 'medium' && mediumCount > 0) {
+          btn.innerHTML = `<i class="fas fa-info-circle"></i> Medium (${mediumCount})`;
+        } else if (priority === 'low' && lowCount > 0) {
+          btn.innerHTML = `<i class="fas fa-check-circle"></i> Low (${lowCount})`;
+        }
+      });
+    }
+
+    // Initialize dashboard
+    document.addEventListener('DOMContentLoaded', function() {
+      // Animate counters on load
+      setTimeout(animateCounters, 500);
+      
+      // Initialize notification functionality
+      initializeNotificationFilters();
+      initializeNotificationInteractions();
+
+      // Add hover effects to activity items
+      const activityItems = document.querySelectorAll('.activity-item');
+      activityItems.forEach(item => {
+        item.addEventListener('click', function() {
+          const link = this.closest('.activity-card').querySelector('.card-action');
+          if (link) {
+            window.location.href = link.href;
+          }
+        });
+      });
+
+      console.log('Modern dashboard initialized with enhanced notifications');
+    });
+
+    // Add CSS for smooth transitions
     const style = document.createElement('style');
     style.textContent = `
+      .notification-card {
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      
+      .priority-indicator {
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      
+      .priority-indicator:hover {
+        transform: scale(1.1);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      }
+      
+      .filter-btn {
+        transition: all 0.2s ease;
+      }
+      
       @keyframes spin {
         from { transform: rotate(0deg); }
         to { transform: rotate(360deg); }

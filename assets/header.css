@@ -108,12 +108,25 @@
   flex-shrink: 0;
 }
 
-.notification-icon.success { background-color: #28a745; }
-.notification-icon.warning { background-color: #ffc107; color: #212529; }
-.notification-icon.info { background-color: #17a2b8; }
-.notification-icon.event { background-color: #007bff; }
-.notification-icon.session { background-color: #28a745; }
-.notification-icon.announcement { background-color: #fd7e14; }
+.notification-icon.success {
+  background-color: #28a745;
+}
+.notification-icon.warning {
+  background-color: #ffc107;
+  color: #212529;
+}
+.notification-icon.info {
+  background-color: #17a2b8;
+}
+.notification-icon.event {
+  background-color: #007bff;
+}
+.notification-icon.session {
+  background-color: #28a745;
+}
+.notification-icon.announcement {
+  background-color: #fd7e14;
+}
 
 .notification-text {
   flex: 1;
