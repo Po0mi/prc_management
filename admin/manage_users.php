@@ -279,7 +279,7 @@ function isNewUser($createdAt) {
         <div class="action-bar">
             <div class="search-and-filters">
                 <!-- Advanced Search Container -->
-                <div class="search-container">
+                <div class="search-containers">
                     <input 
                         type="text" 
                         class="search-input" 

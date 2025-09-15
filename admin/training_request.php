@@ -723,7 +723,6 @@ if (!function_exists('get_role_color')) {
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="../assets/sidebar_admin.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/styles.css?v=<?= time() ?>">
-  <link rel="stylesheet" href="../assets/sessions.css?v=<?= time() ?>">
   <link rel="stylesheet" href="../assets/training_request.css?v=<?= time() ?>">
 </head>
 <body class="admin-<?= htmlspecialchars($user_role) ?>">
@@ -1283,12 +1282,7 @@ if (!function_exists('get_role_color')) {
                     </select>
                 </div>
             </div>
-            
-            <div class="form-group">
-                <label for="verification_notes">Verification Notes</label>
-                <textarea id="verification_notes" name="verification_notes" rows="3" 
-                          placeholder="Add notes about document verification (visible to requester)..."></textarea>
-            </div>
+        
             
             <div class="modal-footer">
                 <button type="button" class="btn-action btn-edit" onclick="closeDocumentModal()">Cancel</button>
@@ -1613,7 +1607,8 @@ function openDocumentModal(request) {
     }
     
     // Debug the request object
-  console.log('Document fields in request:', {
+    console.log('Opening document modal for request:', request.request_id);
+    console.log('Document fields in request:', {
         valid_id_path: request.valid_id_path,
         valid_id_filename: request.valid_id_filename,
         valid_id_request_path: request.valid_id_request_path,
@@ -1625,16 +1620,9 @@ function openDocumentModal(request) {
         documents_verified: request.documents_verified,
         documents_uploaded_at: request.documents_uploaded_at
     });
-    // Get document details container
-   const documentDetails = document.getElementById('documentDetails');
-    if (!documentDetails) {
-        console.error('Document details container not found');
-        return;
-    }
-    // Reset modal state
-       modal.classList.remove('active');
-    modal.style.display = 'none';
     
+    // Populate document details
+    const documentDetails = document.getElementById('documentDetails');
     let documentsHtml = '';
     let docCount = 0;
     let hasAnyDocuments = false;

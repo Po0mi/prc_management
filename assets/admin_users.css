@@ -192,7 +192,7 @@ body.sidebar-collapsed .users-container {
 }
 
 /* Search Container - Enhanced Design */
-.search-container {
+.search-containers {
   flex: 1;
   max-width: 450px;
   position: relative;
@@ -345,7 +345,7 @@ body.sidebar-collapsed .users-container {
 
 /* Create Button - Enhanced Design */
 .btn-create {
-  background: linear-gradient(135deg, var(--success) 0%, #20c997 100%);
+  background: linear-gradient(135deg, var(--success) 0%, #20a745 100%);
   color: var(--white);
   border: none;
   padding: var(--spacing-xl) var(--spacing-3xl);
