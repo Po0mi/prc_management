@@ -1,0 +1,6 @@
+@echo off
+echo Stopping XAMPP processes...
+taskkill /f /im httpd.exe
+taskkill /f /im mysqld.exe
+echo All done! It is now safe to shut down.
+pause

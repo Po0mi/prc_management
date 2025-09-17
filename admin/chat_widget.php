@@ -7,6 +7,11 @@ $current_user_id = current_user_id();
 $current_user_role = get_user_role();
 $is_admin = ($current_user_role && $current_user_role !== 'user');
 
+// Enhanced error logging for debugging
+function logError($message) {
+    error_log("[CHAT_WIDGET] " . $message);
+}
+
 // Handle AJAX requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     header('Content-Type: application/json');
@@ -17,9 +22,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $message = trim($_POST['message']);
             
             if (!empty($message) && $receiver_id > 0) {
-                $stmt = $pdo->prepare("INSERT INTO messages (sender_id, receiver_id, message) VALUES (?, ?, ?)");
-                $stmt->execute([$current_user_id, $receiver_id, $message]);
-                echo json_encode(['success' => true]);
+                try {
+                    $stmt = $pdo->prepare("INSERT INTO messages (sender_id, receiver_id, message) VALUES (?, ?, ?)");
+                    $result = $stmt->execute([$current_user_id, $receiver_id, $message]);
+                    
+                    if ($result) {
+                        echo json_encode(['success' => true]);
+                    } else {
+                        logError("Failed to insert message: " . print_r($stmt->errorInfo(), true));
+                        echo json_encode(['success' => false, 'error' => 'Database error']);
+                    }
+                } catch (Exception $e) {
+                    logError("Message insert exception: " . $e->getMessage());
+                    echo json_encode(['success' => false, 'error' => 'Database error']);
+                }
             } else {
                 echo json_encode(['success' => false, 'error' => 'Invalid message']);
             }
@@ -29,7 +45,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $receiver_id = (int)$_POST['receiver_id'];
             $file_message = trim($_POST['file_message'] ?? '');
             
+            // Debug logging
+            logError("Upload attempt - Receiver ID: $receiver_id");
+            logError("Files received: " . print_r($_FILES, true));
+            
             if (!$receiver_id || !isset($_FILES['file'])) {
+                logError("Invalid upload request - missing receiver_id or file");
                 echo json_encode(['success' => false, 'error' => 'Invalid upload request']);
                 exit;
             }
@@ -37,60 +58,145 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $file = $_FILES['file'];
             
             if ($file['error'] !== UPLOAD_ERR_OK) {
-                echo json_encode(['success' => false, 'error' => 'File upload failed']);
+                logError("File upload error code: " . $file['error']);
+                $errorMessages = [
+                    UPLOAD_ERR_INI_SIZE => 'File too large (exceeds php.ini limit)',
+                    UPLOAD_ERR_FORM_SIZE => 'File too large (exceeds form limit)',
+                    UPLOAD_ERR_PARTIAL => 'File partially uploaded',
+                    UPLOAD_ERR_NO_FILE => 'No file uploaded',
+                    UPLOAD_ERR_NO_TMP_DIR => 'Missing temporary folder',
+                    UPLOAD_ERR_CANT_WRITE => 'Failed to write file to disk',
+                    UPLOAD_ERR_EXTENSION => 'File upload stopped by extension'
+                ];
+                $errorMessage = $errorMessages[$file['error']] ?? 'Unknown upload error';
+                echo json_encode(['success' => false, 'error' => $errorMessage]);
                 exit;
             }
 
             // File size limit (10MB)
             if ($file['size'] > 10 * 1024 * 1024) {
+                logError("File too large: " . $file['size'] . " bytes");
                 echo json_encode(['success' => false, 'error' => 'File too large (max 10MB)']);
                 exit;
             }
 
-            // Enhanced file type validation
+            // Enhanced file type validation with more comprehensive MIME types
             $allowedTypes = [
-                'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
-                'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                'text/plain', 'text/csv'
+                // Images
+                'image/jpeg', 'image/jpg', 'image/pjpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 'image/tiff',
+                // Documents
+                'application/pdf', 
+                'application/msword', 
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'application/vnd.ms-excel', 
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'application/vnd.ms-powerpoint',
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                // Text files
+                'text/plain', 'text/csv', 'text/rtf',
+                // Archives (optional)
+                'application/zip', 'application/x-zip-compressed',
+                // Sometimes browsers send different MIME types
+                'application/octet-stream' // Fallback for unknown types
             ];
 
+            // Get MIME type from multiple sources for better detection
             $finfo = finfo_open(FILEINFO_MIME_TYPE);
             $mimeType = finfo_file($finfo, $file['tmp_name']);
             finfo_close($finfo);
-
-            if (!in_array($mimeType, $allowedTypes)) {
-                echo json_encode(['success' => false, 'error' => 'File type not allowed']);
+            
+            // Fallback MIME type detection
+            if (!$mimeType || $mimeType === 'application/octet-stream') {
+                $mimeType = $_FILES['file']['type'] ?? 'application/octet-stream';
+            }
+            
+            logError("Detected MIME type: $mimeType for file: " . $file['name']);
+            logError("Browser reported MIME type: " . ($_FILES['file']['type'] ?? 'none'));
+            
+            // Additional validation based on file extension as backup
+            $fileExtension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+            $allowedExtensions = [
+                'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff',
+                'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+                'txt', 'csv', 'rtf', 'zip'
+            ];
+            
+            logError("File extension: $fileExtension");
+            
+            $mimeTypeAllowed = in_array($mimeType, $allowedTypes);
+            $extensionAllowed = in_array($fileExtension, $allowedExtensions);
+            
+            if (!$mimeTypeAllowed && !$extensionAllowed) {
+                logError("File type not allowed - MIME: $mimeType, Extension: $fileExtension");
+                echo json_encode(['success' => false, 'error' => "File type not allowed. Detected: $mimeType (.$fileExtension)"]);
                 exit;
             }
+            
+            if (!$mimeTypeAllowed) {
+                logError("MIME type not in allowed list but extension is ok, proceeding...");
+            }
 
-            // Create uploads directory
+            // Create uploads directory with proper path
             $uploadDir = __DIR__ . '/../uploads/chat_files/';
+            logError("Upload directory: $uploadDir");
+            
             if (!file_exists($uploadDir)) {
-                mkdir($uploadDir, 0755, true);
+                if (!mkdir($uploadDir, 0755, true)) {
+                    logError("Failed to create upload directory: $uploadDir");
+                    echo json_encode(['success' => false, 'error' => 'Failed to create upload directory']);
+                    exit;
+                }
+                logError("Created upload directory: $uploadDir");
+            }
+
+            // Check if directory is writable
+            if (!is_writable($uploadDir)) {
+                logError("Upload directory not writable: $uploadDir");
+                echo json_encode(['success' => false, 'error' => 'Upload directory not writable']);
+                exit;
             }
 
             // Generate unique filename
             $fileExtension = pathinfo($file['name'], PATHINFO_EXTENSION);
-            $uniqueFilename = uniqid() . '_' . time() . '.' . $fileExtension;
+            $uniqueFilename = uniqid() . '_' . time() . '.' . strtolower($fileExtension);
             $filePath = $uploadDir . $uniqueFilename;
+            
+            logError("Attempting to move file to: $filePath");
 
             if (move_uploaded_file($file['tmp_name'], $filePath)) {
+                logError("File moved successfully to: $filePath");
+                
                 $message = $file_message ?: 'Shared a file: ' . $file['name'];
 
-                $stmt = $pdo->prepare("INSERT INTO messages (sender_id, receiver_id, message, file_path, file_name, file_type, file_size) VALUES (?, ?, ?, ?, ?, ?, ?)");
-                $stmt->execute([
-                    $current_user_id, 
-                    $receiver_id, 
-                    $message,
-                    $uniqueFilename,
-                    $file['name'],
-                    $mimeType, // Use detected MIME type
-                    $file['size']
-                ]);
-
-                echo json_encode(['success' => true]);
+                try {
+                    $stmt = $pdo->prepare("INSERT INTO messages (sender_id, receiver_id, message, file_path, file_name, file_type, file_size) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                    $result = $stmt->execute([
+                        $current_user_id, 
+                        $receiver_id, 
+                        $message,
+                        $uniqueFilename,  // Store just the filename, not full path
+                        $file['name'],
+                        $mimeType,
+                        $file['size']
+                    ]);
+                    
+                    if ($result) {
+                        logError("File record inserted successfully");
+                        echo json_encode(['success' => true]);
+                    } else {
+                        logError("Failed to insert file record: " . print_r($stmt->errorInfo(), true));
+                        // Clean up the uploaded file since DB insert failed
+                        unlink($filePath);
+                        echo json_encode(['success' => false, 'error' => 'Database error']);
+                    }
+                } catch (Exception $e) {
+                    logError("File record insert exception: " . $e->getMessage());
+                    // Clean up the uploaded file since DB insert failed
+                    unlink($filePath);
+                    echo json_encode(['success' => false, 'error' => 'Database error']);
+                }
             } else {
+                logError("Failed to move uploaded file from " . $file['tmp_name'] . " to $filePath");
                 echo json_encode(['success' => false, 'error' => 'Failed to save file']);
             }
             exit;
@@ -99,78 +205,118 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $other_user_id = (int)$_POST['other_user_id'];
             $last_message_id = (int)($_POST['last_message_id'] ?? 0);
             
-            $stmt = $pdo->prepare("
-                SELECT m.*, u.full_name, u.username 
-                FROM messages m 
-                JOIN users u ON m.sender_id = u.user_id 
-                WHERE ((m.sender_id = ? AND m.receiver_id = ?) OR (m.sender_id = ? AND m.receiver_id = ?))
-                AND m.message_id > ?
-                ORDER BY m.created_at ASC
-            ");
-            $stmt->execute([$current_user_id, $other_user_id, $other_user_id, $current_user_id, $last_message_id]);
-            $messages = $stmt->fetchAll();
-            
-            // Mark messages as read
-            $pdo->prepare("UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ? AND is_read = 0")
-                ->execute([$other_user_id, $current_user_id]);
-            
-            echo json_encode(['messages' => $messages]);
+            try {
+                $stmt = $pdo->prepare("
+                    SELECT m.*, u.full_name, u.username 
+                    FROM messages m 
+                    JOIN users u ON m.sender_id = u.user_id 
+                    WHERE ((m.sender_id = ? AND m.receiver_id = ?) OR (m.sender_id = ? AND m.receiver_id = ?))
+                    AND m.message_id > ?
+                    ORDER BY m.created_at ASC
+                ");
+                $stmt->execute([$current_user_id, $other_user_id, $other_user_id, $current_user_id, $last_message_id]);
+                $messages = $stmt->fetchAll();
+                
+                // Mark messages as read
+                $pdo->prepare("UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ? AND is_read = 0")
+                    ->execute([$other_user_id, $current_user_id]);
+                
+                echo json_encode(['messages' => $messages]);
+            } catch (Exception $e) {
+                logError("Get messages exception: " . $e->getMessage());
+                echo json_encode(['messages' => []]);
+            }
             exit;
             
         case 'get_contacts':
             $search = trim($_POST['search'] ?? '');
             $searchParam = '%' . $search . '%';
             
-            if ($is_admin) {
-                if ($search) {
-                    $stmt = $pdo->prepare("
-                        SELECT DISTINCT u.user_id, u.full_name, u.username, u.user_type, u.role,
-                               (SELECT COUNT(*) FROM messages WHERE sender_id = u.user_id AND receiver_id = ? AND is_read = 0) as unread_count
-                        FROM users u 
-                        WHERE u.user_id != ? AND (u.full_name LIKE ? OR u.username LIKE ? OR u.role LIKE ?)
-                        ORDER BY u.full_name ASC
-                    ");
-                    $stmt->execute([$current_user_id, $current_user_id, $searchParam, $searchParam, $searchParam]);
+            try {
+                if ($is_admin) {
+                    if ($search) {
+                        $stmt = $pdo->prepare("
+                            SELECT DISTINCT u.user_id, u.full_name, u.username, u.user_type, u.role,
+                                   (SELECT COUNT(*) FROM messages WHERE sender_id = u.user_id AND receiver_id = ? AND is_read = 0) as unread_count
+                            FROM users u 
+                            WHERE u.user_id != ? AND (u.full_name LIKE ? OR u.username LIKE ? OR u.role LIKE ?)
+                            ORDER BY u.full_name ASC
+                        ");
+                        $stmt->execute([$current_user_id, $current_user_id, $searchParam, $searchParam, $searchParam]);
+                    } else {
+                        $stmt = $pdo->prepare("
+                            SELECT DISTINCT u.user_id, u.full_name, u.username, u.user_type, u.role,
+                                   (SELECT COUNT(*) FROM messages WHERE sender_id = u.user_id AND receiver_id = ? AND is_read = 0) as unread_count
+                            FROM users u 
+                            WHERE u.user_id != ?
+                            ORDER BY u.full_name ASC
+                        ");
+                        $stmt->execute([$current_user_id, $current_user_id]);
+                    }
                 } else {
-                    $stmt = $pdo->prepare("
-                        SELECT DISTINCT u.user_id, u.full_name, u.username, u.user_type, u.role,
-                               (SELECT COUNT(*) FROM messages WHERE sender_id = u.user_id AND receiver_id = ? AND is_read = 0) as unread_count
-                        FROM users u 
-                        WHERE u.user_id != ?
-                        ORDER BY u.full_name ASC
-                    ");
-                    $stmt->execute([$current_user_id, $current_user_id]);
+                    if ($search) {
+                        $stmt = $pdo->prepare("
+                            SELECT DISTINCT u.user_id, u.full_name, u.username, u.user_type, u.role,
+                                   (SELECT COUNT(*) FROM messages WHERE sender_id = u.user_id AND receiver_id = ? AND is_read = 0) as unread_count
+                            FROM users u 
+                            WHERE u.user_id != ? AND (u.role != 'user' OR u.is_admin = 1) 
+                            AND (u.full_name LIKE ? OR u.username LIKE ? OR u.role LIKE ?)
+                            ORDER BY u.full_name ASC
+                        ");
+                        $stmt->execute([$current_user_id, $current_user_id, $searchParam, $searchParam, $searchParam]);
+                    } else {
+                        $stmt = $pdo->prepare("
+                            SELECT DISTINCT u.user_id, u.full_name, u.username, u.user_type, u.role,
+                                   (SELECT COUNT(*) FROM messages WHERE sender_id = u.user_id AND receiver_id = ? AND is_read = 0) as unread_count
+                            FROM users u 
+                            WHERE u.user_id != ? AND (u.role != 'user' OR u.is_admin = 1)
+                            ORDER BY u.full_name ASC
+                        ");
+                        $stmt->execute([$current_user_id, $current_user_id]);
+                    }
                 }
-            } else {
-                if ($search) {
-                    $stmt = $pdo->prepare("
-                        SELECT DISTINCT u.user_id, u.full_name, u.username, u.user_type, u.role,
-                               (SELECT COUNT(*) FROM messages WHERE sender_id = u.user_id AND receiver_id = ? AND is_read = 0) as unread_count
-                        FROM users u 
-                        WHERE u.user_id != ? AND (u.role != 'user' OR u.is_admin = 1) 
-                        AND (u.full_name LIKE ? OR u.username LIKE ? OR u.role LIKE ?)
-                        ORDER BY u.full_name ASC
-                    ");
-                    $stmt->execute([$current_user_id, $current_user_id, $searchParam, $searchParam, $searchParam]);
-                } else {
-                    $stmt = $pdo->prepare("
-                        SELECT DISTINCT u.user_id, u.full_name, u.username, u.user_type, u.role,
-                               (SELECT COUNT(*) FROM messages WHERE sender_id = u.user_id AND receiver_id = ? AND is_read = 0) as unread_count
-                        FROM users u 
-                        WHERE u.user_id != ? AND (u.role != 'user' OR u.is_admin = 1)
-                        ORDER BY u.full_name ASC
-                    ");
-                    $stmt->execute([$current_user_id, $current_user_id]);
-                }
+                $contacts = $stmt->fetchAll();
+                echo json_encode(['contacts' => $contacts]);
+            } catch (Exception $e) {
+                logError("Get contacts exception: " . $e->getMessage());
+                echo json_encode(['contacts' => []]);
             }
-            $contacts = $stmt->fetchAll();
-            echo json_encode(['contacts' => $contacts]);
             exit;
     }
 }
 
-// File download handler
+// Enhanced file download handler with image serving
 if (isset($_GET['download']) && isset($_GET['file'])) {
+    $filename = basename($_GET['file']);
+    $filePath = __DIR__ . '/../uploads/chat_files/' . $filename;
+    
+    logError("Download request for: $filename, Full path: $filePath");
+    
+    if (file_exists($filePath)) {
+        $stmt = $pdo->prepare("SELECT file_name, file_type FROM messages WHERE file_path = ? LIMIT 1");
+        $stmt->execute([$filename]);
+        $fileInfo = $stmt->fetch();
+        
+        if ($fileInfo) {
+            logError("File found in database, serving download");
+            header('Content-Type: ' . $fileInfo['file_type']);
+            header('Content-Disposition: attachment; filename="' . $fileInfo['file_name'] . '"');
+            header('Content-Length: ' . filesize($filePath));
+            readfile($filePath);
+            exit;
+        } else {
+            logError("File not found in database: $filename");
+        }
+    } else {
+        logError("Physical file not found: $filePath");
+    }
+    
+    http_response_code(404);
+    exit('File not found');
+}
+
+// Image serving handler (for inline display)
+if (isset($_GET['image']) && isset($_GET['file'])) {
     $filename = basename($_GET['file']);
     $filePath = __DIR__ . '/../uploads/chat_files/' . $filename;
     
@@ -179,17 +325,19 @@ if (isset($_GET['download']) && isset($_GET['file'])) {
         $stmt->execute([$filename]);
         $fileInfo = $stmt->fetch();
         
-        if ($fileInfo) {
+        if ($fileInfo && strpos($fileInfo['file_type'], 'image/') === 0) {
             header('Content-Type: ' . $fileInfo['file_type']);
-            header('Content-Disposition: attachment; filename="' . $fileInfo['file_name'] . '"');
             header('Content-Length: ' . filesize($filePath));
+            header('Cache-Control: public, max-age=3600'); // Cache for 1 hour
             readfile($filePath);
             exit;
         }
     }
     
-    http_response_code(404);
-    exit('File not found');
+    // Serve a placeholder image if file not found
+    header('Content-Type: image/svg+xml');
+    echo '<svg width="200" height="150" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#f0f0f0"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" font-family="Arial" font-size="14" fill="#666">Image not found</text></svg>';
+    exit;
 }
 ?>
 
@@ -536,6 +684,14 @@ if (isset($_GET['download']) && isset($_GET['file'])) {
     color: #2c3e50;
     margin-bottom: 4px;
     font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.recent-indicator {
+    font-size: 12px;
+    opacity: 0.7;
 }
 
 .contact-role {
@@ -697,7 +853,6 @@ if (isset($_GET['download']) && isset($_GET['file'])) {
     cursor: pointer;
 }
 
-.file-attachment-icon {
     width: 40px;
     height: 40px;
     border-radius: 8px;
@@ -897,6 +1052,28 @@ if (isset($_GET['download']) && isset($_GET['file'])) {
     color: #7f8c8d;
 }
 
+.new-messages-notification {
+    position: absolute;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #3498db;
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 12px;
+    cursor: pointer;
+    z-index: 10;
+    box-shadow: 0 2px 10px rgba(52, 152, 219, 0.3);
+    transition: all 0.2s ease;
+    display: none;
+}
+
+.new-messages-notification:hover {
+    background: #2980b9;
+    transform: translateX(-50%) translateY(-2px);
+}
+
 /* Show animation */
 .chat-window.show {
     display: flex;
@@ -945,6 +1122,9 @@ class SimpleChatWidget {
         this.selectedFile = null;
         this.searchTimeout = null;
         this.currentSearchTerm = '';
+        this.messagePollingInterval = null;
+        this.contactsPollingInterval = null;
+        this.recentContacts = new Set(); // Track recently chatted contacts
         
         this.init();
     }
@@ -952,6 +1132,42 @@ class SimpleChatWidget {
     init() {
         this.bindEvents();
         this.loadContacts();
+        this.startContactsPolling();
+    }
+
+    startMessagePolling() {
+        // Clear any existing polling
+        this.stopMessagePolling();
+        
+        // Poll for new messages every 2 seconds when chat is active
+        this.messagePollingInterval = setInterval(() => {
+            if (this.currentChatUserId && this.isOpen) {
+                this.loadMessages();
+            }
+        }, 2000);
+    }
+
+    stopMessagePolling() {
+        if (this.messagePollingInterval) {
+            clearInterval(this.messagePollingInterval);
+            this.messagePollingInterval = null;
+        }
+    }
+
+    startContactsPolling() {
+        // Poll for contact updates (unread counts) every 5 seconds
+        this.contactsPollingInterval = setInterval(() => {
+            if (this.isOpen && !this.currentSearchTerm) {
+                this.loadContacts();
+            }
+        }, 5000);
+    }
+
+    stopContactsPolling() {
+        if (this.contactsPollingInterval) {
+            clearInterval(this.contactsPollingInterval);
+            this.contactsPollingInterval = null;
+        }
     }
 
     bindEvents() {
@@ -1056,9 +1272,12 @@ class SimpleChatWidget {
             chatWindow.style.display = 'flex';
             setTimeout(() => chatWindow.classList.add('show'), 10);
             this.loadContacts();
+            this.startContactsPolling();
         } else {
             chatWindow.classList.remove('show');
             setTimeout(() => chatWindow.style.display = 'none', 300);
+            this.stopMessagePolling();
+            this.stopContactsPolling();
         }
     }
 
@@ -1067,12 +1286,15 @@ class SimpleChatWidget {
         const chatWindow = document.getElementById('chatWindow');
         chatWindow.classList.remove('show');
         setTimeout(() => chatWindow.style.display = 'none', 300);
+        this.stopMessagePolling();
+        this.stopContactsPolling();
     }
 
     showContactsView() {
         document.getElementById('contactsView').style.display = 'flex';
         document.getElementById('chatView').style.display = 'none';
         this.currentChatUserId = null;
+        this.stopMessagePolling();
         if (this.selectedFile) this.removeSelectedFile();
         // Maintain search term when going back
         if (this.currentSearchTerm) {
@@ -1085,6 +1307,7 @@ class SimpleChatWidget {
         document.getElementById('contactsView').style.display = 'none';
         document.getElementById('chatView').style.display = 'flex';
         setTimeout(() => this.scrollToBottom(), 100);
+        this.startMessagePolling();
     }
 
     async loadContacts(searchTerm = '') {
@@ -1128,7 +1351,25 @@ class SimpleChatWidget {
             return;
         }
 
-        contacts.forEach(contact => {
+        // Sort contacts: recently chatted first, then by unread count, then alphabetically
+        const sortedContacts = [...contacts].sort((a, b) => {
+            const aIsRecent = this.recentContacts.has(parseInt(a.user_id));
+            const bIsRecent = this.recentContacts.has(parseInt(b.user_id));
+            
+            // Recently chatted contacts first
+            if (aIsRecent && !bIsRecent) return -1;
+            if (!aIsRecent && bIsRecent) return 1;
+            
+            // Then by unread count (higher first)
+            if (a.unread_count !== b.unread_count) {
+                return b.unread_count - a.unread_count;
+            }
+            
+            // Finally alphabetically
+            return a.full_name.localeCompare(b.full_name);
+        });
+
+        sortedContacts.forEach(contact => {
             const contactDiv = document.createElement('div');
             contactDiv.className = 'contact-item';
             contactDiv.dataset.userId = contact.user_id;
@@ -1136,13 +1377,14 @@ class SimpleChatWidget {
 
             const roleText = contact.role === 'user' ? 'User' : 'Admin';
             const avatarColor = contact.role === 'user' ? '#95a5a6' : '#e74c3c';
+            const isRecent = this.recentContacts.has(parseInt(contact.user_id));
 
             contactDiv.innerHTML = `
                 <div class="contact-avatar" style="background: linear-gradient(135deg, ${avatarColor} 0%, ${avatarColor}dd 100%);">
                     ${contact.full_name.charAt(0).toUpperCase()}
                 </div>
                 <div class="contact-info">
-                    <div class="contact-name">${this.escapeHtml(contact.full_name)}</div>
+                    <div class="contact-name">${this.escapeHtml(contact.full_name)} ${isRecent ? '<span class="recent-indicator">💬</span>' : ''}</div>
                     <div class="contact-role">${roleText}</div>
                 </div>
                 ${contact.unread_count > 0 ? `<div class="contact-unread">${contact.unread_count > 99 ? '99+' : contact.unread_count}</div>` : ''}
@@ -1158,6 +1400,9 @@ class SimpleChatWidget {
 
         this.currentChatUserId = userId;
         this.lastMessageId = 0;
+
+        // Add to recent contacts
+        this.recentContacts.add(userId);
 
         // Update chat header
         document.getElementById('chatUserName').textContent = userName;
@@ -1195,17 +1440,55 @@ class SimpleChatWidget {
                 }
 
                 if (result.messages.length > 0) {
+                    const wasAtBottom = this.isScrolledToBottom();
+                    
                     result.messages.forEach(message => {
                         this.appendMessage(message);
                         this.lastMessageId = Math.max(this.lastMessageId, message.message_id);
                     });
                     
-                    this.scrollToBottom();
+                    // Auto-scroll only if user was already at bottom or it's initial load
+                    if (wasAtBottom || isInitialLoad) {
+                        this.scrollToBottom();
+                    } else {
+                        // Show a subtle notification that new messages arrived
+                        this.showNewMessageNotification(result.messages.length);
+                    }
                 }
             }
         } catch (error) {
             console.error('Error loading messages:', error);
         }
+    }
+
+    isScrolledToBottom() {
+        const messagesArea = document.getElementById('messagesArea');
+        const threshold = 50; // pixels from bottom
+        return messagesArea.scrollHeight - messagesArea.clientHeight <= messagesArea.scrollTop + threshold;
+    }
+
+    showNewMessageNotification(count) {
+        // Create or update new message notification
+        let notification = document.querySelector('.new-messages-notification');
+        if (!notification) {
+            notification = document.createElement('div');
+            notification.className = 'new-messages-notification';
+            notification.addEventListener('click', () => {
+                this.scrollToBottom();
+                notification.remove();
+            });
+            document.getElementById('messagesArea').parentNode.appendChild(notification);
+        }
+        
+        notification.textContent = `${count} new message${count > 1 ? 's' : ''} ↓`;
+        notification.style.display = 'block';
+        
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.remove();
+            }
+        }, 5000);
     }
 
     appendMessage(message) {
@@ -1225,10 +1508,21 @@ class SimpleChatWidget {
         if (message.file_path && message.file_name) {
             const isImage = message.file_type && message.file_type.startsWith('image/');
             
+            console.log('Rendering file attachment:', {
+                file_path: message.file_path,
+                file_name: message.file_name,
+                file_type: message.file_type,
+                isImage: isImage
+            });
+            
             if (isImage) {
+                // Use the image serving handler instead of direct file access
+                const imagePath = `chat_widget.php?image=1&file=${encodeURIComponent(message.file_path)}`;
                 fileAttachment = `
                     <div class="image-attachment" data-file-path="${message.file_path}" data-file-name="${message.file_name}">
-                        <img src="uploads/chat_files/${message.file_path}" alt="${this.escapeHtml(message.file_name)}" loading="lazy">
+                        <img src="${imagePath}" alt="${this.escapeHtml(message.file_name)}" 
+                             loading="lazy" 
+                             onerror="console.log('Image failed to load:', this.src); this.style.display='none'; this.parentNode.innerHTML='<div style=\\'padding:20px; text-align:center; background:#f0f0f0; border-radius:8px; color:#666;\\'>Image not available<br><small>${this.escapeHtml(message.file_name)}</small></div>';">
                     </div>
                 `;
             } else {
@@ -1282,10 +1576,10 @@ class SimpleChatWidget {
 
             input.value = '';
             if (this.selectedFile) this.removeSelectedFile();
-            this.loadMessages();
+            // Don't call loadMessages() here - let polling handle it for smoother UX
         } catch (error) {
             console.error('Error sending message:', error);
-            alert('Failed to send message. Please try again.');
+            alert('Failed to send message: ' + error.message);
         } finally {
             sendBtn.disabled = false;
             sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i>';
@@ -1307,20 +1601,35 @@ class SimpleChatWidget {
     }
 
     async uploadFile(file, message) {
+        console.log('Uploading file:', file.name, 'Size:', file.size, 'Type:', file.type);
+        
         const formData = new FormData();
         formData.append('action', 'upload_file');
         formData.append('receiver_id', this.currentChatUserId);
         formData.append('file', file);
         formData.append('file_message', message);
 
-        const response = await fetch('chat_widget.php', {
-            method: 'POST',
-            body: formData
-        });
+        try {
+            const response = await fetch('chat_widget.php', {
+                method: 'POST',
+                body: formData
+            });
 
-        const result = await response.json();
-        if (!result.success) {
-            throw new Error(result.error || 'Failed to upload file');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            console.log('Upload response:', result);
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Upload failed');
+            }
+            
+            return result;
+        } catch (error) {
+            console.error('Upload error:', error);
+            throw error;
         }
     }
 

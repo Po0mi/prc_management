@@ -1180,22 +1180,27 @@ try {
                         <?php endif; ?>
                       </td>
                       <td>
-                        <div class="session-datetime">
-                          <?php if ($durationDays == 1): ?>
-                            <div class="session-date-single">
-                              <span class="session-date"><?= date('M d, Y', $sessionStartDate) ?></span>
-                              <span class="session-time"><?= date('g:i A', strtotime($s['start_time'])) ?> - <?= date('g:i A', strtotime($s['end_time'])) ?></span>
-                              <div class="session-duration">Single Day</div>
-                            </div>
-                          <?php else: ?>
-                            <div class="session-date-range">
-                              <div class="session-date-start"><?= date('M d, Y', $sessionStartDate) ?></div>
-                              <div class="session-date-end">to <?= date('M d, Y', $sessionEndDate) ?></div>
-                              <span class="session-time"><?= date('g:i A', strtotime($s['start_time'])) ?> - <?= date('g:i A', strtotime($s['end_time'])) ?></span>
-                              <div class="session-duration"><?= $durationDays ?> days</div>
-                            </div>
-                          <?php endif; ?>
-                        </div>
+
+<div class="session-datetime">
+  <?php if ($durationDays == 1): ?>
+    <div class="session-date-single">
+      <span class="session-date"><?= date('M d, Y', $sessionStartDate) ?></span>
+      <div class="session-time-duration">
+        <span class="session-time"><?= date('g:i A', strtotime($s['start_time'])) ?> - <?= date('g:i A', strtotime($s['end_time'])) ?></span>
+        <div class="session-duration">Single Day</div>
+      </div>
+    </div>
+  <?php else: ?>
+    <div class="session-date-range">
+      <div class="session-date-start"><?= date('M d, Y', $sessionStartDate) ?></div>
+      <div class="session-date-end">to <?= date('M d, Y', $sessionEndDate) ?></div>
+      <div class="session-time-duration">
+        <span class="session-time"><?= date('g:i A', strtotime($s['start_time'])) ?> - <?= date('g:i A', strtotime($s['end_time'])) ?></span>
+        <div class="session-duration"><?= $durationDays ?> days</div>
+      </div>
+    </div>
+  <?php endif; ?>
+</div>
                         <td>
   <?php if (!empty($s['instructor'])): ?>
     <div class="instructor-info">
@@ -1246,7 +1251,7 @@ try {
                           </span>
                         <?php endif; ?>
                       </td>
-                      <td class="actions">
+                      <td>
                         <?php if (!$isRegistered && !$isFull && $sessionStatus === 'upcoming'): ?>
                           <button class="btn-action btn-register" onclick="openRegisterModal(<?= htmlspecialchars(json_encode($s)) ?>)">
                             <i class="fas fa-user-plus"></i> Register
@@ -1394,7 +1399,7 @@ try {
               </div>
             <?php endif; ?>
           </div>
-          <div class="training-requests-section">
+<div class="training-requests-section">
     <div class="section-header">
         <h2><i class="fas fa-chalkboard-teacher"></i> My Training Requests</h2>
     </div>
@@ -1407,14 +1412,14 @@ try {
         </div>
     <?php else: ?>
         <div class="table-container">
-            <table class="data-table">
+            <table class="data-table training-requests-table">
                 <thead>
                     <tr>
                         <th>Request Details</th>
                         <th>Service & Program</th>
                         <th>Participants</th>
-                        <th>Preferred Schedule</th>
-                        <th>Contact Info</th>
+                        <th>Schedule</th>
+                        <th>Contact</th>
                         <th>Status</th>
                         <th>Submitted</th>
                     </tr>
@@ -1425,80 +1430,83 @@ try {
                         <td>
                             <div class="request-title">Request #<?= $request['request_id'] ?></div>
                             <?php if ($request['purpose']): ?>
-                                <div style="font-size: 0.85rem; color: var(--gray); margin-top: 0.2rem;">
-                                    <?= htmlspecialchars(substr($request['purpose'], 0, 100)) ?><?= strlen($request['purpose']) > 100 ? '...' : '' ?>
+                                <div class="contact-detail">
+                                    <?= htmlspecialchars(substr($request['purpose'], 0, 80)) ?><?= strlen($request['purpose']) > 80 ? '...' : '' ?>
                                 </div>
                             <?php endif; ?>
                         </td>
+                        
                         <td>
                             <div class="service-program">
                                 <span class="service-badge <?= strtolower(str_replace(' ', '-', $request['service_type'])) ?>">
                                     <?= htmlspecialchars($request['service_type']) ?>
                                 </span>
-                                <div style="font-weight: 600; margin-top: 0.3rem;">
+                                <div style="font-weight: 600; margin-top: 0.2rem; font-size: 0.8rem;">
                                     <?= htmlspecialchars($request['program_name'] ?: $request['training_program']) ?>
                                 </div>
                                 <?php if ($request['typical_duration_hours']): ?>
-                                    <small style="color: var(--gray);"><?= $request['typical_duration_hours'] ?> hours</small>
+                                    <div class="contact-detail"><?= $request['typical_duration_hours'] ?> hours</div>
                                 <?php endif; ?>
                             </div>
                         </td>
+                        
                         <td>
-                            <div style="text-align: center;">
-                                <div style="font-size: 1.2rem; font-weight: 600;"><?= $request['participant_count'] ?></div>
-                                <small style="color: var(--gray);">participants</small>
+                            <div class="participant-count">
+                                <span class="count"><?= $request['participant_count'] ?></span>
+                                <span class="label">participants</span>
                             </div>
                             <?php if ($request['organization_name']): ?>
-                                <div style="font-size: 0.8rem; color: var(--gray); margin-top: 0.2rem;">
-                                    <?= htmlspecialchars($request['organization_name']) ?>
+                                <div class="contact-detail" style="margin-top: 0.3rem;">
+                                    <?= htmlspecialchars(substr($request['organization_name'], 0, 20)) ?><?= strlen($request['organization_name']) > 20 ? '...' : '' ?>
                                 </div>
                             <?php endif; ?>
                         </td>
-           <td>
-    <?php if ($request['preferred_start_date']): ?>
-        <div style="font-weight: 600;">
-            <?= date('M d, Y', strtotime($request['preferred_start_date'])) ?>
-            <?php if ($request['preferred_end_date'] && $request['preferred_end_date'] !== $request['preferred_start_date']): ?>
-                <div style="font-size: 0.8rem; color: var(--gray);">
-                    to <?= date('M d, Y', strtotime($request['preferred_end_date'])) ?>
-                </div>
-            <?php endif; ?>
-        </div>
-        
-        <!-- Show specific times only -->
-        <?php if (!empty($request['preferred_start_time']) || !empty($request['preferred_end_time'])): ?>
-            <div style="font-size: 0.8rem; color: #2196F3; margin-top: 0.3rem; font-weight: 500;">
-                <i class="fas fa-clock"></i>
-                <?php if (!empty($request['preferred_start_time'])): ?>
-                    <?= date('g:i A', strtotime($request['preferred_start_time'])) ?>
-                <?php endif; ?>
-                <?php if (!empty($request['preferred_end_time'])): ?>
-                    <?php if (!empty($request['preferred_start_time'])): ?>
-                        - <?= date('g:i A', strtotime($request['preferred_end_time'])) ?>
-                    <?php else: ?>
-                        End: <?= date('g:i A', strtotime($request['preferred_end_time'])) ?>
-                    <?php endif; ?>
-                <?php endif; ?>
-            </div>
-        <?php endif; ?>
-        
-    <?php else: ?>
-        <div style="color: var(--gray); font-style: italic;">Flexible</div>
-    <?php endif; ?>
-    
-    <?php if ($request['location_preference']): ?>
-        <div style="font-size: 0.8rem; color: var(--gray); margin-top: 0.2rem;">
-            <i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($request['location_preference']) ?>
-        </div>
-    <?php endif; ?>
-</td>
+                        
                         <td>
-                            <div style="font-size: 0.85rem;">
-                                <div style="font-weight: 600;"><?= htmlspecialchars($request['contact_person']) ?></div>
-                                <div style="color: var(--gray);"><?= htmlspecialchars($request['contact_number']) ?></div>
-                                <div style="color: var(--gray);"><?= htmlspecialchars($request['email']) ?></div>
+                            <div class="schedule-info">
+                                <?php if ($request['preferred_start_date']): ?>
+                                    <div class="date-main">
+                                        <?= date('M d, Y', strtotime($request['preferred_start_date'])) ?>
+                                    </div>
+                                    <?php if ($request['preferred_end_date'] && $request['preferred_end_date'] !== $request['preferred_start_date']): ?>
+                                        <div class="date-range">
+                                            to <?= date('M d, Y', strtotime($request['preferred_end_date'])) ?>
+                                        </div>
+                                    <?php endif; ?>
+                                    
+                                    <?php if (!empty($request['preferred_start_time']) || !empty($request['preferred_end_time'])): ?>
+                                        <div class="time-info">
+                                            <i class="fas fa-clock"></i>
+                                            <?php if (!empty($request['preferred_start_time'])): ?>
+                                                <?= date('g:i A', strtotime($request['preferred_start_time'])) ?>
+                                            <?php endif; ?>
+                                            <?php if (!empty($request['preferred_end_time'])): ?>
+                                                <?= !empty($request['preferred_start_time']) ? ' - ' : 'End: ' ?>
+                                                <?= date('g:i A', strtotime($request['preferred_end_time'])) ?>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php endif; ?>
+                                <?php else: ?>
+                                    <div class="contact-detail" style="font-style: italic;">Flexible</div>
+                                <?php endif; ?>
+                                
+                                <?php if ($request['location_preference']): ?>
+                                    <div class="location-info">
+                                        <i class="fas fa-map-marker-alt"></i> 
+                                        <?= htmlspecialchars(substr($request['location_preference'], 0, 15)) ?><?= strlen($request['location_preference']) > 15 ? '...' : '' ?>
+                                    </div>
+                                <?php endif; ?>
                             </div>
                         </td>
+                        
+                        <td>
+                            <div class="contact-info">
+                                <div class="contact-name"><?= htmlspecialchars($request['contact_person']) ?></div>
+                                <div class="contact-detail"><?= htmlspecialchars($request['contact_number']) ?></div>
+                                <div class="contact-detail"><?= htmlspecialchars($request['email']) ?></div>
+                            </div>
+                        </td>
+                        
                         <td>
                             <span class="status-badge <?= $request['status'] ?>">
                                 <i class="fas <?= 
@@ -1510,11 +1518,12 @@ try {
                                 <?= ucwords(str_replace('_', ' ', $request['status'])) ?>
                             </span>
                         </td>
+                        
                         <td>
-                            <div style="font-size: 0.9rem;">
+                            <div class="submitted-date">
                                 <?= date('M d, Y', strtotime($request['created_at'])) ?>
                             </div>
-                            <div style="font-size: 0.8rem; color: var(--gray);">
+                            <div class="submitted-time">
                                 <?= date('g:i A', strtotime($request['created_at'])) ?>
                             </div>
                         </td>
@@ -1661,7 +1670,7 @@ try {
 
     <!-- Registration Modal -->
     <div class="modal" id="registerModal">
-      <div class="modal-contents">
+      <div class="modal-content">
         <div class="modal-headers">
           <h2 class="modal-titles" id="modalTitle">Register for Training</h2>
           <button class="close-modal" onclick="closeRegisterModal()">
@@ -3741,7 +3750,7 @@ function injectMultiDayTrainingStyles() {
 
 .session-duration {
     font-size: 0.75rem;
-    background: linear-gradient(135deg, var(--light) 0%, #e3f2fd 100%);
+    background: rgba(33, 150, 243, 0.1);
     color: var(--blue);
     padding: 0.2rem 0.4rem;
     border-radius: 4px;

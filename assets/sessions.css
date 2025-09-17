@@ -1113,8 +1113,8 @@ body {
 
 .session-datetime {
   display: flex;
-  flex-direction: column;
   gap: var(--spacing-xs);
+  justify-content: center;
 }
 
 .session-date-single .session-date {
@@ -1127,6 +1127,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
+  justify-content: center;
 }
 
 .session-date-start {
@@ -1145,6 +1146,8 @@ body {
   font-size: var(--font-size-sm);
   color: var(--gray-dark);
   font-weight: 500;
+  display: flex;
+  justify-content: center;
 }
 
 .session-duration {

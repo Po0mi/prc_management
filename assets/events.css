@@ -723,12 +723,16 @@ body.sidebar-collapsed .events-container {
   font-weight: 600;
   color: var(--dark);
   font-size: var(--font-size-base);
+  display: flex;
+  justify-content: center;
 }
 
 .event-date-end {
   font-size: var(--font-size-sm);
   color: var(--gray);
   font-style: italic;
+  display: flex;
+  justify-content: center;
 }
 
 .event-time {
@@ -740,6 +744,8 @@ body.sidebar-collapsed .events-container {
   margin: var(--spacing-xs) 0;
   min-width: 120px;
   text-align: center;
+  display: flex;
+  justify-content: center;
 }
 
 .event-duration {
@@ -754,6 +760,8 @@ body.sidebar-collapsed .events-container {
   border: 1px solid rgba(33, 150, 243, 0.2);
   min-width: 60px;
   text-align: center;
+  display: flex;
+  justify-content: center;
 }
 
 .ongoing-badge {
@@ -938,6 +946,7 @@ body.sidebar-collapsed .events-container {
   gap: var(--spacing-sm);
   align-items: center;
   flex-wrap: wrap;
+  justify-content: center;
 }
 
 .btn-action {

@@ -1,4 +1,4 @@
-/* Enhanced Announcements CSS - Updated to Match Management System Design */
+/* Enhanced User Events Design - Matching Volunteer Management System */
 
 :root {
   --prc-red: #a00000;
@@ -6,9 +6,9 @@
   --prc-red-light: rgba(160, 0, 0, 0.1);
   --prc-red-ultra-light: rgba(160, 0, 0, 0.05);
   --prc-blue: #004b79;
-  --sidebar-width: 250px;
-  --sidebar-collapsed-width: 70px;
-  
+  --prc-blue-dark: #003356;
+  --prc-blue-light: #f0f8ff;
+
   --blue: #0056b3;
   --blue-light: #e3f2fd;
   --green: #28a745;
@@ -19,60 +19,86 @@
   --purple-light: #f3e5f5;
   --red: #d32f2f;
   --red-light: #ffebee;
-  
+
   --gray: #6c757d;
   --gray-light: #f8f9fa;
   --gray-medium: #e9ecef;
   --gray-dark: #495057;
   --dark: #343a40;
   --white: #ffffff;
-  
-  --border-radius: 12px;
-  --border-radius-sm: 8px;
-  --border-radius-lg: 16px;
-  
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.2);
-  --shadow-xl: 0 12px 32px rgba(0, 0, 0, 0.25);
-  
-  --transition: all 0.3s ease;
-  --transition-fast: all 0.2s ease;
-  --transition-slow: all 0.4s ease;
-  
-  --font-size-xs: 0.7rem;
-  --font-size-sm: 0.8rem;
-  --font-size-base: 0.9rem;
-  --font-size-lg: 1rem;
-  --font-size-xl: 1.125rem;
-  --font-size-2xl: 1.25rem;
-  --font-size-3xl: 1.5rem;
-  --font-size-4xl: 2rem;
-  
+
+  /* Status Colors */
+  --success: #10b981;
+  --warning: #f59e0b;
+  --error: #ef4444;
+  --info: #3b82f6;
+
+  /* Spacing System */
   --spacing-xs: 0.25rem;
   --spacing-sm: 0.5rem;
-  --spacing-base: 0.75rem;
+  --spacing-md: 0.75rem;
   --spacing-lg: 1rem;
   --spacing-xl: 1.25rem;
   --spacing-2xl: 1.5rem;
   --spacing-3xl: 2rem;
-  
-  /* Original variables maintained for compatibility */
-  --card-shadow: var(--shadow-sm);
-  --card-hover-shadow: var(--shadow-md);
-  --bg-color: var(--white);
-  --text-color: var(--dark);
-  --card-bg: var(--white);
-  --shadow-color: rgba(0, 0, 0, 0.08);
-  --border-color: var(--gray-medium);
-  --secondary-text: var(--gray);
-  --header-bg: var(--gray-light);
-  --urgent-badge-bg: #f8d7da;
-  --urgent-badge-text: #721c24;
-  --empty-state-icon: #e0e0e0;
-}
+  --spacing-4xl: 2.5rem;
+  --spacing-5xl: 3rem;
+  --spacing-6xl: 4rem;
 
+  /* Typography */
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-base: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.5rem;
+  --font-size-3xl: 1.875rem;
+  --font-size-4xl: 2.25rem;
+  --font-size-5xl: 3rem;
+
+  /* Effects */
+  --border-radius: 8px;
+  --border-radius-lg: 12px;
+  --border-radius-xl: 16px;
+  --border-radius-2xl: 20px;
+  --border-radius-full: 9999px;
+
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1),
+    0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1),
+    0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1),
+    0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+
+  --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-fast: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Layout */
+  --sidebar-width: 250px;
+  --sidebar-collapsed-width: 70px;
+
+  /* Service Color Variables */
+  --health-color: #4caf50;
+  --safety-color: #ff9800;
+  --welfare-color: #2196f3;
+  --disaster-color: #f44336;
+  --rcy-color: #9c27b0;
+  --general-color: #607d8b;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  background: linear-gradient(135deg, var(--gray-50) 0%, #c3cfe2 100%);
+  color: var(--gray-700);
+  line-height: 1.6;
+  font-size: var(--font-size-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
 /* Dark Mode Variables */
 .dark-mode {
   --prc-red: #a00000;
@@ -111,39 +137,52 @@
 
 /* Enhanced Page Header - Matching New Design */
 .page-header {
-  background: linear-gradient(135deg, var(--prc-red) 0%, var(--prc-red-dark) 100%);
-  padding: var(--spacing-3xl);
-  border-radius: var(--border-radius-lg);
-  margin-bottom: var(--spacing-3xl);
-  color: var(--white);
-  box-shadow: var(--shadow-lg);
   position: relative;
-  overflow: hidden;
+  min-height: 300px;
   display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--prc-blue-dark), var(--prc-blue));
+  border-radius: var(--border-radius-2xl);
+  margin-bottom: var(--spacing-5xl);
+  box-shadow: var(--shadow-2xl);
+  color: var(--white);
+  text-align: center;
 }
 
 .page-header::before {
-  content: '';
+  content: "";
   position: absolute;
-  top: -20%;
-  right: -10%;
-  width: 300px;
-  height: 300px;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
-  border-radius: 50%;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(0, 75, 121, 0.9) 0%,
+    rgba(0, 51, 86, 0.8) 50%,
+    rgba(160, 0, 0, 0.9) 100%
+  );
 }
 
 .page-header::after {
-  content: '';
+  content: "";
   position: absolute;
   bottom: -30%;
   left: -15%;
   width: 200px;
   height: 200px;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.05) 0%, transparent 60%);
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.05) 0%,
+    transparent 60%
+  );
   border-radius: 50%;
+}
+.page-header::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
 }
 
 .header-content {
@@ -152,25 +191,33 @@
 }
 
 .page-header h1 {
-  font-size: var(--font-size-4xl);
-  font-weight: 700;
-  margin-bottom: var(--spacing-sm);
+  position: relative;
+  z-index: 10;
+  font-size: clamp(2rem, 4vw, 2.5rem);
+  font-weight: 800;
+  line-height: 1.1;
+  margin-bottom: var(--spacing-lg);
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: var(--spacing-lg);
-  color: white;
+  animation: fadeInUp 0.8s ease-out;
 }
 
 .page-header h1 i {
-  color: white;
+  color: var(--white);
+  font-size: var(--font-size-3xl);
 }
 
 .page-header p {
+  position: relative;
+  z-index: 10;
+  font-size: var(--font-size-lg);
+  line-height: 1.7;
   opacity: 0.95;
-  font-size: var(--font-size-xl);
-  margin: 0;
-  font-weight: 400;
-  color: white;
+  max-width: 600px;
+  animation: fadeInUp 0.8s ease-out 0.2s both;
+  margin: 0 auto;
 }
 
 .branch-indicator {
@@ -191,7 +238,7 @@
 /* Enhanced Content Container */
 .announcements-content {
   background: var(--white);
-  border-radius: var(--border-radius);
+  border-radius: var(--border-radius-2xl);
   box-shadow: var(--shadow-sm);
   padding: var(--spacing-2xl);
   border: 1px solid rgba(160, 0, 0, 0.08);
@@ -329,13 +376,18 @@
 }
 
 .status-filter button::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(160, 0, 0, 0.1), transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(160, 0, 0, 0.1),
+    transparent
+  );
   transition: left 0.5s ease;
 }
 
@@ -350,7 +402,11 @@
 }
 
 .status-filter button.active {
-  background: linear-gradient(135deg, var(--prc-red) 0%, var(--prc-red-dark) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--prc-red) 0%,
+    var(--prc-red-dark) 100%
+  );
   color: var(--white);
   box-shadow: var(--shadow-md);
   transform: translateY(-2px);
@@ -382,13 +438,18 @@
 }
 
 .btn-create::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.2),
+    transparent
+  );
   transition: left 0.5s ease;
 }
 

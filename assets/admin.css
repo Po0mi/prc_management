@@ -701,21 +701,22 @@ body.sidebar-collapsed .header-content {
 }
 
 .activity-card {
-  background: var(--gray-50);
-  border-radius: var(--border-radius-xl);
-  border: 1px solid var(--gray-200);
+  background: var(--white);
+  border-radius: var(--border-radius);
   overflow: hidden;
-  transition: var(--transition);
+  box-shadow: var(--shadow-sm);
+  transition: var(--transition) ease;
+  border: 1px solid rgba(160, 0, 0, 0.05);
 }
 
 .activity-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lg);
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
 }
 
 .activity-card.featured {
   border-left: 4px solid var(--prc-red);
-  background: var(--white);
+  box-shadow: var(--shadow-md);
 }
 
 .activity-card.alert {
@@ -724,12 +725,16 @@ body.sidebar-collapsed .header-content {
 }
 
 .card-header {
-  padding: var(--spacing-3xl);
-  background: var(--white);
-  border-bottom: 1px solid var(--gray-200);
   display: flex;
-  align-items: center;
   justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-xl) var(--spacing-2xl);
+  background: linear-gradient(
+    135deg,
+    var(--gray-light) 0%,
+    var(--gray-medium) 100%
+  );
+  border-bottom: 1px solid var(--gray-medium);
 }
 
 .card-icon {

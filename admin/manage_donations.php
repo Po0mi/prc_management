@@ -591,12 +591,6 @@ try {
   </div>
   
   <div class="action-buttons">
-    <button class="btn-secondary" onclick="openBulkModal()" style="margin-right: 0.5rem; display: none;">
-      <i class="fas fa-tasks"></i> Bulk Actions
-    </button>
-    <button class="btn-secondary" onclick="clearAllFilters()" style="margin-right: 0.5rem;">
-      <i class="fas fa-filter-circle-xmark"></i> Clear Filters
-    </button>
     <button class="btn-create" onclick="openCreateModal()">
       <i class="fas fa-plus-circle"></i> Record New Donation
     </button>
@@ -651,13 +645,6 @@ try {
     <div class="donations-table-wrapper">
       <div class="table-header">
         <h2 class="table-title">All Donations</h2>
-        <div class="table-controls">
-          <label class="checkbox-container">
-            <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
-            <span class="checkmark"></span>
-            Select All
-          </label>
-        </div>
       </div>
       
       <?php if (empty($allDonations)): ?>
@@ -672,7 +659,6 @@ try {
             <thead>
               <tr>
                 <th style="width: 40px;">
-                  <input type="checkbox" id="headerSelect" onchange="toggleSelectAll()">
                 </th>
                 <th>Donation Details</th>
                 <th>Donor</th>
@@ -693,10 +679,6 @@ try {
               ?>
                 <tr class="donation-row" data-status="<?= $status ?>" data-type="<?= $d['donation_type'] ?>">
                   <td>
-                    <input type="checkbox" class="donation-checkbox" 
-                           name="selected_donations[]" 
-                           value="<?= $d['donation_id'] ?>_<?= $d['donation_type'] ?>"
-                           onchange="updateBulkActions()">
                   </td>
                   <td>
                     <div class="donation-title">
