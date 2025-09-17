@@ -866,7 +866,6 @@ if (!function_exists('get_role_color')) {
 <body class="admin-<?= htmlspecialchars($user_role) ?>">
   <?php include 'sidebar.php'; ?>
   <div class="sessions-container">
-     <?php include 'header.php'; ?>
     <div class="page-header">
       <h1><i class="fas fa-graduation-cap"></i> Training Sessions Management</h1>
       <p>
@@ -1375,15 +1374,15 @@ if (!function_exists('get_role_color')) {
                     <div class="session-datetime">
                         <?php if ($durationDays == 1): ?>
                             <div class="session-date-single">
-                                <span class="session-date" ><?= date('M d, Y', $sessionStartDate) ?></span>
-                                <span class="session-time"style="font-size: 0.8rem; color: #2196F3; margin-top: 0.3rem; font-weight: 500;"><i class="fas fa-clock" style="padding-right: 3px;"></i><?= date('g:i A', strtotime($session['start_time'])) ?> - <?= date('g:i A', strtotime($session['end_time'])) ?></span>
+                                <span class="session-date"><?= date('M d, Y', $sessionStartDate) ?></span>
+                                <span class="session-time"><?= date('g:i A', strtotime($session['start_time'])) ?> - <?= date('g:i A', strtotime($session['end_time'])) ?></span>
                                 <div class="session-duration">Single Day</div>
                             </div>
                         <?php else: ?>
                             <div class="session-date-range">
                                 <div class="session-date-start"><?= date('M d, Y', $sessionStartDate) ?></div>
                                 <div class="session-date-end">to <?= date('M d, Y', $sessionEndDate) ?></div>
-                                <span class="session-time" style="font-size: 0.8rem; color: #2196F3; margin-top: 0.3rem; font-weight: 500;"><i class="fas fa-clock" style="padding-right: 3px;"></i><?= date('g:i A', strtotime($session['start_time'])) ?> - <?= date('g:i A', strtotime($session['end_time'])) ?></span>
+                                <span class="session-time"><?= date('g:i A', strtotime($session['start_time'])) ?> - <?= date('g:i A', strtotime($session['end_time'])) ?></span>
                                 <div class="session-duration"><?= $durationDays ?> days</div>
                             </div>
                         <?php endif; ?>
@@ -2429,12 +2428,7 @@ function openRequestModal(request) {
             </div>
             <div class="info-item">
                 <div class="info-label">Preferred Time</div>
-                <div class="info-value">
-        ${request.preferred_start_time && request.preferred_end_time ? 
-            `${formatTime(request.preferred_start_time)} - ${formatTime(request.preferred_end_time)}` : 
-            'Not specified'
-        }
-    </div>
+                <div class="info-value">${request.preferred_time.charAt(0).toUpperCase() + request.preferred_time.slice(1)}</div>
             </div>
             <div class="info-item">
                 <div class="info-label">Participants</div>
@@ -2533,17 +2527,16 @@ function openCreateSessionModal(request) {
     document.getElementById('capacity').value = Math.max(request.participant_count, 10);
     
     // Set time based on preference
-if (request.preferred_start_time) {
-    document.getElementById('start_time').value = request.preferred_start_time;
-} else {
-    document.getElementById('start_time').value = '09:00';
-}
-
-if (request.preferred_end_time) {
-    document.getElementById('end_time').value = request.preferred_end_time;
-} else {
-    document.getElementById('end_time').value = '17:00';
-}
+    if (request.preferred_time === 'morning') {
+        document.getElementById('start_time').value = '08:00';
+        document.getElementById('end_time').value = '17:00';
+    } else if (request.preferred_time === 'afternoon') {
+        document.getElementById('start_time').value = '13:00';
+        document.getElementById('end_time').value = '17:00';
+    } else {
+        document.getElementById('start_time').value = '18:00';
+        document.getElementById('end_time').value = '20:00';
+    }
     
     // Set default venue if location preference provided
     if (request.location_preference) {
@@ -2812,12 +2805,63 @@ function closeDocumentModal() {
         }, 300);
     }
 }
-<div class="info-value">
-        ${request.preferred_start_time && request.preferred_end_time ? 
-            `${formatTime(request.preferred_start_time)} - ${formatTime(request.preferred_end_time)}` : 
-            'Not specified'
-        }
-    </div>
+
+// Add keyboard support for document modal in events
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && window.currentDocumentModal) {
+        closeDocumentModal();
+    }
+});
+// Helper function for HTML escaping
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+// Add to your existing JavaScript in admin sessions.php
+// Replace your existing toggleArchive function in sessions.php with this simplified version
+// that matches the events.php implementation
+
+function toggleArchive(sessionId, currentStatus) {
+    const action = currentStatus ? 'unarchive' : 'archive';
+    const confirmMsg = `Are you sure you want to ${action} this training session?`;
+    
+    if (confirm(confirmMsg)) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.innerHTML = `
+            <input type="hidden" name="toggle_archive" value="1">
+            <input type="hidden" name="session_id" value="${sessionId}">
+            <input type="hidden" name="archive_status" value="${currentStatus ? 0 : 1}">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+        `;
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+// Archive filter toggle
+document.getElementById('showArchived')?.addEventListener('change', function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (this.checked) {
+        urlParams.set('show_archived', '1');
+    } else {
+        urlParams.delete('show_archived');
+    }
+    window.location.search = urlParams.toString();
+});
+
+// Archive filter toggle for user view (if needed)
+document.getElementById('showArchivedSessions')?.addEventListener('change', function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (this.checked) {
+        urlParams.set('show_archived', '1');
+    } else {
+        urlParams.delete('show_archived');
+    }
+    window.location.search = urlParams.toString();
+});
 // CSS Styles for Multi-Day Sessions
 const sessionStyles = `
 /* Enhanced styles for multi-day session display */

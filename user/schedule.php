@@ -1661,9 +1661,9 @@ try {
 
     <!-- Registration Modal -->
     <div class="modal" id="registerModal">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2 class="modal-title" id="modalTitle">Register for Training</h2>
+      <div class="modal-contents">
+        <div class="modal-headers">
+          <h2 class="modal-titles" id="modalTitle">Register for Training</h2>
           <button class="close-modal" onclick="closeRegisterModal()">
             <i class="fas fa-times"></i>
           </button>

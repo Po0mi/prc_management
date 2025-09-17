@@ -353,7 +353,7 @@ function formatServiceClass($service) {
                     <div class="service-icon">
                         <i class="fas fa-hands-helping"></i>
                     </div>
-                    <h3>Disaster Response</h3>
+                    <h3>Disaster Services</h3>
                     <p>Providing relief and disaster preparedness to minimize suffering during natural and man-made disasters.</p>
                     <ul class="service-features">
                         <li>Emergency Relief Operations</li>
@@ -387,15 +387,15 @@ function formatServiceClass($service) {
 
                 <div class="service-card emergency">
                     <div class="service-icon">
-                        <i class="fas fa-ambulance"></i>
+                        <i class="fas fa-children"></i>
                     </div>
-                    <h3>Emergency Services</h3>
-                    <p>24/7 emergency response including ambulance services, medical assistance, and rapid deployment teams.</p>
+                    <h3>Red Cross Youth</h3>
+                    <p>Its mission is to educate and empower children and youth through Red Cross values by providing training, leadership development, and opportunities to channel their energy into meaningful humanitarian activities.</p>
                     <ul class="service-features">
-                        <li>Ambulance Services</li>
-                        <li>Medical Emergency Response</li>
-                        <li>Beach Patrol & Lifeguarding</li>
-                        <li>24/7 Emergency Hotline</li>
+                        <li>Leadership Development Program</li>
+                        <li>HIV/AIDS Awareness Prevention education</li>
+                        <li>Substance Abuse Prevention Education</li>
+                        <li>International Friendship program</li>
                     </ul>
                     <a href="#" class="service-link">
                         <span>Emergency: 143</span>

@@ -500,7 +500,7 @@ $stock_filters = [
     <div class="modal-content">
       <div class="modal-header">
         <h2 id="merchModalTitle">Add New Product</h2>
-        <button class="close-btn" onclick="closeModal('merchModal')">
+        <button class="close-modal" onclick="closeModal('merchModal')">
           <i class="fas fa-times"></i>
         </button>
       </div>

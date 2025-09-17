@@ -574,7 +574,7 @@ $userRegistrations = $userRegistrationsStmt->fetchAll();
                 <!-- My Registrations Section -->
                 <div class="registrations-section">
                     <div class="section-header">
-                        <h2><i class="fas fa-list-check"></i> My Registrations</h2>
+                        <h2> My Registrations</h2>
                     </div>
                     
                     <?php if (empty($myRegistrations)): ?>

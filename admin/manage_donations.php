@@ -528,32 +528,81 @@ try {
       </div>
     <?php endif; ?>
 
-    <!-- Action Bar -->
-    <div class="action-bar">
-      <div class="action-bar-left">
-        <form method="GET" class="search-box">
-          <i class="fas fa-search"></i>
-          <input type="text" name="search" placeholder="Search donations...">
-        </form>
+<div class="action-bar">
+  <div class="action-bar-left">
+    <form method="GET" class="search-box">
+      <i class="fas fa-search"></i>
+      <input type="text" name="search" placeholder="Search donations..." value="<?= htmlspecialchars($_GET['search'] ?? '') ?>">
+    </form>
+    
+    <!-- Enhanced Filter Controls -->
+    <div class="filter-controls">
+      <div class="status-filter">
+        <button type="button" onclick="filterStatus('all')" class="filter-btn active" data-filter="all">All</button>
+        <button type="button" onclick="filterStatus('pending')" class="filter-btn" data-filter="pending">Pending</button>
+        <button type="button" onclick="filterStatus('approved')" class="filter-btn" data-filter="approved">Approved</button>
+        <button type="button" onclick="filterStatus('rejected')" class="filter-btn" data-filter="rejected">Rejected</button>
+        <button type="button" onclick="filterType('blood')" class="filter-btn" data-filter="blood">Blood</button>
+      </div>
+      
+      <!-- New Date Filter Section -->
+      <div class="date-filter">
+        <select id="dateFilter" onchange="applyDateFilter()" class="date-filter-select">
+          <option value="all">All Dates</option>
+          <option value="today">Today</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="this_week">This Week</option>
+          <option value="last_week">Last Week</option>
+          <option value="this_month">This Month</option>
+          <option value="last_month">Last Month</option>
+          <option value="this_year">This Year</option>
+          <option value="custom">Custom Range</option>
+        </select>
         
-        <div class="status-filter">
-          <button onclick="filterStatus('all')" class="active">All</button>
-          <button onclick="filterStatus('pending')">Pending</button>
-          <button onclick="filterStatus('approved')">Approved</button>
-          <button onclick="filterStatus('rejected')">Rejected</button>
-          <button onclick="filterType('blood')">Blood</button>
+        <!-- Custom Date Range Inputs (Initially Hidden) -->
+        <div id="customDateRange" class="custom-date-range" style="display: none;">
+          <input type="date" id="startDate" onchange="applyCustomDateFilter()" placeholder="Start Date">
+          <span>to</span>
+          <input type="date" id="endDate" onchange="applyCustomDateFilter()" placeholder="End Date">
         </div>
       </div>
       
-      <div class="action-buttons">
-        <button class="btn-secondary" onclick="openBulkModal()" style="margin-right: 0.5rem; display: none;">
-          <i class="fas fa-tasks"></i> Bulk Actions
-        </button>
-        <button class="btn-create" onclick="openCreateModal()">
-          <i class="fas fa-plus-circle"></i> Record New Donation
-        </button>
+      <!-- Month/Year Quick Filter -->
+      <div class="month-filter">
+        <select id="monthFilter" onchange="applyMonthFilter()" class="month-filter-select">
+          <option value="">Filter by Month</option>
+          <?php
+          // Generate month options for current and previous years
+          $currentYear = date('Y');
+          $currentMonth = date('n');
+          
+          for ($year = $currentYear; $year >= $currentYear - 2; $year--) {
+            $startMonth = ($year == $currentYear) ? $currentMonth : 12;
+            for ($month = $startMonth; $month >= 1; $month--) {
+              $monthName = date('F Y', mktime(0, 0, 0, $month, 1, $year));
+              $monthValue = sprintf('%04d-%02d', $year, $month);
+              echo "<option value=\"$monthValue\">$monthName</option>";
+            }
+          }
+          ?>
+        </select>
       </div>
     </div>
+  </div>
+  
+  <div class="action-buttons">
+    <button class="btn-secondary" onclick="openBulkModal()" style="margin-right: 0.5rem; display: none;">
+      <i class="fas fa-tasks"></i> Bulk Actions
+    </button>
+    <button class="btn-secondary" onclick="clearAllFilters()" style="margin-right: 0.5rem;">
+      <i class="fas fa-filter-circle-xmark"></i> Clear Filters
+    </button>
+    <button class="btn-create" onclick="openCreateModal()">
+      <i class="fas fa-plus-circle"></i> Record New Donation
+    </button>
+  </div>
+</div>
+
 
     <!-- Enhanced Statistics Overview -->
     <div class="stats-overview">
@@ -1045,7 +1094,7 @@ try {
   <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
     <?php include 'chat_widget.php'; ?>
   <script>
-   // Global variables for managing selections
+ // Global variables for managing selections
 let selectedDonations = new Set();
 
 // Enhanced modal functions with event prevention
@@ -1088,6 +1137,7 @@ function openEditModal(donation, e) {
     document.getElementById('donationModal').classList.add('active');
 }
 
+// Simplified view modal function - shows only receipt for monetary donations
 function viewDonationDetails(donation, e) {
     if (e) e.preventDefault();
     if (!donation || typeof donation !== 'object') {
@@ -1103,7 +1153,6 @@ function viewDonationDetails(donation, e) {
     }
     
     try {
-        // Sanitize function
         const sanitize = (str) => {
             if (str === null || str === undefined) return '';
             const text = String(str);
@@ -1112,39 +1161,12 @@ function viewDonationDetails(donation, e) {
             return div.innerHTML;
         };
         
-        // Format currency
-        const formatAmount = (amount) => {
-            const num = parseFloat(amount) || 0;
-            return num.toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        };
-        
-        // Format date
-        const formatDate = (dateStr) => {
-            if (!dateStr) return 'N/A';
-            try {
-                const date = new Date(dateStr);
-                return isNaN(date.getTime()) ? sanitize(dateStr) : 
-                    date.toLocaleDateString('en-PH', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                    });
-            } catch (e) {
-                return sanitize(dateStr);
-            }
-        };
-        
-        // Determine badge class based on donation type
         const badgeClass = donation.donation_type === 'monetary' ? 'badge-primary' : 
                             (donation.donation_type === 'blood' ? 'badge-danger' : 'badge-info');
         
-        // Determine status class
         const statusClass = ['approved', 'completed'].includes(donation.status) ? 'approved' : 
                             (['pending', 'scheduled'].includes(donation.status) ? 'pending' : 'rejected');
         
-        // Build the details HTML
         let detailsHTML = `
             <div class="donation-detail-card">
                 <div class="detail-header">
@@ -1160,99 +1182,55 @@ function viewDonationDetails(donation, e) {
                 </div>
                 
                 <div class="detail-content">
-                    <div class="detail-section">
-                        <h4><i class="fas fa-user"></i> Donor Information</h4>
-                        <p><strong>Name:</strong> ${sanitize(donation.donor_name)}</p>
-                        <p><strong>Email:</strong> ${sanitize(donation.donor_email)}</p>
-                `;
+        `;
         
-        if (donation.donor_phone) {
-            detailsHTML += `<p><strong>Phone:</strong> ${sanitize(donation.donor_phone)}</p>`;
-        }
-        
-        detailsHTML += `</div>`;
-        
-        // Type-specific details
-        if (donation.donation_type === 'monetary') {
+        // For monetary donations, show only receipt
+        if (donation.donation_type === 'monetary' && donation.payment_receipt) {
             detailsHTML += `
-                <div class="detail-section">
-                    <h4><i class="fas fa-money-bill-wave"></i> Monetary Donation</h4>
-                    <p><strong>Amount:</strong> ₱${formatAmount(donation.amount)}</p>
-                    <p><strong>Payment Method:</strong> ${sanitize(donation.payment_method)}</p>
-                `;
-            
-            if (donation.payment_receipt) {
-                detailsHTML += `<p><strong>Receipt:</strong> <a href="../${sanitize(donation.payment_receipt)}" target="_blank" rel="noopener">View Receipt</a></p>`;
-            }
-            
-            if (donation.message) {
-                detailsHTML += `<p><strong>Message:</strong> ${sanitize(donation.message)}</p>`;
-            }
-            
-            detailsHTML += `</div>`;
-            
-        } else if (donation.donation_type === 'blood') {
-            detailsHTML += `
-                <div class="detail-section">
-                    <h4><i class="fas fa-tint"></i> Blood Donation</h4>
-                    <p><strong>Blood Type:</strong> <span class="blood-badge">${sanitize(donation.blood_type)}</span></p>
-                    <p><strong>Emergency Contact:</strong> ${sanitize(donation.emergency_contact)}</p>
-                `;
-            
-            if (donation.donation_location) {
-                detailsHTML += `<p><strong>Location:</strong> ${sanitize(donation.donation_location)}</p>`;
-            }
-            
-            if (donation.last_donation_date) {
-                detailsHTML += `<p><strong>Last Donation:</strong> ${formatDate(donation.last_donation_date)}</p>`;
-            }
-            
-            if (donation.medical_history) {
-                detailsHTML += `<p><strong>Medical History:</strong> ${sanitize(donation.medical_history)}</p>`;
-            }
-            
-            detailsHTML += `</div>`;
-            
-        } else if (donation.donation_type === 'in_kind') {
-            detailsHTML += `
-                <div class="detail-section">
-                    <h4><i class="fas fa-box-open"></i> In-Kind Donation</h4>
-                    <p><strong>Description:</strong> ${sanitize(donation.item_description)}</p>
-                `;
-            
-            if (donation.quantity && donation.quantity > 1) {
-                detailsHTML += `<p><strong>Quantity:</strong> ${sanitize(donation.quantity)}</p>`;
-            }
-            
-            if (donation.amount && donation.amount > 0) {
-                detailsHTML += `<p><strong>Estimated Value:</strong> ₱${formatAmount(donation.amount)}</p>`;
-            }
-            
-            if (donation.purpose) {
-                detailsHTML += `<p><strong>Purpose:</strong> ${sanitize(donation.purpose)}</p>`;
-            }
-            
-            detailsHTML += `</div>`;
-        }
-        
-        // General information
-        detailsHTML += `
-            <div class="detail-section">
-                <h4><i class="fas fa-info-circle"></i> General Information</h4>
-                <p><strong>Date:</strong> ${formatDate(donation.donation_date)}</p>
-                <p><strong>Recorded by:</strong> ${sanitize(donation.recorded_by)}</p>
-            `;
-        
-        if (donation.approved_by_name && donation.approved_date) {
-            detailsHTML += `<p><strong>Approved by:</strong> ${sanitize(donation.approved_by_name)} on ${formatDate(donation.approved_date)}</p>`;
-        }
-        
-        if (donation.approval_notes) {
-            detailsHTML += `<p><strong>Notes:</strong> ${sanitize(donation.approval_notes)}</p>`;
-        }
-        
-        detailsHTML += `
+                <div class="receipt-section">
+                    <h4><i class="fas fa-receipt"></i> Payment Receipt</h4>
+                    <div class="receipt-viewer">
+                        <iframe src="../${sanitize(donation.payment_receipt)}" 
+                                style="width: 100%; height: 400px; border: 1px solid #ddd; border-radius: 8px;"
+                                title="Payment Receipt">
+                        </iframe>
+                        <div class="receipt-actions" style="margin-top: 1rem; text-align: center;">
+                            <a href="../${sanitize(donation.payment_receipt)}" 
+                               target="_blank" 
+                               class="btn-primary" 
+                               rel="noopener">
+                                <i class="fas fa-external-link-alt"></i> Open in New Tab
+                            </a>
+                            <a href="../${sanitize(donation.payment_receipt)}" 
+                               download 
+                               class="btn-secondary" 
+                               style="margin-left: 0.5rem;">
+                                <i class="fas fa-download"></i> Download
+                            </a>
+                        </div>
                     </div>
+                </div>
+            `;
+        } else if (donation.donation_type === 'monetary') {
+            detailsHTML += `
+                <div class="no-receipt-section">
+                    <i class="fas fa-file-invoice" style="font-size: 3rem; color: #ccc; margin-bottom: 1rem;"></i>
+                    <h4>No Receipt Available</h4>
+                    <p>No payment receipt was uploaded for this donation.</p>
+                </div>
+            `;
+        } else {
+            // For non-monetary donations, show basic info
+            detailsHTML += `
+                <div class="basic-info">
+                    <p><i class="fas fa-info-circle"></i> This donation type does not have a receipt to display.</p>
+                    <p><strong>Donor:</strong> ${sanitize(donation.donor_name)}</p>
+                    <p><strong>Date:</strong> ${sanitize(donation.donation_date)}</p>
+                </div>
+            `;
+        }
+        
+        detailsHTML += `
                 </div>
             </div>
         `;
@@ -1455,42 +1433,246 @@ function updateBulkSummary() {
     }
 }
 
+// Enhanced status and type filtering to work with date filters
 function filterStatus(status) {
-    const rows = document.querySelectorAll('.donation-row');
-    const buttons = document.querySelectorAll('.status-filter button');
-    
+    const buttons = document.querySelectorAll('.status-filter .filter-btn');
     buttons.forEach(btn => btn.classList.remove('active'));
     event.target.classList.add('active');
     
-    rows.forEach(row => {
-        if (status === 'all') {
-            row.style.display = '';
-        } else {
-            const rowStatus = row.dataset.status;
-            const shouldShow = status === 'pending' ? 
-                ['pending', 'scheduled'].includes(rowStatus) :
-                status === 'approved' ? 
-                ['approved', 'completed', 'confirmed'].includes(rowStatus) :
-                status === 'rejected' ?
-                ['rejected', 'cancelled'].includes(rowStatus) :
-                rowStatus === status;
-            
-            row.style.display = shouldShow ? '' : 'none';
-        }
-    });
+    applyAllFilters();
 }
 
 function filterType(type) {
-    const rows = document.querySelectorAll('.donation-row');
-    const buttons = document.querySelectorAll('.status-filter button');
-    
+    const buttons = document.querySelectorAll('.status-filter .filter-btn');
     buttons.forEach(btn => btn.classList.remove('active'));
     event.target.classList.add('active');
     
+    applyAllFilters();
+}
+
+// Date filtering functions
+function applyDateFilter() {
+    const filter = document.getElementById('dateFilter').value;
+    const customRange = document.getElementById('customDateRange');
+    
+    if (filter === 'custom') {
+        customRange.style.display = 'flex';
+        return;
+    } else {
+        customRange.style.display = 'none';
+    }
+    
+    const today = new Date();
+    let startDate, endDate;
+    
+    switch(filter) {
+        case 'today':
+            startDate = new Date(today);
+            endDate = new Date(today);
+            break;
+        case 'yesterday':
+            startDate = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+            endDate = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+            break;
+        case 'this_week':
+            const thisWeekStart = new Date(today.setDate(today.getDate() - today.getDay()));
+            startDate = thisWeekStart;
+            endDate = new Date();
+            break;
+        case 'last_week':
+            const lastWeekEnd = new Date(today.setDate(today.getDate() - today.getDay() - 1));
+            const lastWeekStart = new Date(lastWeekEnd.getTime() - 6 * 24 * 60 * 60 * 1000);
+            startDate = lastWeekStart;
+            endDate = lastWeekEnd;
+            break;
+        case 'this_month':
+            startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+            endDate = new Date();
+            break;
+        case 'last_month':
+            const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+            startDate = lastMonth;
+            endDate = new Date(today.getFullYear(), today.getMonth(), 0);
+            break;
+        case 'this_year':
+            startDate = new Date(today.getFullYear(), 0, 1);
+            endDate = new Date();
+            break;
+        default:
+            filterDonationsByDate(null, null);
+            return;
+    }
+    
+    filterDonationsByDate(startDate, endDate);
+}
+
+function applyCustomDateFilter() {
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    
+    if (startDate && endDate) {
+        filterDonationsByDate(new Date(startDate), new Date(endDate));
+    } else if (startDate) {
+        filterDonationsByDate(new Date(startDate), null);
+    } else if (endDate) {
+        filterDonationsByDate(null, new Date(endDate));
+    }
+}
+
+function applyMonthFilter() {
+    const monthValue = document.getElementById('monthFilter').value;
+    if (!monthValue) {
+        filterDonationsByDate(null, null);
+        return;
+    }
+    
+    const [year, month] = monthValue.split('-');
+    const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+    const endDate = new Date(parseInt(year), parseInt(month), 0);
+    
+    filterDonationsByDate(startDate, endDate);
+}
+
+function filterDonationsByDate(startDate, endDate) {
+    const rows = document.querySelectorAll('.donation-row');
+    let visibleCount = 0;
+    
     rows.forEach(row => {
-        const rowType = row.dataset.type;
-        row.style.display = rowType === type ? '' : 'none';
+        const donationDateCell = row.querySelector('.date-value');
+        if (!donationDateCell) return;
+        
+        const donationDate = new Date(donationDateCell.textContent.trim());
+        let shouldShow = true;
+        
+        if (startDate && donationDate < startDate) shouldShow = false;
+        if (endDate && donationDate > endDate) shouldShow = false;
+        
+        if (shouldShow) {
+            // Only show if it also passes other active filters
+            const currentStatusFilter = document.querySelector('.status-filter .filter-btn.active')?.dataset.filter || 'all';
+            if (currentStatusFilter !== 'all') {
+                const rowStatus = row.dataset.status;
+                const shouldShowStatus = currentStatusFilter === 'pending' ? 
+                    ['pending', 'scheduled'].includes(rowStatus) :
+                    currentStatusFilter === 'approved' ? 
+                    ['approved', 'completed', 'confirmed'].includes(rowStatus) :
+                    currentStatusFilter === 'rejected' ?
+                    ['rejected', 'cancelled'].includes(rowStatus) :
+                    currentStatusFilter === 'blood' ?
+                    row.dataset.type === 'blood' :
+                    rowStatus === currentStatusFilter;
+                
+                if (!shouldShowStatus) shouldShow = false;
+            }
+        }
+        
+        row.style.display = shouldShow ? '' : 'none';
+        if (shouldShow) visibleCount++;
     });
+    
+    updateFilterResults(visibleCount);
+}
+
+function clearAllFilters() {
+    // Reset all filter controls
+    document.getElementById('dateFilter').value = 'all';
+    document.getElementById('monthFilter').value = '';
+    document.getElementById('startDate').value = '';
+    document.getElementById('endDate').value = '';
+    document.getElementById('customDateRange').style.display = 'none';
+    
+    // Reset status filter
+    document.querySelectorAll('.status-filter .filter-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    document.querySelector('.status-filter .filter-btn[data-filter="all"]').classList.add('active');
+    
+    // Show all rows
+    document.querySelectorAll('.donation-row').forEach(row => {
+        row.style.display = '';
+    });
+    
+    updateFilterResults(document.querySelectorAll('.donation-row').length);
+}
+
+function updateFilterResults(count) {
+    const totalCount = document.querySelectorAll('.donation-row').length;
+    
+    // Update or create results indicator
+    let resultsDiv = document.querySelector('.filter-results');
+    if (!resultsDiv) {
+        resultsDiv = document.createElement('div');
+        resultsDiv.className = 'filter-results';
+        document.querySelector('.action-bar').insertAdjacentElement('afterend', resultsDiv);
+    }
+    
+    if (count === totalCount) {
+        resultsDiv.style.display = 'none';
+    } else {
+        resultsDiv.style.display = 'block';
+        resultsDiv.innerHTML = `<i class="fas fa-filter"></i> Showing ${count} of ${totalCount} donations`;
+    }
+}
+
+function applyAllFilters() {
+    const statusFilter = document.querySelector('.status-filter .filter-btn.active')?.dataset.filter || 'all';
+    const rows = document.querySelectorAll('.donation-row');
+    let visibleCount = 0;
+    
+    rows.forEach(row => {
+        let shouldShow = true;
+        
+        // Apply status/type filter
+        if (statusFilter !== 'all') {
+            const rowStatus = row.dataset.status;
+            const rowType = row.dataset.type;
+            
+            const shouldShowStatus = statusFilter === 'pending' ? 
+                ['pending', 'scheduled'].includes(rowStatus) :
+                statusFilter === 'approved' ? 
+                ['approved', 'completed', 'confirmed'].includes(rowStatus) :
+                statusFilter === 'rejected' ?
+                ['rejected', 'cancelled'].includes(rowStatus) :
+                statusFilter === 'blood' ?
+                rowType === 'blood' :
+                rowStatus === statusFilter;
+            
+            if (!shouldShowStatus) shouldShow = false;
+        }
+        
+        // Apply date filter if active
+        const dateFilterValue = document.getElementById('dateFilter').value;
+        const monthFilterValue = document.getElementById('monthFilter').value;
+        
+        if (dateFilterValue !== 'all' || monthFilterValue) {
+            // Re-check date constraints
+            const donationDateCell = row.querySelector('.date-value');
+            if (donationDateCell) {
+                const donationDate = new Date(donationDateCell.textContent.trim());
+                
+                if (monthFilterValue) {
+                    const [year, month] = monthFilterValue.split('-');
+                    const monthStart = new Date(parseInt(year), parseInt(month) - 1, 1);
+                    const monthEnd = new Date(parseInt(year), parseInt(month), 0);
+                    
+                    if (donationDate < monthStart || donationDate > monthEnd) {
+                        shouldShow = false;
+                    }
+                } else if (dateFilterValue === 'custom') {
+                    const startDate = document.getElementById('startDate').value;
+                    const endDate = document.getElementById('endDate').value;
+                    
+                    if (startDate && donationDate < new Date(startDate)) shouldShow = false;
+                    if (endDate && donationDate > new Date(endDate)) shouldShow = false;
+                }
+            }
+        }
+        
+        row.style.display = shouldShow ? '' : 'none';
+        if (shouldShow) visibleCount++;
+    });
+    
+    updateFilterResults(visibleCount);
 }
 
 function toggleDonationFields() {
@@ -1662,8 +1844,321 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
-    // Add data attributes to buttons in PHP
-    // This will be done by modifying the PHP code below
+    // Initialize filter results
+    updateFilterResults(document.querySelectorAll('.donation-row').length);
+    
+    // Set up search functionality
+    const searchInput = document.querySelector('input[name="search"]');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase();
+            const rows = document.querySelectorAll('.donation-row');
+            let visibleCount = 0;
+            
+            rows.forEach(row => {
+                const donorName = row.querySelector('.donor-name')?.textContent.toLowerCase() || '';
+                const donorEmail = row.querySelector('.donor-contact')?.textContent.toLowerCase() || '';
+                const donationType = row.dataset.type || '';
+                const donationId = row.querySelector('.donation-id')?.textContent.toLowerCase() || '';
+                const status = row.dataset.status || '';
+                
+                const shouldShow = donorName.includes(searchTerm) || 
+                                  donorEmail.includes(searchTerm) || 
+                                  donationType.includes(searchTerm) ||
+                                  donationId.includes(searchTerm) ||
+                                  status.includes(searchTerm);
+                
+                row.style.display = shouldShow ? '' : 'none';
+                if (shouldShow) visibleCount++;
+            });
+            
+            updateFilterResults(visibleCount);
+        });
+    }
+    
+    // Set up filter change handlers
+    const dateFilterSelect = document.getElementById('dateFilter');
+    if (dateFilterSelect) {
+        dateFilterSelect.addEventListener('change', applyDateFilter);
+    }
+    
+    const monthFilterSelect = document.getElementById('monthFilter');
+    if (monthFilterSelect) {
+        monthFilterSelect.addEventListener('change', applyMonthFilter);
+    }
+    
+    const startDateInput = document.getElementById('startDate');
+    if (startDateInput) {
+        startDateInput.addEventListener('change', applyCustomDateFilter);
+    }
+    
+    const endDateInput = document.getElementById('endDate');
+    if (endDateInput) {
+        endDateInput.addEventListener('change', applyCustomDateFilter);
+    }
+    
+    // Set up status filter buttons
+    document.querySelectorAll('.status-filter .filter-btn').forEach(button => {
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
+            const buttons = document.querySelectorAll('.status-filter .filter-btn');
+            buttons.forEach(btn => btn.classList.remove('active'));
+            this.classList.add('active');
+            applyAllFilters();
+        });
+    });
+    
+    // Initialize form validation
+    const donationForm = document.getElementById('donationForm');
+    if (donationForm) {
+        donationForm.addEventListener('submit', function(e) {
+            const donationType = document.getElementById('donation_type').value;
+            const donorId = document.getElementById('donor_id').value;
+            const donationDate = document.getElementById('donation_date').value;
+            
+            if (!donationType || !donorId || !donationDate) {
+                e.preventDefault();
+                alert('Please fill in all required fields.');
+                return;
+            }
+            
+            // Type-specific validation
+            if (donationType === 'monetary') {
+                const amount = document.getElementById('amount').value;
+                const paymentMethod = document.getElementById('payment_method').value;
+                
+                if (!amount || amount <= 0 || !paymentMethod) {
+                    e.preventDefault();
+                    alert('Please enter a valid amount and payment method.');
+                    return;
+                }
+            } else if (donationType === 'blood') {
+                const bloodType = document.getElementById('blood_type').value;
+                const emergencyContact = document.getElementById('emergency_contact').value;
+                
+                if (!bloodType || !emergencyContact) {
+                    e.preventDefault();
+                    alert('Please select blood type and enter emergency contact.');
+                    return;
+                }
+            } else if (donationType === 'in_kind') {
+                const itemDescription = document.getElementById('item_description').value;
+                const quantity = document.getElementById('quantity').value;
+                
+                if (!itemDescription || !quantity || quantity <= 0) {
+                    e.preventDefault();
+                    alert('Please enter item description and valid quantity.');
+                    return;
+                }
+            }
+        });
+    }
+    
+    // Initialize approval form validation
+    const approvalForm = document.getElementById('approvalForm');
+    if (approvalForm) {
+        approvalForm.addEventListener('submit', function(e) {
+            const donationId = document.getElementById('approvalDonationId').value;
+            const donationType = document.getElementById('approvalDonationType').value;
+            const newStatus = document.getElementById('approvalNewStatus').value;
+            
+            if (!donationId || !donationType || !newStatus) {
+                e.preventDefault();
+                alert('Missing approval information. Please try again.');
+                return;
+            }
+            
+            // Confirm action
+            const statusText = newStatus.charAt(0).toUpperCase() + newStatus.slice(1);
+            if (!confirm(`Are you sure you want to ${statusText.toLowerCase()} this donation?`)) {
+                e.preventDefault();
+                return;
+            }
+        });
+    }
+    
+    // Add keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        // Ctrl/Cmd + K to focus search
+        if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+            e.preventDefault();
+            const searchInput = document.querySelector('input[name="search"]');
+            if (searchInput) {
+                searchInput.focus();
+                searchInput.select();
+            }
+        }
+        
+        // Ctrl/Cmd + N to open new donation modal
+        if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+            e.preventDefault();
+            openCreateModal();
+        }
+    });
+    
+    // Add loading states for forms
+    document.querySelectorAll('form').forEach(form => {
+        form.addEventListener('submit', function() {
+            const submitButton = this.querySelector('button[type="submit"]');
+            if (submitButton) {
+                const originalText = submitButton.innerHTML;
+                submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+                submitButton.disabled = true;
+                
+                // Re-enable after 5 seconds in case of network issues
+                setTimeout(() => {
+                    submitButton.innerHTML = originalText;
+                    submitButton.disabled = false;
+                }, 5000);
+            }
+        });
+    });
+    
+    // Add tooltips for action buttons
+    document.querySelectorAll('[title]').forEach(element => {
+        element.addEventListener('mouseenter', function() {
+            const title = this.getAttribute('title');
+            if (title) {
+                const tooltip = document.createElement('div');
+                tooltip.className = 'tooltip';
+                tooltip.textContent = title;
+                tooltip.style.cssText = `
+                    position: absolute;
+                    background: #333;
+                    color: white;
+                    padding: 5px 10px;
+                    border-radius: 4px;
+                    font-size: 12px;
+                    z-index: 1000;
+                    pointer-events: none;
+                    white-space: nowrap;
+                `;
+                
+                document.body.appendChild(tooltip);
+                
+                const rect = this.getBoundingClientRect();
+                tooltip.style.left = rect.left + 'px';
+                tooltip.style.top = (rect.top - tooltip.offsetHeight - 5) + 'px';
+                
+                this._tooltip = tooltip;
+            }
+        });
+        
+        element.addEventListener('mouseleave', function() {
+            if (this._tooltip) {
+                document.body.removeChild(this._tooltip);
+                this._tooltip = null;
+            }
+        });
+    });
+    
+    // Add print functionality
+    window.printDonations = function() {
+        const printWindow = window.open('', '_blank');
+        const visibleRows = document.querySelectorAll('.donation-row:not([style*="display: none"])');
+        
+        let printContent = `
+            <html>
+                <head>
+                    <title>Donation Report</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 20px; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                        th { background-color: #f5f5f5; font-weight: bold; }
+                        .header { text-align: center; margin-bottom: 20px; }
+                        .badge { padding: 2px 6px; border-radius: 3px; font-size: 10px; }
+                        .badge-primary { background: #007bff; color: white; }
+                        .badge-danger { background: #dc3545; color: white; }
+                        .badge-info { background: #17a2b8; color: white; }
+                        .status-badge { padding: 2px 6px; border-radius: 3px; font-size: 10px; }
+                        .approved { background: #28a745; color: white; }
+                        .pending { background: #ffc107; color: black; }
+                        .rejected { background: #dc3545; color: white; }
+                        @media print { .no-print { display: none; } }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h1>Donation Management Report</h1>
+                        <p>Generated on ${new Date().toLocaleDateString()}</p>
+                        <p>Total Records: ${visibleRows.length}</p>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Type</th>
+                                <th>Donor</th>
+                                <th>Amount/Details</th>
+                                <th>Date</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+        `;
+        
+        visibleRows.forEach(row => {
+            const id = row.querySelector('.donation-id')?.textContent || '';
+            const type = row.dataset.type || '';
+            const donor = row.querySelector('.donor-name')?.textContent || '';
+            const amount = row.querySelector('.amount-value')?.textContent || 
+                         row.querySelector('.blood-badge')?.textContent || 'N/A';
+            const date = row.querySelector('.date-value')?.textContent || '';
+            const status = row.dataset.status || '';
+            
+            printContent += `
+                <tr>
+                    <td>${id}</td>
+                    <td>${type}</td>
+                    <td>${donor}</td>
+                    <td>${amount}</td>
+                    <td>${date}</td>
+                    <td>${status}</td>
+                </tr>
+            `;
+        });
+        
+        printContent += `
+                        </tbody>
+                    </table>
+                </body>
+            </html>
+        `;
+        
+        printWindow.document.write(printContent);
+        printWindow.document.close();
+        printWindow.print();
+    };
+    
+    // Add export to CSV functionality
+    window.exportDonationsCSV = function() {
+        const visibleRows = document.querySelectorAll('.donation-row:not([style*="display: none"])');
+        let csvContent = 'ID,Type,Donor,Email,Amount/Details,Date,Status\n';
+        
+        visibleRows.forEach(row => {
+            const id = row.querySelector('.donation-id')?.textContent.replace('#', '') || '';
+            const type = row.dataset.type || '';
+            const donor = row.querySelector('.donor-name')?.textContent || '';
+            const email = row.querySelector('.donor-contact')?.textContent || '';
+            const amount = row.querySelector('.amount-value')?.textContent || 
+                          row.querySelector('.blood-badge')?.textContent || 'N/A';
+            const date = row.querySelector('.date-value')?.textContent || '';
+            const status = row.dataset.status || '';
+            
+            csvContent += `"${id}","${type}","${donor}","${email}","${amount}","${date}","${status}"\n`;
+        });
+        
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `donations_export_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    };
 });
   </script>
 </body>
