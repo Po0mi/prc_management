@@ -1225,7 +1225,133 @@ function closeModal() {
         window.location.href = 'index.php';
     }
 }
+// Add this JavaScript code to your register.php file, inside the existing <script> tag
 
+// Password Strength Indicator
+const passwordInput = document.getElementById('password');
+const confirmPasswordInput = document.getElementById('confirmPassword');
+const strengthMeter = document.getElementById('strengthMeter');
+const strengthText = document.getElementById('strengthText');
+const passwordMatchDiv = document.getElementById('password-match');
+
+if (passwordInput && strengthMeter && strengthText) {
+    passwordInput.addEventListener('input', function() {
+        const password = this.value;
+        const strength = calculatePasswordStrength(password);
+        
+        // Update meter width and color
+        strengthMeter.style.width = strength.percentage + '%';
+        strengthMeter.style.background = strength.color;
+        
+        // Update text
+        strengthText.textContent = strength.text;
+        strengthText.style.color = strength.color;
+    });
+}
+
+// Password Match Validator
+if (confirmPasswordInput && passwordMatchDiv) {
+    confirmPasswordInput.addEventListener('input', function() {
+        const password = passwordInput.value;
+        const confirmPassword = this.value;
+        
+        if (confirmPassword.length === 0) {
+            passwordMatchDiv.innerHTML = '';
+            return;
+        }
+        
+        if (password === confirmPassword) {
+            passwordMatchDiv.innerHTML = '<span class="valid">✓ Passwords match</span>';
+        } else {
+            passwordMatchDiv.innerHTML = '<span class="invalid">✗ Passwords do not match</span>';
+        }
+    });
+}
+
+function calculatePasswordStrength(password) {
+    let strength = 0;
+    
+    if (password.length === 0) {
+        return {
+            percentage: 0,
+            color: '#e5e7eb',
+            text: 'Password strength'
+        };
+    }
+    
+    // Length check
+    if (password.length >= 8) strength += 25;
+    if (password.length >= 12) strength += 15;
+    
+    // Contains lowercase
+    if (/[a-z]/.test(password)) strength += 15;
+    
+    // Contains uppercase
+    if (/[A-Z]/.test(password)) strength += 15;
+    
+    // Contains numbers
+    if (/\d/.test(password)) strength += 15;
+    
+    // Contains special characters
+    if (/[^a-zA-Z0-9]/.test(password)) strength += 15;
+    
+    // Determine color and text
+    let color, text;
+    if (strength < 40) {
+        color = '#ef4444';
+        text = 'Weak password';
+    } else if (strength < 70) {
+        color = '#f59e0b';
+        text = 'Fair password';
+    } else if (strength < 90) {
+        color = '#10b981';
+        text = 'Good password';
+    } else {
+        color = '#10b981';
+        text = 'Strong password';
+    }
+    
+    return {
+        percentage: strength,
+        color: color,
+        text: text
+    };
+}
+
+// Fix Success Modal Display
+function showSuccessModal() {
+    const modal = document.getElementById('successModal');
+    if (modal) {
+        // Force display with important styling
+        modal.style.display = 'flex';
+        modal.style.opacity = '1';
+        modal.classList.add('show-modal');
+        document.body.classList.add('modal-open');
+    }
+}
+
+// Auto-show modal if PHP sets the flag
+document.addEventListener('DOMContentLoaded', function() {
+    <?php if ($showModal): ?>
+    setTimeout(() => {
+        showSuccessModal();
+    }, 200);
+    <?php endif; ?>
+});
+
+// Update closeModal function
+function closeModal() {
+    const modal = document.getElementById('successModal');
+    if (modal) {
+        modal.style.opacity = '0';
+        setTimeout(() => {
+            modal.style.display = 'none';
+            modal.classList.remove('show-modal');
+            document.body.classList.remove('modal-open');
+            window.location.href = 'index.php';
+        }, 300);
+    }
+}
 // Show modal if success flag is set
 <?php if ($showModal): ?>
 document.addEventListener('DOMContentLoaded', function() {
@@ -1234,6 +1360,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }, 100);
 });
 <?php endif; ?>
+
   </script>
 
   <style>

@@ -377,7 +377,6 @@ $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(functio
 <body>
   <?php include 'sidebar.php'; ?>
   <div class="users-container">
-     <?php include 'header.php'; ?>
     <div class="page-header">
       <div class="header-content">
         <h1><i class="fas fa-hands-helping"></i> Volunteer Management</h1>
@@ -865,6 +864,7 @@ $page_title = $is_super_admin ? 'All Services' : implode(', ', array_map(functio
   <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
   <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
     <?php include 'chat_widget.php'; ?>
+      <?php include 'floating_notification_widget.php'; ?>
   <script>
     let geographicDataLoaded = false;
     let geographicVisible = false;

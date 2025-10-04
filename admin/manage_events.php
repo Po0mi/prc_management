@@ -842,7 +842,6 @@ if (!function_exists('get_role_color')) {
 <body class="admin-<?= htmlspecialchars($user_role) ?>">
   <?php include 'sidebar.php'; ?>
   <div class="events-container">
-     <?php include 'header.php'; ?>
     <div class="page-header">
       <h1><i class="fas fa-calendar-alt"></i> Event Management</h1>
       <p>
@@ -1378,7 +1377,7 @@ if (!function_exists('get_role_color')) {
             </button>
         </div>
         
-           <form method="POST" id="eventForm">
+           <form method="POST" id="eventForm" style="display: inline; padding: 1rem;">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
             <input type="hidden" name="create_event" value="1" id="formAction">
             <input type="hidden" name="event_id" id="eventId">
@@ -2404,5 +2403,6 @@ document.getElementById('showArchived')?.addEventListener('change', function() {
   <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
   <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
     <?php include 'chat_widget.php'; ?>
+      <?php include 'floating_notification_widget.php'; ?>
 </body>
 </html>

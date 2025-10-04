@@ -29,6 +29,27 @@ if (isset($_GET['action']) || isset($_POST['action'])) {
 
     try {
         switch ($action) {
+            case 'get_notifications':
+                // NEW: Get notifications with view tracking
+                $notifications = getTrackedNotifications($pdo, $user_id);
+                echo json_encode([
+                    'success' => true,
+                    'notifications' => $notifications,
+                    'timestamp' => time()
+                ]);
+                break;
+                
+            case 'mark_viewed':
+                // NEW: Mark notification type as viewed
+                $type = $_POST['type'] ?? '';
+                if ($type) {
+                    markNotificationViewed($pdo, $user_id, $type);
+                    echo json_encode(['success' => true]);
+                } else {
+                    echo json_encode(['success' => false, 'message' => 'Type required']);
+                }
+                break;
+                
             case 'get_sidebar_counts':
                 $counts = getSidebarNotificationCounts($pdo, $user_id, $user_role, $admin_role);
                 echo json_encode([
@@ -57,6 +78,163 @@ if (isset($_GET['action']) || isset($_POST['action'])) {
         echo json_encode(['success' => false, 'message' => 'Server error']);
     }
     exit;
+}
+
+/**
+ * NEW: Get tracked notifications (only count items since last view)
+ */
+function getTrackedNotifications($pdo, $user_id) {
+    // Create tracking table if it doesn't exist
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS notification_views (
+            view_id INT AUTO_INCREMENT PRIMARY KEY,
+            admin_id INT NOT NULL,
+            notification_type VARCHAR(50) NOT NULL,
+            last_viewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY unique_admin_type (admin_id, notification_type),
+            INDEX idx_admin (admin_id)
+        )
+    ");
+    
+    $lastViewed = getLastViewedTimestamps($pdo, $user_id);
+    $notifications = [];
+    
+    try {
+        // Events - pending registrations
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) as count 
+            FROM registrations 
+            WHERE status = 'pending' 
+            AND registration_date > :last_viewed
+            AND archived = 0
+        ");
+        $stmt->execute(['last_viewed' => $lastViewed['events']]);
+        $notifications['events'] = (int)$stmt->fetchColumn();
+        
+        // Sessions - pending session registrations
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) as count 
+            FROM session_registrations 
+            WHERE status = 'pending' 
+            AND registration_date > :last_viewed
+        ");
+        $stmt->execute(['last_viewed' => $lastViewed['sessions']]);
+        $notifications['sessions'] = (int)$stmt->fetchColumn();
+        
+        // Training Requests - pending only
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) as count 
+            FROM training_requests 
+            WHERE status = 'pending' 
+            AND created_at > :last_viewed
+        ");
+        $stmt->execute(['last_viewed' => $lastViewed['training_requests']]);
+        $notifications['training_requests'] = (int)$stmt->fetchColumn();
+        
+        // Donations - pending only
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) as count 
+            FROM donations 
+            WHERE status = 'pending' 
+            AND created_at > :last_viewed
+        ");
+        $stmt->execute(['last_viewed' => $lastViewed['donations']]);
+        $notifications['donations'] = (int)$stmt->fetchColumn();
+        
+        // Users - new users
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) as count 
+            FROM users 
+            WHERE created_at > :last_viewed
+            AND is_admin = 0
+        ");
+        $stmt->execute(['last_viewed' => $lastViewed['users']]);
+        $notifications['users'] = (int)$stmt->fetchColumn();
+        
+        // Inventory - low stock items
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) as count 
+            FROM inventory_items 
+            WHERE current_stock <= minimum_stock 
+            AND status = 'active'
+            AND updated_at > :last_viewed
+        ");
+        $stmt->execute(['last_viewed' => $lastViewed['inventory']]);
+        $notifications['inventory'] = (int)$stmt->fetchColumn();
+        
+        // Merch - low stock (10 or less)
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) as count 
+            FROM merchandise 
+            WHERE stock_quantity <= 10 
+            AND is_available = 1
+            AND updated_at > :last_viewed
+        ");
+        $stmt->execute(['last_viewed' => $lastViewed['merch']]);
+        $notifications['merch'] = (int)$stmt->fetchColumn();
+        
+        // Volunteers - new volunteers
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) as count 
+            FROM volunteers 
+            WHERE created_at > :last_viewed
+            AND status = 'current'
+        ");
+        $stmt->execute(['last_viewed' => $lastViewed['volunteers']]);
+        $notifications['volunteers'] = (int)$stmt->fetchColumn();
+        
+    } catch (Exception $e) {
+        error_log("Error getting tracked notifications: " . $e->getMessage());
+    }
+    
+    return $notifications;
+}
+
+/**
+ * NEW: Get last viewed timestamps for each notification type
+ */
+function getLastViewedTimestamps($pdo, $user_id) {
+    $stmt = $pdo->prepare("
+        SELECT notification_type, last_viewed_at 
+        FROM notification_views 
+        WHERE admin_id = :admin_id
+    ");
+    $stmt->execute(['admin_id' => $user_id]);
+    
+    $views = [];
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        $views[$row['notification_type']] = $row['last_viewed_at'];
+    }
+    
+    // Default: 7 days ago for new tracking
+    $defaultTime = date('Y-m-d H:i:s', strtotime('-7 days'));
+    
+    return [
+        'events' => $views['events'] ?? $defaultTime,
+        'sessions' => $views['sessions'] ?? $defaultTime,
+        'training_requests' => $views['training_requests'] ?? $defaultTime,
+        'donations' => $views['donations'] ?? $defaultTime,
+        'users' => $views['users'] ?? $defaultTime,
+        'inventory' => $views['inventory'] ?? $defaultTime,
+        'merch' => $views['merch'] ?? $defaultTime,
+        'volunteers' => $views['volunteers'] ?? $defaultTime,
+    ];
+}
+
+/**
+ * NEW: Mark notification type as viewed
+ */
+function markNotificationViewed($pdo, $user_id, $type) {
+    $stmt = $pdo->prepare("
+        INSERT INTO notification_views (admin_id, notification_type, last_viewed_at)
+        VALUES (:admin_id, :type, NOW())
+        ON DUPLICATE KEY UPDATE last_viewed_at = NOW()
+    ");
+    
+    $stmt->execute([
+        'admin_id' => $user_id,
+        'type' => $type
+    ]);
 }
 
 /**
@@ -102,18 +280,18 @@ function getSidebarNotificationCounts($pdo, $user_id, $user_role, $admin_role) {
         ");
         $stmt->execute();
         $counts['training_requests'] = (int)$stmt->fetchColumn();
-        $counts['requests'] = $counts['training_requests']; // Alias
+        $counts['requests'] = $counts['training_requests'];
 
-        // Donations - FIXED for your schema
+        // Donations
         $stmt = $pdo->query("
             SELECT COUNT(*) as count
             FROM donations 
             WHERE status = 'pending'
         ");
         $counts['donation'] = (int)$stmt->fetchColumn();
-        $counts['blood_donation'] = 0; // Set to 0 if no blood_donations table
+        $counts['blood_donation'] = 0;
 
-        // Inventory - FIXED for new schema with current_stock column
+        // Inventory
         $stmt = $pdo->prepare("
             SELECT COUNT(*) as count
             FROM inventory_items 
@@ -121,7 +299,7 @@ function getSidebarNotificationCounts($pdo, $user_id, $user_role, $admin_role) {
         ");
         $stmt->execute();
         $counts['critical_stock'] = (int)$stmt->fetchColumn();
-        $counts['inventory'] = $counts['critical_stock']; // Use same value
+        $counts['inventory'] = $counts['critical_stock'];
 
         // Users
         $stmt = $pdo->query("
@@ -131,9 +309,9 @@ function getSidebarNotificationCounts($pdo, $user_id, $user_role, $admin_role) {
             AND role = 'user'
         ");
         $counts['new_users'] = (int)$stmt->fetchColumn();
-        $counts['user_activity'] = $counts['new_users']; // Alias
+        $counts['user_activity'] = $counts['new_users'];
 
-        // Volunteers - check if table exists
+        // Volunteers
         try {
             $stmt = $pdo->query("
                 SELECT COUNT(*) as count
@@ -142,11 +320,11 @@ function getSidebarNotificationCounts($pdo, $user_id, $user_role, $admin_role) {
             ");
             $counts['volunteers'] = (int)$stmt->fetchColumn();
         } catch (PDOException $e) {
-            $counts['volunteers'] = 0; // Table doesn't exist
+            $counts['volunteers'] = 0;
         }
-        $counts['volunteer_applications'] = $counts['volunteers']; // Alias
+        $counts['volunteer_applications'] = $counts['volunteers'];
 
-        // Announcements - check if table exists
+        // Announcements
         try {
             $stmt = $pdo->query("
                 SELECT COUNT(*) as count
@@ -155,29 +333,18 @@ function getSidebarNotificationCounts($pdo, $user_id, $user_role, $admin_role) {
             ");
             $counts['announcements'] = (int)$stmt->fetchColumn();
         } catch (PDOException $e) {
-            $counts['announcements'] = 0; // Table doesn't exist
+            $counts['announcements'] = 0;
         }
-        $counts['announcement'] = $counts['announcements']; // Alias
+        $counts['announcement'] = $counts['announcements'];
 
     } catch (Exception $e) {
         error_log("Error getting sidebar notification counts: " . $e->getMessage());
-        // Return safe default values
         $counts = [
-            'urgent_action' => 0,
-            'registration' => 0,
-            'upcoming' => 0,
-            'training_sessions' => 0,
-            'training_requests' => 0,
-            'requests' => 0,
-            'donation' => 0,
-            'blood_donation' => 0,
-            'inventory' => 0,
-            'critical_stock' => 0,
-            'volunteers' => 0,
-            'volunteer_applications' => 0,
-            'new_users' => 0,
-            'user_activity' => 0,
-            'announcements' => 0,
+            'urgent_action' => 0, 'registration' => 0, 'upcoming' => 0,
+            'training_sessions' => 0, 'training_requests' => 0, 'requests' => 0,
+            'donation' => 0, 'blood_donation' => 0, 'inventory' => 0,
+            'critical_stock' => 0, 'volunteers' => 0, 'volunteer_applications' => 0,
+            'new_users' => 0, 'user_activity' => 0, 'announcements' => 0,
             'announcement' => 0
         ];
     }
@@ -215,7 +382,7 @@ function getSimpleNotifications($pdo, $user_id, $user_role, $admin_role) {
             ];
         }
 
-        // Critical: Low inventory - FIXED for new schema
+        // Critical: Low inventory
         $stmt = $pdo->prepare("
             SELECT COUNT(*) as count 
             FROM inventory_items 

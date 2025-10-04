@@ -1,29 +1,22 @@
 <?php
-// Notifications API - Place in /user/ directory
-// File: /user/notifications_api.php
-
+// User Notifications API
 ini_set('display_errors', 0);
 error_reporting(E_ALL);
 
 try {
-    // Include your existing config
     require_once __DIR__ . '/../config.php';
     
-    // Check if user is logged in using your existing function
     if (!isset($_SESSION['user_id'])) {
         throw new Exception('User not logged in');
     }
 
-    // Use your existing PDO connection
     $pdo = $GLOBALS['pdo'];
     $user_id = $_SESSION['user_id'];
     $action = $_GET['action'] ?? 'check';
 
-    // Set JSON header
     header('Content-Type: application/json');
     header('Cache-Control: no-cache, must-revalidate');
 
-    // Handle different actions
     switch ($action) {
         case 'check':
             $since = isset($_GET['since']) ? (int)$_GET['since'] : 0;
@@ -38,24 +31,14 @@ try {
             ]);
             break;
 
-        case 'stats':
-            $stats = getNotificationStats($pdo, $user_id);
-            echo json_encode([
-                'success' => true,
-                'stats' => $stats
-            ]);
-            break;
-
         case 'mark_read':
             if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $input = json_decode(file_get_contents('php://input'), true);
                 $result = markAsRead($pdo, $user_id, $input['notification_id'] ?? '');
                 echo json_encode([
                     'success' => $result,
-                    'message' => $result ? 'Marked as read' : 'Failed to mark as read'
+                    'message' => $result ? 'Marked as read' : 'Failed'
                 ]);
-            } else {
-                echo json_encode(['success' => false, 'message' => 'POST required']);
             }
             break;
 
@@ -64,38 +47,57 @@ try {
                 $result = markAllAsRead($pdo, $user_id);
                 echo json_encode([
                     'success' => $result,
-                    'message' => $result ? 'All marked as read' : 'Failed to mark all as read'
+                    'message' => $result ? 'All marked as read' : 'Failed'
                 ]);
-            } else {
-                echo json_encode(['success' => false, 'message' => 'POST required']);
             }
             break;
 
         default:
-            echo json_encode([
-                'success' => false,
-                'message' => 'Invalid action'
-            ]);
+            echo json_encode(['success' => false, 'message' => 'Invalid action']);
     }
 
 } catch (Exception $e) {
     error_log("Notification API Error: " . $e->getMessage());
-    echo json_encode([
-        'success' => false,
-        'message' => 'Server error: ' . $e->getMessage()
-    ]);
+    echo json_encode(['success' => false, 'message' => 'Server error']);
 }
 
 function getNewNotifications($pdo, $user_id, $sinceDate) {
     $notifications = [];
     
     try {
-        // Get user's read notifications
         $readNotifications = getUserReadNotifications($pdo, $user_id);
         
-        // Check for new training sessions
+        // Get status notifications from the notifications table
         $stmt = $pdo->prepare("
-            SELECT session_id, title, major_service, session_date, created_at
+            SELECT id, type, title, message, icon, url, created_at
+            FROM notifications 
+            WHERE user_id = ? AND is_read = 0 AND created_at > ?
+            ORDER BY created_at DESC LIMIT 10
+        ");
+        $stmt->execute([$user_id, $sinceDate]);
+        $statusNotifs = $stmt->fetchAll();
+
+        foreach ($statusNotifs as $notif) {
+            $notificationId = 'status_' . $notif['id'];
+            
+            if (in_array($notificationId, $readNotifications)) {
+                continue;
+            }
+            
+            $notifications[] = [
+                'id' => $notificationId,
+                'type' => $notif['type'],
+                'title' => $notif['title'],
+                'message' => $notif['message'],
+                'icon' => $notif['icon'],
+                'url' => $notif['url'],
+                'created_at' => $notif['created_at']
+            ];
+        }
+        
+        // New training sessions
+        $stmt = $pdo->prepare("
+            SELECT session_id, title, session_date, created_at
             FROM training_sessions 
             WHERE created_at > ? AND session_date >= CURDATE()
             ORDER BY created_at DESC LIMIT 5
@@ -106,26 +108,24 @@ function getNewNotifications($pdo, $user_id, $sinceDate) {
         foreach ($sessions as $session) {
             $notificationId = 'session_' . $session['session_id'];
             
-            // Skip if already read
             if (in_array($notificationId, $readNotifications)) {
                 continue;
             }
             
             $notifications[] = [
                 'id' => $notificationId,
-                'type' => 'session',
+                'type' => 'info',
                 'title' => 'New Training Session',
                 'message' => $session['title'] . ' - ' . date('M d, Y', strtotime($session['session_date'])),
                 'icon' => 'fas fa-graduation-cap',
-                'color' => '#28a745',
                 'url' => 'training.php?highlight=' . $session['session_id'],
                 'created_at' => $session['created_at']
             ];
         }
 
-        // Check for new events
+        // New events
         $stmt = $pdo->prepare("
-            SELECT event_id, title, major_service, event_date, created_at
+            SELECT event_id, title, event_date, created_at
             FROM events 
             WHERE created_at > ? AND event_date >= CURDATE()
             ORDER BY created_at DESC LIMIT 5
@@ -136,26 +136,24 @@ function getNewNotifications($pdo, $user_id, $sinceDate) {
         foreach ($events as $event) {
             $notificationId = 'event_' . $event['event_id'];
             
-            // Skip if already read
             if (in_array($notificationId, $readNotifications)) {
                 continue;
             }
             
             $notifications[] = [
                 'id' => $notificationId,
-                'type' => 'event',
+                'type' => 'info',
                 'title' => 'New Event Available',
                 'message' => $event['title'] . ' - ' . date('M d, Y', strtotime($event['event_date'])),
                 'icon' => 'fas fa-calendar-plus',
-                'color' => '#007bff',
                 'url' => 'registration.php?highlight=' . $event['event_id'],
                 'created_at' => $event['created_at']
             ];
         }
 
-        // Check for new announcements
+        // New announcements
         $stmt = $pdo->prepare("
-            SELECT announcement_id, title, content, posted_at
+            SELECT announcement_id, title, posted_at
             FROM announcements 
             WHERE posted_at > ?
             ORDER BY posted_at DESC LIMIT 3
@@ -166,104 +164,30 @@ function getNewNotifications($pdo, $user_id, $sinceDate) {
         foreach ($announcements as $announcement) {
             $notificationId = 'announcement_' . $announcement['announcement_id'];
             
-            // Skip if already read
             if (in_array($notificationId, $readNotifications)) {
                 continue;
             }
             
             $notifications[] = [
                 'id' => $notificationId,
-                'type' => 'announcement',
+                'type' => 'info',
                 'title' => 'New Announcement',
                 'message' => $announcement['title'],
                 'icon' => 'fas fa-bullhorn',
-                'color' => '#fd7e14',
                 'url' => 'announcements.php?highlight=' . $announcement['announcement_id'],
                 'created_at' => $announcement['posted_at']
             ];
-        }
-
-        // Try merchandise if table exists
-        try {
-            $stmt = $pdo->prepare("
-                SELECT merch_id, name, category, price, created_at
-                FROM merchandise 
-                WHERE created_at > ? AND is_available = 1
-                ORDER BY created_at DESC LIMIT 3
-            ");
-            $stmt->execute([$sinceDate]);
-            $merchandise = $stmt->fetchAll();
-
-            foreach ($merchandise as $merch) {
-                $notificationId = 'merch_' . $merch['merch_id'];
-                
-                // Skip if already read
-                if (in_array($notificationId, $readNotifications)) {
-                    continue;
-                }
-                
-                $notifications[] = [
-                    'id' => $notificationId,
-                    'type' => 'merchandise',
-                    'title' => 'New Merchandise',
-                    'message' => $merch['name'] . ' - ₱' . number_format($merch['price'], 2),
-                    'icon' => 'fas fa-store',
-                    'color' => '#6f42c1',
-                    'url' => 'merch.php?highlight=' . $merch['merch_id'],
-                    'created_at' => $merch['created_at']
-                ];
-            }
-        } catch (PDOException $e) {
-            // Merchandise table doesn't exist
         }
 
     } catch (PDOException $e) {
         error_log("Error getting notifications: " . $e->getMessage());
     }
 
-    // Sort by creation time
     usort($notifications, function($a, $b) {
         return strtotime($b['created_at']) - strtotime($a['created_at']);
     });
 
     return $notifications;
-}
-
-function getNotificationStats($pdo, $user_id) {
-    try {
-        $stats = [
-            'total_events' => 0,
-            'total_sessions' => 0,
-            'total_announcements' => 0,
-            'total_merchandise' => 0
-        ];
-
-        // Count events
-        $stmt = $pdo->query("SELECT COUNT(*) FROM events WHERE event_date >= CURDATE()");
-        $stats['total_events'] = $stmt->fetchColumn();
-
-        // Count training sessions
-        $stmt = $pdo->query("SELECT COUNT(*) FROM training_sessions WHERE session_date >= CURDATE()");
-        $stats['total_sessions'] = $stmt->fetchColumn();
-
-        // Count announcements
-        $stmt = $pdo->query("SELECT COUNT(*) FROM announcements WHERE posted_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)");
-        $stats['total_announcements'] = $stmt->fetchColumn();
-
-        // Count merchandise
-        try {
-            $stmt = $pdo->query("SELECT COUNT(*) FROM merchandise WHERE is_available = 1");
-            $stats['total_merchandise'] = $stmt->fetchColumn();
-        } catch (PDOException $e) {
-            $stats['total_merchandise'] = 0;
-        }
-
-        return $stats;
-
-    } catch (PDOException $e) {
-        error_log("Error getting stats: " . $e->getMessage());
-        return ['error' => 'Failed to get stats'];
-    }
 }
 
 function createNotificationReadTable($pdo) {
@@ -274,9 +198,8 @@ function createNotificationReadTable($pdo) {
             notification_id VARCHAR(100) NOT NULL,
             read_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE KEY unique_user_notification (user_id, notification_id),
-            INDEX idx_user_id (user_id),
-            INDEX idx_read_at (read_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+            INDEX idx_user_id (user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
         
         $pdo->exec($sql);
         return true;
@@ -288,7 +211,6 @@ function createNotificationReadTable($pdo) {
 
 function getUserReadNotifications($pdo, $user_id) {
     try {
-        // Create table if it doesn't exist
         createNotificationReadTable($pdo);
         
         $stmt = $pdo->prepare("
@@ -311,14 +233,14 @@ function markAsRead($pdo, $user_id, $notification_id) {
     }
     
     try {
-        // Handle registration notifications differently
-        if (strpos($notification_id, 'registration_') === 0) {
-            $realId = str_replace('registration_', '', $notification_id);
+        // Handle status notifications from notifications table
+        if (strpos($notification_id, 'status_') === 0) {
+            $realId = str_replace('status_', '', $notification_id);
             $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?");
             return $stmt->execute([$realId, $user_id]);
         }
         
-        // Your existing code for other notification types
+        // Handle other notification types
         createNotificationReadTable($pdo);
         
         $stmt = $pdo->prepare("
@@ -327,13 +249,7 @@ function markAsRead($pdo, $user_id, $notification_id) {
             ON DUPLICATE KEY UPDATE read_at = NOW()
         ");
         
-        $result = $stmt->execute([$user_id, $notification_id]);
-        
-        if ($result) {
-            error_log("Marked notification as read: $notification_id for user $user_id");
-        }
-        
-        return $result;
+        return $stmt->execute([$user_id, $notification_id]);
     } catch (PDOException $e) {
         error_log("Error marking notification as read: " . $e->getMessage());
         return false;
@@ -342,14 +258,16 @@ function markAsRead($pdo, $user_id, $notification_id) {
 
 function markAllAsRead($pdo, $user_id) {
     try {
-        // Create table if it doesn't exist
         createNotificationReadTable($pdo);
         
-        // Get all current notifications
-        $sinceDate = date('Y-m-d H:i:s', strtotime('-7 days')); // Get notifications from last 7 days
+        // Mark all notifications table items as read
+        $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0");
+        $stmt->execute([$user_id]);
+        
+        // Get all current notification IDs
+        $sinceDate = date('Y-m-d H:i:s', strtotime('-7 days'));
         $allNotifications = [];
         
-        // Get all possible notification IDs
         $tables = [
             'training_sessions' => ['session_id', 'session_', 'created_at', 'session_date >= CURDATE()'],
             'events' => ['event_id', 'event_', 'created_at', 'event_date >= CURDATE()'],
@@ -370,100 +288,158 @@ function markAllAsRead($pdo, $user_id) {
                     $allNotifications[] = $config[1] . $row[$config[0]];
                 }
             } catch (PDOException $e) {
-                // Table might not exist, continue
                 continue;
             }
         }
         
-        // Try merchandise
-        try {
-            $stmt = $pdo->prepare("
-                SELECT merch_id 
-                FROM merchandise 
-                WHERE created_at > ? AND is_available = 1
-            ");
-            $stmt->execute([$sinceDate]);
-            $merchandise = $stmt->fetchAll();
-            
-            foreach ($merchandise as $merch) {
-                $allNotifications[] = 'merch_' . $merch['merch_id'];
-            }
-        } catch (PDOException $e) {
-            // Merchandise table doesn't exist
-        }
-        
         // Mark all as read
-        $success = true;
         foreach ($allNotifications as $notificationId) {
             $stmt = $pdo->prepare("
                 INSERT INTO notification_reads (user_id, notification_id, read_at) 
                 VALUES (?, ?, NOW()) 
                 ON DUPLICATE KEY UPDATE read_at = NOW()
             ");
-            
-            if (!$stmt->execute([$user_id, $notificationId])) {
-                $success = false;
-            }
+            $stmt->execute([$user_id, $notificationId]);
         }
         
-        if ($success) {
-            error_log("Marked all notifications as read for user $user_id (" . count($allNotifications) . " notifications)");
-        }
-        
-        return $success;
-        
+        return true;
     } catch (PDOException $e) {
         error_log("Error marking all notifications as read: " . $e->getMessage());
         return false;
     }
 }
-// Add this section to your existing getNewNotifications function
-// Check for registration status notifications
-try {
-    $stmt = $pdo->prepare("
-        SELECT id, type, title, message, icon, url, created_at
-        FROM notifications 
-        WHERE user_id = ? AND is_read = 0 AND created_at > ?
-        ORDER BY created_at DESC LIMIT 5
-    ");
-    $stmt->execute([$user_id, $sinceDate]);
-    $regNotifications = $stmt->fetchAll();
 
-    foreach ($regNotifications as $regNotif) {
-        $notificationId = 'registration_' . $regNotif['id'];
-        
-        // Skip if already read
-        if (in_array($notificationId, $readNotifications)) {
-            continue;
-        }
-        
-        $notifications[] = [
-            'id' => $notificationId,
-            'type' => $regNotif['type'],
-            'title' => $regNotif['title'],
-            'message' => $regNotif['message'],
-            'icon' => $regNotif['icon'],
-            'color' => $regNotif['type'] === 'success' ? '#28a745' : ($regNotif['type'] === 'warning' ? '#ffc107' : '#007bff'),
-            'url' => $regNotif['url'],
-            'created_at' => $regNotif['created_at']
-        ];
-    }
-} catch (PDOException $e) {
-    error_log("Error getting registration notifications: " . $e->getMessage());
-}
-// Clean up old notification reads (run occasionally)
-function cleanupOldReads($pdo) {
+// ============================================
+// NOTIFICATION HELPER FUNCTIONS
+// ============================================
+
+/**
+ * Create a notification for a user
+ */
+function createNotification($pdo, $user_id, $type, $title, $message, $url = null, $icon = null) {
+    // Create notifications table if it doesn't exist
     try {
-        $stmt = $pdo->prepare("DELETE FROM notification_reads WHERE read_at < DATE_SUB(NOW(), INTERVAL 30 DAY)");
-        return $stmt->execute();
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                type VARCHAR(50) NOT NULL,
+                title VARCHAR(255) NOT NULL,
+                message TEXT NOT NULL,
+                url VARCHAR(500) DEFAULT NULL,
+                icon VARCHAR(100) DEFAULT 'fas fa-bell',
+                is_read TINYINT(1) DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_user_notifications (user_id, is_read),
+                INDEX idx_created_at (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ");
     } catch (PDOException $e) {
-        error_log("Error cleaning up old reads: " . $e->getMessage());
+        error_log("Error creating notifications table: " . $e->getMessage());
+    }
+    
+    if ($icon === null) {
+        $icon = $type === 'success' ? 'fas fa-check-circle' : 
+                ($type === 'error' ? 'fas fa-times-circle' : 'fas fa-bell');
+    }
+    
+    $stmt = $pdo->prepare("
+        INSERT INTO notifications (user_id, type, title, message, url, icon, created_at, is_read) 
+        VALUES (?, ?, ?, ?, ?, ?, NOW(), 0)
+    ");
+    
+    return $stmt->execute([$user_id, $type, $title, $message, $url, $icon]);
+}
+
+/**
+ * Notify user about training request status change
+ */
+function notifyTrainingRequest($pdo, $request_id, $new_status) {
+    $stmt = $pdo->prepare("
+        SELECT user_id, training_program, service_type
+        FROM training_requests WHERE request_id = ?
+    ");
+    $stmt->execute([$request_id]);
+    $request = $stmt->fetch();
+    
+    if (!$request) return false;
+    
+    if ($new_status === 'approved') {
+        $title = "Training Request Approved ✓";
+        $message = "Your {$request['training_program']} training request has been approved!";
+        $type = "success";
+    } elseif ($new_status === 'rejected') {
+        $title = "Training Request Update";
+        $message = "Your {$request['training_program']} training request could not be approved at this time.";
+        $type = "error";
+    } elseif ($new_status === 'scheduled') {
+        $title = "Training Scheduled ✓";
+        $message = "Your {$request['training_program']} training has been scheduled!";
+        $type = "success";
+    } else {
         return false;
     }
+    
+    $url = "training_requests.php";
+    return createNotification($pdo, $request['user_id'], $type, $title, $message, $url);
 }
 
-// Run cleanup 5% of the time
-if (rand(1, 100) <= 5) {
-    cleanupOldReads($pdo);
+/**
+ * Notify user about session registration status change
+ */
+function notifySessionRegistration($pdo, $registration_id, $new_status) {
+    $stmt = $pdo->prepare("
+        SELECT user_id, training_type FROM session_registrations WHERE registration_id = ?
+    ");
+    $stmt->execute([$registration_id]);
+    $reg = $stmt->fetch();
+    
+    if (!$reg) return false;
+    
+    if ($new_status === 'approved') {
+        $title = "Training Registration Approved ✓";
+        $message = "Your registration for {$reg['training_type']} has been approved!";
+        $type = "success";
+    } elseif ($new_status === 'rejected') {
+        $title = "Registration Update";
+        $message = "Your registration for {$reg['training_type']} could not be approved.";
+        $type = "error";
+    } else {
+        return false;
+    }
+    
+    $url = "training.php";
+    return createNotification($pdo, $reg['user_id'], $type, $title, $message, $url);
+}
+
+/**
+ * Notify user about event registration status change
+ */
+function notifyEventRegistration($pdo, $registration_id, $new_status) {
+    $stmt = $pdo->prepare("
+        SELECT r.user_id, e.title 
+        FROM registrations r
+        JOIN events e ON r.event_id = e.event_id
+        WHERE r.registration_id = ?
+    ");
+    $stmt->execute([$registration_id]);
+    $reg = $stmt->fetch();
+    
+    if (!$reg) return false;
+    
+    if ($new_status === 'approved') {
+        $title = "Event Registration Approved ✓";
+        $message = "Your registration for {$reg['title']} has been approved!";
+        $type = "success";
+    } elseif ($new_status === 'rejected') {
+        $title = "Registration Update";
+        $message = "Your registration for {$reg['title']} could not be approved.";
+        $type = "error";
+    } else {
+        return false;
+    }
+    
+    $url = "registration.php";
+    return createNotification($pdo, $reg['user_id'], $type, $title, $message, $url);
 }
 ?>

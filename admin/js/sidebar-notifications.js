@@ -1,4 +1,4 @@
-// Simple Sidebar Notification System
+// Enhanced Sidebar Notification System
 class SimpleSidebarNotifications {
   constructor(options = {}) {
     this.options = {
@@ -17,16 +17,16 @@ class SimpleSidebarNotifications {
   }
 
   createBadges() {
-    // Simple mapping of pages to notification types
+    // Mapping of pages to notification types
     const pageMapping = {
-      "manage_events.php": ["registration", "urgent_action", "upcoming"],
-      "manage_sessions.php": ["training", "training_sessions"],
-      "training_request.php": ["requests", "training_requests"],
-      "manage_donations.php": ["donation", "blood_donation"],
-      "manage_inventory.php": ["inventory", "critical_stock"],
-      "manage_volunteers.php": ["volunteers", "volunteer_applications"],
-      "manage_users.php": ["user_activity", "new_users"],
-      "manage_announcements.php": ["announcements", "announcement"],
+      "manage_events.php": "events",
+      "manage_sessions.php": "sessions",
+      "training_request.php": "training_requests",
+      "manage_donations.php": "donations",
+      "manage_users.php": "users",
+      "manage_inventory.php": "inventory",
+      "manage_merch.php": "merch",
+      "manage_volunteers.php": "volunteers",
     };
 
     // Add badges to navigation links
@@ -35,8 +35,14 @@ class SimpleSidebarNotifications {
       if (navLink && !navLink.querySelector(".nav-badge")) {
         const badge = document.createElement("span");
         badge.className = "nav-badge hidden";
-        badge.dataset.types = JSON.stringify(pageMapping[page]);
+        badge.dataset.type = pageMapping[page];
+        badge.dataset.page = page;
         navLink.appendChild(badge);
+
+        // Mark as viewed when clicked
+        navLink.addEventListener("click", () => {
+          this.markAsViewed(pageMapping[page]);
+        });
       }
     });
   }
@@ -50,40 +56,38 @@ class SimpleSidebarNotifications {
   async checkForUpdates() {
     try {
       const response = await fetch(
-        `${this.options.apiUrl}?action=get_sidebar_counts&t=${Date.now()}`
+        `${this.options.apiUrl}?action=get_notifications&t=${Date.now()}`
       );
       const data = await response.json();
 
       if (data.success) {
-        this.updateBadges(data.counts);
+        this.updateBadges(data.notifications);
       }
     } catch (error) {
       console.error("Error checking notifications:", error);
     }
   }
 
-  updateBadges(counts) {
+  updateBadges(notifications) {
     document.querySelectorAll(".nav-badge").forEach((badge) => {
-      const types = JSON.parse(badge.dataset.types || "[]");
-      let totalCount = 0;
+      const type = badge.dataset.type;
+      const count = notifications[type] || 0;
 
-      // Sum up counts for this badge's types
-      types.forEach((type) => {
-        if (counts[type]) {
-          totalCount += counts[type];
-        }
-      });
-
-      // Update badge display
-      if (totalCount > 0) {
-        badge.textContent = totalCount > 99 ? "99+" : totalCount;
+      if (count > 0) {
+        badge.textContent = count > 99 ? "99+" : count;
         badge.classList.remove("hidden");
 
-        // Simple priority styling
+        // Add pulse animation
+        if (!badge.classList.contains("pulse")) {
+          badge.classList.add("pulse");
+          setTimeout(() => badge.classList.remove("pulse"), 2000);
+        }
+
+        // Priority styling
         badge.className = "nav-badge";
-        if (totalCount >= 10) {
+        if (count >= 10) {
           badge.classList.add("high");
-        } else if (totalCount >= 5) {
+        } else if (count >= 5) {
           badge.classList.add("medium");
         } else {
           badge.classList.add("low");
@@ -94,14 +98,33 @@ class SimpleSidebarNotifications {
     });
   }
 
-  // Public method to refresh
+  async markAsViewed(type) {
+    try {
+      await fetch(this.options.apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: `action=mark_viewed&type=${encodeURIComponent(type)}`,
+      });
+
+      // Hide badge immediately
+      const badge = document.querySelector(`[data-type="${type}"]`);
+      if (badge) {
+        badge.classList.add("hidden");
+      }
+    } catch (error) {
+      console.error("Error marking as viewed:", error);
+    }
+  }
+
   refresh() {
     this.checkForUpdates();
   }
 }
 
-// Simple CSS styles
-const simpleStyles = `
+// Notification Styles
+const notificationStyles = `
 <style>
 .nav-badge {
     position: absolute;
@@ -116,6 +139,7 @@ const simpleStyles = `
     min-width: 18px;
     text-align: center;
     z-index: 10;
+    transition: all 0.3s ease;
 }
 
 .nav-badge.hidden {
@@ -133,13 +157,28 @@ const simpleStyles = `
 
 .nav-badge.high {
     background: #dc3545;
+    box-shadow: 0 0 10px rgba(220, 53, 69, 0.5);
+}
+
+.nav-badge.pulse {
+    animation: pulse 1s ease-in-out 2;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.2);
+        opacity: 0.8;
+    }
 }
 
 .sidebar-nav .nav-link {
     position: relative;
 }
 
-/* Collapsed sidebar adjustments */
 .sidebar.collapsed .nav-badge {
     top: 6px;
     right: 6px;
@@ -151,7 +190,7 @@ const simpleStyles = `
 `;
 
 // Initialize
-document.head.insertAdjacentHTML("beforeend", simpleStyles);
+document.head.insertAdjacentHTML("beforeend", notificationStyles);
 
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {

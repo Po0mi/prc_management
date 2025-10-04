@@ -36,6 +36,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_event'])) {
     $email = trim($_POST['email']);
     $age = (int)$_POST['age'];
     
+        // Add this check:
+    $eventQuery = $pdo->prepare("SELECT event_date, event_end_date FROM events WHERE event_id = ?");
+    $eventQuery->execute([$eventId]);
+    $eventData = $eventQuery->fetch();
+    
     // Get event details to check if it's a paid event
     $eventQuery = $pdo->prepare("SELECT fee, event_date, event_end_date, duration_days FROM events WHERE event_id = ?");
     $eventQuery->execute([$eventId]);
@@ -231,7 +236,7 @@ $params = [];
 
 // Changed from event_date >= CURDATE() to check event_end_date instead
 // Update line 137 in user registration.php
-$whereConditions[] = "e.event_end_date >= CURDATE() AND e.archived = 0";
+$whereConditions[] = "e.event_date > CURDATE() AND e.archived = 0";
 
 if ($search) {
     $whereConditions[] = "(e.title LIKE :search OR e.location LIKE :search OR e.description LIKE :search)";
@@ -358,7 +363,7 @@ $userRegistrations = $userRegistrationsStmt->fetchAll();
 <body>
     <?php include 'sidebar.php'; ?>
     <div class="header-content">
-    <?php include 'header.php'; ?>
+
     
     <div class="admin-content">
         <div class="events-layout">
@@ -383,7 +388,6 @@ $userRegistrations = $userRegistrationsStmt->fetchAll();
                             <input type="hidden" name="status" value="<?= htmlspecialchars($statusFilter) ?>">
                             <i class="fas fa-search"></i>
                             <input type="text" name="search" placeholder="Search events..." value="<?= htmlspecialchars($search) ?>">
-                            <button type="submit"><i class="fas fa-arrow-right"></i></button>
                         </form>
                         
                         <div class="status-filter">
@@ -1157,13 +1161,11 @@ $userRegistrations = $userRegistrationsStmt->fetchAll();
     </div>
 
   <script> window.calendarEventsData = <?= json_encode($extendedCalendarEvents) ?>;</script>
-    <script src="js/notifications.js?v=<?php echo time(); ?>"></script>
     <script src="/js/register.js"></script>
     <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
     <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
-    <script src="js/darkmode.js?v=<?php echo time(); ?>"></script>
-    <script src="js/header.js?v=<?php echo time(); ?>"></script>
-      <?php include 'chat_widget.php'; ?>
+    <?php include 'chat_widget.php'; ?>
+    <?php include 'floating_notification_widget.php'; ?>
 <script>
 // Global variable to store current event data
 let currentEventData = null;

@@ -728,7 +728,7 @@ if (!function_exists('get_role_color')) {
 <body class="admin-<?= htmlspecialchars($user_role) ?>">
   <?php include 'sidebar.php'; ?>
   <div class="sessions-container">
-     <?php include 'header.php'; ?>
+
     <div class="page-header">
       <div class="header-content">
         <h1><i class="fas fa-chalkboard-teacher"></i> Training Requests Management</h1>
@@ -2346,5 +2346,6 @@ function formatTime(timeString) {
   <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
 <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
   <?php include 'chat_widget.php'; ?>
+    <?php include 'floating_notification_widget.php'; ?>
 </body>
 </html>

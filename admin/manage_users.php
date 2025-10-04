@@ -63,12 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
                 
-                // Create notification for new user
-              if (file_exists('notifications_api_admin.php')) {
-                    require_once 'notifications_api_admin.php';
-                    // Remove any debug output from this function call
-                    notifyNewUserCreated($pdo, $userId, $username, $role, $user_type, $_SESSION['user_id']);
-                }
+      
                 
                 $successMessage = "User '$username' created successfully!";
 
@@ -239,185 +234,200 @@ function isNewUser($createdAt) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manage Users - PRC Admin</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="../assets/sidebar_admin.css?v=<?php echo time(); ?>">
-    <link rel="stylesheet" href="../assets/styles.css?v=<?php echo time(); ?>">
-    <link rel="stylesheet" href="../assets/header.css?v=<?php echo time(); ?>">
-    <link rel="stylesheet" href="../assets/admin_users.css?v=<?php echo time(); ?>">  
+    <link rel="stylesheet" href="../assets/sidebar_admin.css?v=<?= time() ?>">
+    <link rel="stylesheet" href="../assets/styles.css?v=<?= time() ?>">
+    <link rel="stylesheet" href="../assets/header.css?v=<?= time() ?>">
+    <link rel="stylesheet" href="../assets/admin_users.css?v=<?= time() ?>">
 </head>
 
 <body>
     <?php include 'sidebar.php'; ?>
    
     <div class="users-container">
-         <?php include 'header.php'; ?>
-        <!-- Enhanced Page Header -->
-        <div class="page-header">
-            <h1><i class="fas fa-users-cog"></i> User Management</h1>
-            <p>Create, update, and manage system users including RCY members with streamlined controls</p>
+
+        <!-- Compact Hero Header -->
+        <div class="page-hero-compact">
+            <div class="hero-gradient"></div>
+            <div class="hero-content">
+                <div class="hero-left">
+                    <div class="hero-badge">
+                        <i class="fas fa-users-cog"></i>
+                        <span>USER MANAGEMENT</span>
+                    </div>
+                    <h1>User <span class="title-highlight">Administration</span></h1>
+                    <p class="hero-subtitle">Create, manage, and organize system users</p>
+                </div>
+                <div class="hero-right">
+                    <div class="hero-stats-mini">
+                        <div class="stat-mini">
+                            <div class="stat-number"><?= $total_users ?></div>
+                            <div class="stat-label">Total Users</div>
+                        </div>
+                        <div class="stat-mini">
+                            <div class="stat-number"><?= $admin_count ?></div>
+                            <div class="stat-label">Admins</div>
+                        </div>
+                        <div class="stat-mini">
+                            <div class="stat-number"><?= $rcy_member_count ?></div>
+                            <div class="stat-label">RCY Members</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Alert Messages -->
         <?php if ($errorMessage): ?>
-            <div class="alert error">
+            <div class="alert-compact error">
                 <i class="fas fa-exclamation-triangle"></i>
-                <div>
+                <div class="alert-content">
                     <strong>Error:</strong> <?= htmlspecialchars($errorMessage) ?>
                 </div>
+                <button class="alert-close" onclick="this.parentElement.remove()">
+                    <i class="fas fa-times"></i>
+                </button>
             </div>
         <?php endif; ?>
         
         <?php if ($successMessage): ?>
-            <div class="alert success">
+            <div class="alert-compact success">
                 <i class="fas fa-check-circle"></i>
-                <div>
+                <div class="alert-content">
                     <strong>Success:</strong> <?= htmlspecialchars($successMessage) ?>
                 </div>
+                <button class="alert-close" onclick="this.parentElement.remove()">
+                    <i class="fas fa-times"></i>
+                </button>
             </div>
         <?php endif; ?>
 
-        <!-- Enhanced Action Bar -->
-        <div class="action-bar">
-            <div class="search-and-filters">
-                <!-- Advanced Search Container -->
-                <div class="search-containers">
+        <!-- Compact Action Bar -->
+        <div class="action-bar-compact">
+            <div class="search-filter-row">
+                <!-- Search -->
+                <div class="search-box-compact">
+                    <i class="fas fa-search search-icon"></i>
                     <input 
                         type="text" 
-                        class="search-input" 
+                        class="search-input-compact" 
                         id="userSearch" 
-                        placeholder="Search users by name, username, or email..."
+                        placeholder="Search users..."
                         autocomplete="off"
                     >
-                    <i class="fas fa-search search-icon"></i>
-                    <button class="search-clear" id="searchClear" type="button" aria-label="Clear search">
+                    <button class="search-clear-compact" id="searchClear" type="button">
                         <i class="fas fa-times"></i>
                     </button>
                 </div>
                 
-                <!-- Improved Filter Pills -->
-                <div class="filter-pills">
-                    <a href="?role=all" class="filter-pill <?= $roleFilter === 'all' ? 'active' : '' ?>">
+                <!-- Filter Chips -->
+                <div class="filter-chips-compact">
+                    <a href="?role=all" class="chip-filter <?= $roleFilter === 'all' ? 'active' : '' ?>">
                         <i class="fas fa-users"></i>
-                        <span>All Users</span>
-                        <span class="filter-count"><?= $total_users ?></span>
+                        <span>All</span>
+                        <span class="chip-count"><?= $total_users ?></span>
                     </a>
-          <a href="?role=new" class="filter-pill <?= $roleFilter === 'new' ? 'active' : '' ?>">
-    <i class="fas fa-user-plus"></i>
-    <span>New Users</span>
-    <span class="filter-count"><?= $new_users_count ?></span>
-</a>
-                    <a href="?role=admin" class="filter-pill <?= $roleFilter === 'admin' ? 'active' : '' ?>">
+                    <a href="?role=new" class="chip-filter <?= $roleFilter === 'new' ? 'active' : '' ?>">
+                        <i class="fas fa-user-plus"></i>
+                        <span>New</span>
+                        <span class="chip-count"><?= $new_users_count ?></span>
+                    </a>
+                    <a href="?role=admin" class="chip-filter <?= $roleFilter === 'admin' ? 'active' : '' ?>">
                         <i class="fas fa-user-shield"></i>
-                        <span>Administrators</span>
-                        <span class="filter-count"><?= $admin_count ?></span>
+                        <span>Admins</span>
+                        <span class="chip-count"><?= $admin_count ?></span>
                     </a>
-                    <a href="?role=user" class="filter-pill <?= $roleFilter === 'user' ? 'active' : '' ?>">
+                    <a href="?role=user" class="chip-filter <?= $roleFilter === 'user' ? 'active' : '' ?>">
                         <i class="fas fa-user"></i>
-                        <span>Regular Users</span>
-                        <span class="filter-count"><?= $user_count ?></span>
+                        <span>Users</span>
+                        <span class="chip-count"><?= $user_count ?></span>
                     </a>
-                    
                 </div>
             </div>
             
-            <!-- Enhanced Create Button -->
-            <button class="btn-create" onclick="openCreateModal()" type="button">
-                <i class="fas fa-user-plus"></i>
-                <span>Create New User</span>
+            <!-- Create Button -->
+            <button class="btn-create-compact" onclick="openCreateModal()" type="button">
+                <i class="fas fa-plus"></i>
+                <span>Create User</span>
             </button>
         </div>
 
-        <!-- Compact Statistics Overview -->
-        <div class="stats-overview">
-            <div class="stat-card">
-                <div class="stat-icon">
-                    <i class="fas fa-users"></i>
-                </div>
-                <div class="stat-details">
-                    <div class="stat-number"><?= $total_users ?></div>
-                    <div class="stat-label">Total Users</div>
+        <!-- Quick Stats Row -->
+        <div class="quick-stats-row">
+            <div class="stat-box">
+                <div class="stat-icon-mini events"><i class="fas fa-users"></i></div>
+                <div class="stat-info-mini">
+                    <div class="stat-value-mini"><?= $total_users ?></div>
+                    <div class="stat-label-mini">Total Users</div>
                 </div>
             </div>
             
-            <div class="stat-card">
-                <div class="stat-icon">
-                    <i class="fas fa-user-shield"></i>
-                </div>
-                <div class="stat-details">
-                    <div class="stat-number"><?= $admin_count ?></div>
-                    <div class="stat-label">Administrators</div>
+            <div class="stat-box">
+                <div class="stat-icon-mini users"><i class="fas fa-user-shield"></i></div>
+                <div class="stat-info-mini">
+                    <div class="stat-value-mini"><?= $admin_count ?></div>
+                    <div class="stat-label-mini">Administrators</div>
                 </div>
             </div>
             
-            <div class="stat-card">
-                <div class="stat-icon">
-                    <i class="fas fa-user"></i>
-                </div>
-                <div class="stat-details">
-                    <div class="stat-number"><?= $user_count ?></div>
-                    <div class="stat-label">Regular Users</div>
+            <div class="stat-box">
+                <div class="stat-icon-mini training"><i class="fas fa-user"></i></div>
+                <div class="stat-info-mini">
+                    <div class="stat-value-mini"><?= $user_count ?></div>
+                    <div class="stat-label-mini">Regular Users</div>
                 </div>
             </div>
             
-            <div class="stat-card">
-                <div class="stat-icon">
-                    <i class="fas fa-hands-helping"></i>
-                </div>
-                <div class="stat-details">
-                    <div class="stat-number"><?= $rcy_member_count ?></div>
-                    <div class="stat-label">RCY Members</div>
+            <div class="stat-box">
+                <div class="stat-icon-mini volunteers"><i class="fas fa-hands-helping"></i></div>
+                <div class="stat-info-mini">
+                    <div class="stat-value-mini"><?= $rcy_member_count ?></div>
+                    <div class="stat-label-mini">RCY Members</div>
                 </div>
             </div>
         </div>
 
-        <!-- Clean Users Table -->
-        <div class="users-table-container">
-            <div class="table-header">
-               <h2 class="table-title">
-    <i class="fas fa-table"></i>
-    <?php if ($roleFilter === 'all'): ?>
-        All System Users
-    <?php elseif ($roleFilter === 'new'): ?>
-        New Users (Recent First)
-    <?php elseif ($roleFilter === 'admin'): ?>
-        System Administrators
-    <?php elseif ($roleFilter === 'user'): ?>
-        Regular Users
-    <?php endif; ?>
-</h2>
-                <div class="results-info">
-                    <i class="fas fa-info-circle"></i>
-                    <span>Showing <span class="results-count"><?= count($users) ?></span> results</span>
+        <!-- Users Table Card -->
+        <div class="table-card-compact">
+            <div class="table-card-header">
+                <div class="header-left">
+                    <h2>
+                        <i class="fas fa-table"></i>
+                        <?php if ($roleFilter === 'all'): ?>
+                            All System Users
+                        <?php elseif ($roleFilter === 'new'): ?>
+                            New Users
+                        <?php elseif ($roleFilter === 'admin'): ?>
+                            Administrators
+                        <?php else: ?>
+                            Regular Users
+                        <?php endif; ?>
+                    </h2>
+                </div>
+                <div class="header-right">
+                    <span class="results-badge"><?= count($users) ?> results</span>
                 </div>
             </div>
             
             <?php if (empty($users)): ?>
-    <div class="empty-state">
-        <?php if ($roleFilter === 'all'): ?>
-            <i class="fas fa-user-slash"></i>
-            <h3>No Users Found</h3>
-            <p>Click "Create New User" to add your first user to the system</p>
-        <?php elseif ($roleFilter === 'new'): ?>
-            <i class="fas fa-user-plus"></i>
-            <h3>No New Users Found</h3>
-            <p>All users have been in the system for more than 7 days</p>
-        <?php elseif ($roleFilter === 'admin'): ?>
-            <i class="fas fa-user-shield"></i>
-            <h3>No Administrators Found</h3>
-            <p>Create users with administrator privileges to see them here</p>
-        <?php elseif ($roleFilter === 'user'): ?>
-            <i class="fas fa-user"></i>
-            <h3>No Regular Users Found</h3>
-            <p>Create standard user accounts to see them listed here</p>
-        <?php endif; ?>
-    </div>
-<?php else: ?>
-                <div class="table-wrapper">
-                    <table class="users-table" id="usersTable">
+                <div class="empty-state-compact">
+                    <i class="fas fa-user-slash"></i>
+                    <h3>No Users Found</h3>
+                    <p>
+                        <?php if ($roleFilter === 'new'): ?>
+                            All users have been in the system for more than 7 days
+                        <?php else: ?>
+                            Click "Create User" to add users to the system
+                        <?php endif; ?>
+                    </p>
+                </div>
+            <?php else: ?>
+                <div class="table-scroll-compact">
+                    <table class="data-table-compact" id="usersTable">
                         <thead>
                             <tr>
                                 <th>User</th>
                                 <th>Role</th>
-                                <th>User Type</th>
+                                <th>Type</th>
                                 <th>Gender</th>
                                 <th>RCY Role</th>
                                 <th>Services</th>
@@ -429,50 +439,36 @@ function isNewUser($createdAt) {
                             <?php foreach ($users as $u): ?>
                                 <tr data-user-id="<?= $u['user_id'] ?>">
                                     <td>
-    <div class="user-info">
-        <div class="user-avatar">
-            <?= strtoupper(substr($u['full_name'] ?: $u['username'], 0, 1)) ?>
-        </div>
-        <div class="user-details">
-            <div class="user-name">
-                <?= htmlspecialchars($u['full_name']) ?>
-                <?php if (isNewUser($u['created_at'])): ?>
-                    <span class="new-user-badge">NEW</span>
-                <?php endif; ?>
-            </div>
-            <div class="user-username">@<?= htmlspecialchars($u['username']) ?></div>
-        </div>
-    </div>
-</td>
+                                        <div class="user-cell">
+                                            <div class="user-avatar-mini">
+                                                <?= strtoupper(substr($u['full_name'] ?: $u['username'], 0, 1)) ?>
+                                            </div>
+                                            <div class="user-info-mini">
+                                                <div class="user-name-mini">
+                                                    <?= htmlspecialchars($u['full_name']) ?>
+                                                    <?php if (isNewUser($u['created_at'])): ?>
+                                                        <span class="badge-new">NEW</span>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <div class="user-username-mini">@<?= htmlspecialchars($u['username']) ?></div>
+                                            </div>
+                                        </div>
+                                    </td>
                                     <td>
-                                        <span class="role-badge <?= $u['role'] === 'admin' ? $u['admin_role'] ?? 'admin' : $u['role'] ?>">
+                                        <span class="badge-role <?= $u['role'] === 'admin' ? $u['admin_role'] ?? 'admin' : $u['role'] ?>">
                                             <?php 
                                             if ($u['role'] === 'admin' && $u['admin_role']): 
                                                 switch($u['admin_role']) {
-                                                    case 'safety': 
-                                                        echo '<i class="fas fa-shield-alt"></i> Safety Admin'; 
-                                                        break;
-                                                    case 'disaster': 
-                                                        echo '<i class="fas fa-exclamation-triangle"></i> Disaster Admin'; 
-                                                        break;
-                                                    case 'health': 
-                                                        echo '<i class="fas fa-heartbeat"></i> Health Admin'; 
-                                                        break;
-                                                    case 'welfare': 
-                                                        echo '<i class="fas fa-hand-holding-heart"></i> Welfare Admin'; 
-                                                        break;
-                                                    case 'youth': 
-                                                        echo '<i class="fas fa-users"></i> Red Cross Youth Administrator'; 
-                                                        break;
-                                                    case 'super': 
-                                                        echo '<i class="fas fa-crown"></i> Super Administrator'; 
-                                                        break;
-                                                    default: 
-                                                        echo '<i class="fas fa-user-shield"></i> Administrator'; 
-                                                        break;
+                                                    case 'safety': echo '<i class="fas fa-shield-alt"></i> Safety'; break;
+                                                    case 'disaster': echo '<i class="fas fa-exclamation-triangle"></i> Disaster'; break;
+                                                    case 'health': echo '<i class="fas fa-heartbeat"></i> Health'; break;
+                                                    case 'welfare': echo '<i class="fas fa-hand-holding-heart"></i> Welfare'; break;
+                                                    case 'youth': echo '<i class="fas fa-users"></i> Youth'; break;
+                                                    case 'super': echo '<i class="fas fa-crown"></i> Super'; break;
+                                                    default: echo '<i class="fas fa-user-shield"></i> Admin'; break;
                                                 }
                                             elseif ($u['role'] === 'admin'): 
-                                                echo '<i class="fas fa-user-shield"></i> Administrator';
+                                                echo '<i class="fas fa-user-shield"></i> Admin';
                                             else: 
                                                 echo '<i class="fas fa-user"></i> User';
                                             endif; 
@@ -481,87 +477,88 @@ function isNewUser($createdAt) {
                                     </td>
                                     <td>
                                         <?php if ($u['user_type'] === 'rcy_member'): ?>
-                                            <span class="user-type-badge rcy-member">
-                                                <i class="fas fa-users"></i> RCY Member
+                                            <span class="badge-type rcy">
+                                                <i class="fas fa-users"></i> RCY
                                             </span>
                                         <?php else: ?>
-                                            <span class="user-type-badge non-rcy">
-                                                <i class="fas fa-user"></i> Non-RCY Member
+                                            <span class="badge-type non-rcy">
+                                                <i class="fas fa-user"></i> Non-RCY
                                             </span>
                                         <?php endif; ?>
                                     </td>
                                     <td>
                                         <?php if ($u['gender']): ?>
-                                            <span class="gender-badge <?= $u['gender'] ?>">
+                                            <span class="badge-gender <?= $u['gender'] ?>">
                                                 <?= ucfirst($u['gender']) ?>
                                             </span>
                                         <?php else: ?>
-                                            <span class="text-muted">Not specified</span>
+                                            <span class="text-muted-mini">—</span>
                                         <?php endif; ?>
                                     </td>
                                     <td>
                                         <?php if ($u['user_type'] === 'rcy_member' && $u['rcy_role']): ?>
-                                            <span class="rcy-role-badge <?= $u['rcy_role'] ?>">
+                                            <span class="badge-rcy-role <?= $u['rcy_role'] ?>">
                                                 <?= ucfirst($u['rcy_role']) ?>
                                             </span>
                                         <?php else: ?>
-                                            <span class="text-muted">—</span>
+                                            <span class="text-muted-mini">—</span>
                                         <?php endif; ?>
                                     </td>
                                     <td>
                                         <?php if ($u['user_type'] === 'rcy_member' && $u['user_services']): ?>
-                                            <div class="services-container">
+                                            <div class="services-tags">
                                                 <?php 
                                                 $services = explode(',', $u['user_services']);
-                                                foreach ($services as $service): 
+                                                foreach (array_slice($services, 0, 2) as $service): 
                                                     $serviceName = $serviceNames[trim($service)] ?? ucfirst(str_replace('_', ' ', trim($service)));
                                                 ?>
-                                                    <span class="service-tag"><?= htmlspecialchars($serviceName) ?></span>
+                                                    <span class="tag-service"><?= htmlspecialchars($serviceName) ?></span>
                                                 <?php endforeach; ?>
+                                                <?php if (count($services) > 2): ?>
+                                                    <span class="tag-more">+<?= count($services) - 2 ?></span>
+                                                <?php endif; ?>
                                             </div>
                                         <?php else: ?>
-                                            <span class="text-muted">—</span>
+                                            <span class="text-muted-mini">—</span>
                                         <?php endif; ?>
                                     </td>
                                     <td>
-                                        <div class="contact-info">
+                                        <div class="contact-cell">
                                             <?php if ($u['email']): ?>
-                                                <div class="contact-item">
+                                                <div class="contact-item-mini">
                                                     <i class="fas fa-envelope"></i>
                                                     <?= htmlspecialchars($u['email']) ?>
                                                 </div>
                                             <?php endif; ?>
                                             <?php if ($u['phone']): ?>
-                                                <div class="contact-item">
+                                                <div class="contact-item-mini">
                                                     <i class="fas fa-phone"></i>
                                                     <?= htmlspecialchars($u['phone']) ?>
                                                 </div>
                                             <?php endif; ?>
                                             <?php if (!$u['email'] && !$u['phone']): ?>
-                                                <span class="text-muted">No contact info</span>
+                                                <span class="text-muted-mini">No contact</span>
                                             <?php endif; ?>
                                         </div>
                                     </td>
                                     <td>
-                                        <div class="action-buttons">
+                                        <div class="action-buttons-compact">
                                             <button 
-                                                class="btn-action btn-edit" 
+                                                class="btn-action-mini edit" 
                                                 onclick="openEditModal(<?= htmlspecialchars(json_encode($u)) ?>)"
                                                 type="button"
-                                                title="Edit user details"
+                                                title="Edit"
                                             >
                                                 <i class="fas fa-edit"></i>
-                                                <span>Edit</span>
                                             </button>
                                             
                                             <button 
-                                                class="btn-action btn-view-docs" 
+                                                class="btn-action-mini docs" 
                                                 onclick="viewDocuments(<?= $u['user_id'] ?>, '<?= htmlspecialchars($u['username']) ?>')"
                                                 type="button"
-                                                title="View user documents"
+                                                title="Documents"
                                             >
                                                 <i class="fas fa-file-alt"></i>
-                                                <span>Docs</span>
                                             </button>
                                             
                                             <form method="POST" class="inline-form" onsubmit="return confirmDelete('<?= htmlspecialchars($u['username']) ?>')">
@@ -569,11 +566,10 @@ function isNewUser($createdAt) {
                                                 <input type="hidden" name="user_id" value="<?= $u['user_id'] ?>">
                                                 <button 
                                                     type="submit" 
-                                                    class="btn-action btn-delete"
-                                                    title="Delete user permanently"
+                                                    class="btn-action-mini delete"
+                                                    title="Delete"
                                                 >
                                                     <i class="fas fa-trash-alt"></i>
-                                                    <span>Delete</span>
                                                 </button>
                                             </form>
                                         </div>
@@ -848,6 +844,7 @@ function isNewUser($createdAt) {
     <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
     <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
       <?php include 'chat_widget.php'; ?>
+        <?php include 'floating_notification_widget.php'; ?>
     <script>
         // Enhanced Document viewing functionality
         function viewDocuments(userId, username) {

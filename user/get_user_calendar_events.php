@@ -5,7 +5,6 @@ if (session_status() === PHP_SESSION_NONE) {
 
 require_once __DIR__ . '/../config.php';
 ensure_logged_in();
-ensure_admin();
 
 header('Content-Type: application/json');
 

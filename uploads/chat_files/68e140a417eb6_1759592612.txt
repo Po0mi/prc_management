@@ -1,0 +1,1 @@
+redesign the notif using the existing **System Notifications make it compact also add a view calendar modal to see the events and training also a calendar like on the side. make remove the management hub and replace with something else make it simple **

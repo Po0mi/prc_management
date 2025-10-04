@@ -4,7 +4,6 @@ ensure_logged_in();
 
 $user_role = get_user_role();
 if ($user_role) {
-    // If user has an admin role, redirect to admin dashboard
     header("Location: /admin/dashboard.php");
     exit;
 }
@@ -13,19 +12,19 @@ $pdo = $GLOBALS['pdo'];
 $userId = current_user_id();
 $username = current_username();
 
-// Get user information including user type and services
-$userStmt = $pdo->prepare("SELECT user_type, services, created_at FROM users WHERE user_id = ?");
+// Get user information
+$userStmt = $pdo->prepare("SELECT user_type, services, created_at, full_name FROM users WHERE user_id = ?");
 $userStmt->execute([$userId]);
 $userInfo = $userStmt->fetch();
 
 $userType = $userInfo['user_type'] ?? 'guest';
 $userServices = $userInfo['services'] ? json_decode($userInfo['services'], true) : [];
 $userCreatedAt = $userInfo['created_at'];
+$fullName = $userInfo['full_name'] ?? $username;
 
-// Check if user is new (registered within last 7 days)
 $isNewUser = (strtotime($userCreatedAt) > strtotime('-7 days'));
 
-// Get user's selected services from user_services table
+// Get user's selected services
 if ($userType === 'rcy_member') {
     $servicesStmt = $pdo->prepare("SELECT service_type FROM user_services WHERE user_id = ?");
     $servicesStmt->execute([$userId]);
@@ -44,20 +43,17 @@ $serviceNames = [
     'red_cross_youth' => 'Red Cross Youth'
 ];
 
-// Get user statistics (for sidebar summary only)
+// Get user statistics
 $userStats = [];
 
-// Events registered
 $stmt = $pdo->prepare("SELECT COUNT(*) FROM registrations WHERE user_id = ?");
 $stmt->execute([$userId]);
 $userStats['events_registered'] = $stmt->fetchColumn();
 
-// Events attended (approved)
 $stmt = $pdo->prepare("SELECT COUNT(*) FROM registrations WHERE user_id = ? AND status = 'approved'");
 $stmt->execute([$userId]);
 $userStats['events_attended'] = $stmt->fetchColumn();
 
-// Training sessions - check if session_registrations table exists and has correct columns
 try {
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM session_registrations WHERE user_id = ?");
     $stmt->execute([$userId]);
@@ -66,19 +62,12 @@ try {
     $userStats['training_sessions'] = 0;
 }
 
-// Donations made - check if donors table exists
 try {
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM donations WHERE donor_id IN (SELECT donor_id FROM donors WHERE user_id = ?)");
     $stmt->execute([$userId]);
     $userStats['donations_made'] = $stmt->fetchColumn();
 } catch (PDOException $e) {
-    try {
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM donations WHERE user_id = ?");
-        $stmt->execute([$userId]);
-        $userStats['donations_made'] = $stmt->fetchColumn();
-    } catch (PDOException $e2) {
-        $userStats['donations_made'] = 0;
-    }
+    $userStats['donations_made'] = 0;
 }
 
 // Get latest registration status
@@ -92,6 +81,18 @@ $regStmt = $pdo->prepare("
 $regStmt->execute([$userId]);
 $latestReg = $regStmt->fetch();
 
+// Get upcoming events
+$eventsStmt = $pdo->prepare("
+    SELECT e.*, r.status as registration_status
+    FROM events e
+    LEFT JOIN registrations r ON e.event_id = r.event_id AND r.user_id = ?
+    WHERE e.event_date >= CURDATE()
+    ORDER BY e.event_date ASC
+    LIMIT 5
+");
+$eventsStmt->execute([$userId]);
+$upcomingEvents = $eventsStmt->fetchAll();
+
 // Get upcoming training sessions
 try {
     $trainStmt = $pdo->prepare("
@@ -99,36 +100,15 @@ try {
         FROM training_sessions ts
         LEFT JOIN session_registrations sr ON ts.session_id = sr.session_id AND sr.user_id = ?
         WHERE ts.session_date >= CURDATE() 
+        AND ts.archived = 0
         ORDER BY ts.session_date ASC 
-        LIMIT 3
+        LIMIT 5
     ");
     $trainStmt->execute([$userId]);
     $upcomingTraining = $trainStmt->fetchAll();
 } catch (PDOException $e) {
-    $trainStmt = $pdo->prepare("
-        SELECT * FROM training_sessions 
-        WHERE session_date >= CURDATE() 
-        ORDER BY session_date ASC 
-        LIMIT 3
-    ");
-    $trainStmt->execute();
-    $upcomingTraining = $trainStmt->fetchAll();
-    foreach ($upcomingTraining as &$session) {
-        $session['user_registered'] = null;
-    }
+    $upcomingTraining = [];
 }
-
-// Get recent events
-$eventsStmt = $pdo->prepare("
-    SELECT e.*, r.status as registration_status
-    FROM events e
-    LEFT JOIN registrations r ON e.event_id = r.event_id AND r.user_id = ?
-    WHERE e.event_date >= CURDATE()
-    ORDER BY e.event_date ASC
-    LIMIT 3
-");
-$eventsStmt->execute([$userId]);
-$upcomingEvents = $eventsStmt->fetchAll();
 
 // Get recent announcements
 try {
@@ -140,454 +120,852 @@ try {
         LIMIT 3
     ")->fetchAll();
 } catch (PDOException $e) {
-    try {
-        $announcements = $pdo->query("
-            SELECT title, content, announcement_date as created_at 
-            FROM announcements 
-            WHERE status = 'published'
-            ORDER BY announcement_date DESC 
-            LIMIT 3
-        ")->fetchAll();
-    } catch (PDOException $e2) {
-        $announcements = [];
-    }
+    $announcements = [];
 }
 
-// Enhanced notification system
-function getUserNotifications($latestReg, $upcomingEvents, $announcements, $isNewUser, $userType, $userServices, $serviceNames) {
+// Get user notifications
+function getUserNotifications($latestReg, $upcomingEvents, $isNewUser, $userType) {
     $notifications = [];
     
-    // New RCY Member Welcome notification
-    if ($userType === 'rcy_member' && $isNewUser && !empty($userServices)) {
+    if ($userType === 'rcy_member' && $isNewUser) {
         $notifications[] = [
             'type' => 'success',
             'icon' => 'hands-helping',
             'title' => 'Welcome to Red Cross Youth!',
-            'message' => 'Congratulations on joining RCY! We have scheduled orientation meetings for your selected services: ' . 
-                        implode(', ', array_map(function($service) use ($serviceNames) {
-                            return $serviceNames[$service] ?? ucfirst(str_replace('_', ' ', $service));
-                        }, array_slice($userServices, 0, 2))) . 
-                        (count($userServices) > 2 ? ' and ' . (count($userServices) - 2) . ' more' : '') . '.',
-            'urgency' => 'medium'
+            'message' => 'Your orientation meetings are scheduled. Check your services for details.'
         ];
     }
     
-    // Registration status notifications
-    if ($latestReg) {
-        if ($latestReg['status'] === 'pending') {
-            $notifications[] = [
-                'type' => 'warning',
-                'icon' => 'clock',
-                'title' => 'Registration Pending Review',
-                'message' => "Your registration for \"{$latestReg['title']}\" is awaiting approval. Event date: " . 
-                           date('M d, Y', strtotime($latestReg['event_date'])) . " at {$latestReg['location']}.",
-                'urgency' => 'medium'
-            ];
-        } elseif ($latestReg['status'] === 'approved') {
-            $notifications[] = [
-                'type' => 'success',
-                'icon' => 'check-circle',
-                'title' => 'Registration Approved!',
-                'message' => "Your registration for \"{$latestReg['title']}\" has been approved. Event date: " . 
-                           date('M d, Y', strtotime($latestReg['event_date'])) . " at {$latestReg['location']}.",
-                'urgency' => 'low'
-            ];
-        }
+    if ($latestReg && $latestReg['status'] === 'pending') {
+        $notifications[] = [
+            'type' => 'warning',
+            'icon' => 'clock',
+            'title' => 'Registration Pending',
+            'message' => "Your registration for \"{$latestReg['title']}\" is awaiting approval."
+        ];
     }
     
-    // Event deadline notifications
-    if (!empty($upcomingEvents)) {
-        foreach ($upcomingEvents as $event) {
-            $daysUntil = ceil((strtotime($event['event_date']) - time()) / (60 * 60 * 24));
-            if ($daysUntil <= 7 && $daysUntil > 0 && !$event['registration_status']) {
-                $notifications[] = [
-                    'type' => 'deadline',
-                    'icon' => 'exclamation-triangle',
-                    'title' => 'Event Registration Deadline Approaching',
-                    'message' => "Don't miss out on \"{$event['title']}\" - only {$daysUntil} days left to register!",
-                    'urgency' => 'high'
-                ];
-                break; // Only show one deadline notification
-            }
-        }
+    if ($latestReg && $latestReg['status'] === 'approved') {
+        $notifications[] = [
+            'type' => 'success',
+            'icon' => 'check-circle',
+            'title' => 'Registration Approved!',
+            'message' => "You're confirmed for \"{$latestReg['title']}\" on " . date('M d', strtotime($latestReg['event_date']))
+        ];
     }
     
-    // New announcement notification
-    if (!empty($announcements)) {
-        $recentAnnouncement = $announcements[0];
-        if (strtotime($recentAnnouncement['created_at']) > strtotime('-3 days')) {
+    foreach ($upcomingEvents as $event) {
+        $daysUntil = ceil((strtotime($event['event_date']) - time()) / 86400);
+        if ($daysUntil <= 3 && $daysUntil > 0 && !$event['registration_status']) {
             $notifications[] = [
-                'type' => 'announcement',
-                'icon' => 'bullhorn',
-                'title' => 'New Announcement Posted',
-                'message' => substr($recentAnnouncement['content'], 0, 100) . '...',
-                'urgency' => 'medium'
+                'type' => 'urgent',
+                'icon' => 'exclamation-triangle',
+                'title' => 'Event Deadline Soon',
+                'message' => "Only {$daysUntil} days left to register for \"{$event['title']}\"!"
             ];
+            break;
         }
     }
-    
-    // Sort by urgency (high, medium, low)
-    $urgencyOrder = ['high' => 1, 'medium' => 2, 'low' => 3];
-    usort($notifications, function($a, $b) use ($urgencyOrder) {
-        return $urgencyOrder[$a['urgency']] - $urgencyOrder[$b['urgency']];
-    });
     
     return $notifications;
 }
 
-$userNotifications = getUserNotifications($latestReg, $upcomingEvents, $announcements, $isNewUser, $userType, $userServices, $serviceNames);
-
-// Mock upcoming service meetings for new RCY members
-$upcomingMeetings = [];
-if ($userType === 'rcy_member' && $isNewUser && !empty($userServices)) {
-    $meetingDates = [
-        'health' => '2025-09-15 14:00:00',
-        'safety' => '2025-09-18 15:30:00',
-        'welfare' => '2025-09-20 13:00:00',
-        'disaster_management' => '2025-09-22 10:00:00',
-        'red_cross_youth' => '2025-09-25 16:00:00'
-    ];
-    
-    foreach ($userServices as $service) {
-        if (isset($meetingDates[$service])) {
-            $upcomingMeetings[] = [
-                'service' => $service,
-                'service_name' => $serviceNames[$service],
-                'meeting_date' => $meetingDates[$service],
-                'location' => 'PRC National Headquarters',
-                'type' => 'Orientation Meeting'
-            ];
-        }
-    }
-}
+$userNotifications = getUserNotifications($latestReg, $upcomingEvents, $isNewUser, $userType);
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>User Dashboard - PRC Portal</title>
+  <title>Dashboard - PRC Portal</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="../assets/styles.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/sidebar.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/header.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/dashboard.css?v=<?php echo time(); ?>">
+  <link rel="stylesheet" href="../assets/admin.css?v=<?php echo time(); ?>">
 </head>
 <body>
   <?php include 'sidebar.php'; ?>
   
   <div class="header-content">
-    <?php include 'header.php'; ?>
-    
+
     <div class="dashboard-container">
-      <!-- Welcome Section -->
-      <div class="welcome-section">
-        <div class="welcome-content">
-          <h1>
-            Welcome back, <?= htmlspecialchars($username) ?>!
-            <span class="user-type-badge <?= $userType ?>">
+      
+      <!-- Compact Hero Section -->
+      <section class="dashboard-hero-compact">
+        <div class="hero-background">
+          <div class="hero-overlay"></div>
+        </div>
+        <div class="hero-content-compact">
+          <div class="hero-left">
+            <div class="hero-badge">
               <?php 
               switch($userType) {
                 case 'rcy_member': 
-                  echo '<i class="fas fa-user-shield"></i> RCY Member'; 
+                  echo '<i class="fas fa-user-shield"></i><span>RCY MEMBER</span>'; 
                   break;
                 case 'non_rcy_member': 
-                  echo '<i class="fas fa-user"></i> Non-RCY Member'; 
-                  break;
-                case 'guest': 
-                  echo '<i class="fas fa-user-friends"></i> Guest'; 
-                  break;
-                case 'member': 
-                  echo '<i class="fas fa-user-check"></i> Member'; 
+                  echo '<i class="fas fa-user"></i><span>MEMBER</span>'; 
                   break;
                 default: 
-                  echo '<i class="fas fa-user"></i> ' . ucfirst($userType); 
+                  echo '<i class="fas fa-user-friends"></i><span>GUEST</span>'; 
                   break;
               }
               ?>
-            </span>
-          </h1>
-          <p>Thank you for being a valuable member of the Philippine Red Cross community. Your contributions save lives every day.</p>
-          
-          <?php if ($userType === 'rcy_member' && !empty($userServices)): ?>
-            <div class="services-display">
-              <strong>Your Services:</strong>
-              <?php foreach ($userServices as $service): ?>
-                <span class="service-tag">
-                  <i class="fas fa-hands-helping"></i>
+            </div>
+            <h1>Welcome, <span class="title-highlight"><?= htmlspecialchars($fullName) ?></span></h1>
+            <p class="hero-subtitle">Your Red Cross Journey Dashboard</p>
+            
+            <?php if ($userType === 'rcy_member' && !empty($userServices)): ?>
+            <div class="hero-services">
+              <?php foreach (array_slice($userServices, 0, 3) as $service): ?>
+                <span class="service-badge">
                   <?= htmlspecialchars($serviceNames[$service] ?? ucfirst(str_replace('_', ' ', $service))) ?>
                 </span>
               <?php endforeach; ?>
-            </div>
-          <?php endif; ?>
-        </div>
-      </div>
-
-      <!-- Main Dashboard Layout -->
-      <div class="dashboard-main">
-        <!-- Recent Activity Section -->
-        <div class="recent-activity-section priority-section">
-          <div class="section-header">
-            <h2><i class="fas fa-history"></i> Recent Activity</h2>
-            <div class="section-badge">Priority</div>
-          </div>
-          
-          <!-- Upcoming Events -->
-          <div class="activity-card featured">
-            <div class="activity-header">
-              <h3><i class="fas fa-calendar"></i> Upcoming Events</h3>
-              <a href="registration.php" class="view-all">View All</a>
-            </div>
-            <div class="activity-body">
-              <?php if (!empty($upcomingEvents)): ?>
-                <ul class="activity-list">
-                  <?php foreach ($upcomingEvents as $event): ?>
-                    <li class="activity-item enhanced">
-                      <div class="activity-icon event-icon">
-                        <i class="fas fa-calendar"></i>
-                      </div>
-                      <div class="activity-details">
-                        <div class="activity-main"><?= htmlspecialchars($event['title']) ?></div>
-                        <div class="activity-meta">
-                          <span class="location"><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($event['location']) ?></span>
-                          <span class="date"><i class="fas fa-calendar-day"></i> <?= date('M d, Y', strtotime($event['event_date'])) ?></span>
-                        </div>
-                        <?php if ($event['registration_status']): ?>
-                          <span class="status-badge <?= $event['registration_status'] ?>">
-                            <?= ucfirst($event['registration_status']) ?>
-                          </span>
-                        <?php endif; ?>
-                      </div>
-                      <div class="activity-action">
-                        <i class="fas fa-chevron-right"></i>
-                      </div>
-                    </li>
-                  <?php endforeach; ?>
-                </ul>
-              <?php else: ?>
-                <div class="no-data">
-                  <i class="fas fa-calendar-alt"></i>
-                  <h3>No Upcoming Events</h3>
-                  <p>Check back later for new events</p>
-                </div>
+              <?php if (count($userServices) > 3): ?>
+                <span class="service-badge">+<?= count($userServices) - 3 ?> more</span>
               <?php endif; ?>
             </div>
+            <?php endif; ?>
           </div>
-          
-          <!-- Training Sessions -->
-          <div class="activity-card featured">
-            <div class="activity-header">
-              <h3><i class="fas fa-graduation-cap"></i> Training Sessions</h3>
-              <a href="schedule.php" class="view-all">View All</a>
+          <div class="hero-right">
+            <div class="hero-stats-compact">
+              <div class="stat-compact">
+                <div class="stat-number"><?= $userStats['events_registered'] ?></div>
+                <div class="stat-label">Registered</div>
+              </div>
+              <div class="stat-compact">
+                <div class="stat-number"><?= $userStats['events_attended'] ?></div>
+                <div class="stat-label">Attended</div>
+              </div>
+              <div class="stat-compact">
+                <div class="stat-number"><?= $userStats['training_sessions'] ?></div>
+                <div class="stat-label">Training</div>
+              </div>
             </div>
-            <div class="activity-body">
-              <?php if (!empty($upcomingTraining)): ?>
-                <ul class="activity-list">
-                  <?php foreach ($upcomingTraining as $training): ?>
-                    <li class="activity-item enhanced">
-                      <div class="activity-icon training-icon">
-                        <i class="fas fa-graduation-cap"></i>
-                      </div>
-                      <div class="activity-details">
-                        <div class="activity-main"><?= htmlspecialchars($training['title']) ?></div>
-                        <div class="activity-meta">
-                          <span class="service"><i class="fas fa-cog"></i> <?= htmlspecialchars($training['major_service']) ?></span>
-                          <span class="date"><i class="fas fa-calendar-day"></i> <?= date('M d, Y', strtotime($training['session_date'])) ?> at <?= date('g:i A', strtotime($training['start_time'])) ?></span>
-                        </div>
-                        <?php if ($training['user_registered']): ?>
-                          <span class="status-badge registered">Registered</span>
-                        <?php endif; ?>
-                      </div>
-                      <div class="activity-action">
-                        <i class="fas fa-chevron-right"></i>
-                      </div>
-                    </li>
-                  <?php endforeach; ?>
-                </ul>
-              <?php else: ?>
-                <div class="no-data">
-                  <i class="fas fa-graduation-cap"></i>
-                  <h3>No Training Sessions</h3>
-                  <p>Check back for new training opportunities</p>
-                </div>
-              <?php endif; ?>
-            </div>
-          </div>
-          
-          <!-- Recent Announcements -->
-          <div class="activity-card">
-            <div class="activity-header">
-              <h3><i class="fas fa-bullhorn"></i> Latest Announcements</h3>
-              <a href="announcements.php" class="view-all">View All</a>
-            </div>
-            <div class="activity-body">
-              <?php if (!empty($announcements)): ?>
-                <ul class="activity-list">
-                  <?php foreach ($announcements as $announcement): ?>
-                    <li class="activity-item">
-                      <div class="activity-icon announcement-icon">
-                        <i class="fas fa-bullhorn"></i>
-                      </div>
-                      <div class="activity-details">
-                        <div class="activity-main"><?= htmlspecialchars($announcement['title']) ?></div>
-                        <div class="activity-content">
-                          <?= htmlspecialchars(substr($announcement['content'], 0, 80)) ?><?= strlen($announcement['content']) > 80 ? '...' : '' ?>
-                        </div>
-                        <div class="activity-time"><?= date('M d, Y', strtotime($announcement['created_at'])) ?></div>
-                      </div>
-                    </li>
-                  <?php endforeach; ?>
-                </ul>
-              <?php else: ?>
-                <div class="no-data">
-                  <i class="fas fa-bullhorn"></i>
-                  <h3>No Recent Announcements</h3>
-                  <p>Check back for updates</p>
-                </div>
-              <?php endif; ?>
+            <div class="live-indicator">
+              <i class="fas fa-circle" id="liveIndicator"></i>
+              <span><?php echo date('M d, Y'); ?></span>
             </div>
           </div>
         </div>
+      </section>
 
-        <!-- Quick Actions Section -->
-        <div class="quick-actions-section secondary-section">
-          <div class="section-header">
-            <h2><i class="fas fa-bolt"></i> Quick Actions</h2>
-          </div>
-          <div class="action-buttons">
-            <a href="registration.php" class="action-btn primary">
-              <i class="fas fa-calendar-plus"></i>
-              <span>Register for Events</span>
-              <div class="action-desc">Join upcoming activities</div>
-            </a>
-            <a href="schedule.php" class="action-btn">
-              <i class="fas fa-user-check"></i>
-              <span>Mark Attendance</span>
-              <div class="action-desc">Confirm your presence</div>
-            </a>
-            <a href="donate.php" class="action-btn">
-              <i class="fas fa-hand-holding-usd"></i>
-              <span>Submit Donation</span>
-              <div class="action-desc">Make a contribution</div>
-            </a>
-            <a href="merch.php" class="action-btn">
-              <i class="fas fa-store"></i>
-              <span>View Merchandise</span>
-              <div class="action-desc">Check supplies</div>
-            </a>
-            <a href="announcements.php" class="action-btn">
-              <i class="fas fa-bullhorn"></i>
-              <span>Announcements</span>
-              <div class="action-desc">Latest updates</div>
-            </a>
-          </div>
-
-          <!-- User Statistics Summary -->
-          <div class="quick-stats-summary">
-            <h3><i class="fas fa-chart-line"></i> Your Activity Summary</h3>
-            <div class="quick-stat-item">
-              <span class="quick-stat-label">Events Registered</span>
-              <span class="quick-stat-value"><?= number_format($userStats['events_registered']) ?></span>
-            </div>
-            <div class="quick-stat-item">
-              <span class="quick-stat-label">Events Attended</span>
-              <span class="quick-stat-value"><?= number_format($userStats['events_attended']) ?></span>
-            </div>
-            <div class="quick-stat-item">
-              <span class="quick-stat-label">Training Sessions</span>
-              <span class="quick-stat-value"><?= number_format($userStats['training_sessions']) ?></span>
-            </div>
-            <div class="quick-stat-item">
-              <span class="quick-stat-label">Donations Made</span>
-              <span class="quick-stat-value"><?= number_format($userStats['donations_made']) ?></span>
+      <!-- Notifications - Compact -->
+      <?php if (!empty($userNotifications)): ?>
+      <section class="notifications-compact">
+        <div class="section-header-inline">
+          <div class="header-left">
+            <h2><i class="fas fa-bell"></i> Notifications</h2>
+            <div class="summary-badges-inline">
+              <span class="badge-mini total"><?= count($userNotifications) ?></span>
             </div>
           </div>
-          
-          <?php if ($userType === 'rcy_member' && !empty($userServices)): ?>
-          <!-- RCY Member Special Section -->
-          <div class="rcy-member-section">
-            <h3>
-              <i class="fas fa-user-shield"></i> RCY Member Dashboard
-            </h3>
-            <div>
-              <?php foreach ($userServices as $service): ?>
-                <div>
-                  <div>
-                    <?= htmlspecialchars($serviceNames[$service] ?? ucfirst(str_replace('_', ' ', $service))) ?>
-                  </div>
-                  <div>
-                    Next activity: 
-                    <?php
-                    // Mock next activity dates - replace with real data
-                    $nextActivities = [
-                      'health' => 'Sep 20, 2025',
-                      'safety' => 'Sep 25, 2025', 
-                      'welfare' => 'Oct 02, 2025',
-                      'disaster_management' => 'Sep 30, 2025',
-                      'red_cross_youth' => 'Oct 05, 2025'
-                    ];
-                    echo $nextActivities[$service] ?? 'TBA';
-                    ?>
-                  </div>
+          <div class="header-actions">
+            <button class="btn-icon" onclick="clearNotifications()" title="Clear All">
+              <i class="fas fa-check-double"></i>
+            </button>
+          </div>
+        </div>
+        
+        <div class="notifications-scroll">
+          <?php foreach ($userNotifications as $notification): ?>
+            <div class="notification-compact notification-<?= $notification['type'] ?>">
+              <div class="notification-left">
+                <div class="notification-icon-small <?= $notification['type'] ?>">
+                  <i class="fas fa-<?= $notification['icon'] ?>"></i>
                 </div>
-              <?php endforeach; ?>
+                <div class="notification-content-compact">
+                  <h4><?= htmlspecialchars($notification['title']) ?></h4>
+                  <p><?= htmlspecialchars($notification['message']) ?></p>
+                </div>
+              </div>
             </div>
-            <div>
-              <a href="rcy_portal.php">
-                <i class="fas fa-external-link-alt"></i>
-                RCY Portal
+          <?php endforeach; ?>
+        </div>
+      </section>
+      <?php endif; ?>
+
+      <!-- Main Dashboard Grid -->
+      <div class="dashboard-grid-compact">
+        
+        <!-- Left Column -->
+        <div class="dashboard-column">
+          
+          <!-- Quick Actions Card -->
+          <div class="card-compact actions-grid">
+            <div class="card-header-compact">
+              <h3><i class="fas fa-bolt"></i> Quick Actions</h3>
+            </div>
+            <div class="actions-lists">
+              <a href="registration.php" class="action-item-compact">
+                <div class="action-icon-small events"><i class="fas fa-calendar-plus"></i></div>
+                <span>Register Events</span>
+              </a>
+              <a href="schedule.php" class="action-item-compact">
+                <div class="action-icon-small training"><i class="fas fa-user-check"></i></div>
+                <span>Attendance</span>
+              </a>
+              <a href="donate.php" class="action-item-compact">
+                <div class="action-icon-small donations"><i class="fas fa-donate"></i></div>
+                <span>Donate</span>
+              </a>
+              <a href="merch.php" class="action-item-compact">
+                <div class="action-icon-small inventory"><i class="fas fa-store"></i></div>
+                <span>Merchandise</span>
+              </a>
+              <a href="announcements.php" class="action-item-compact">
+                <div class="action-icon-small volunteers"><i class="fas fa-bullhorn"></i></div>
+                <span>Announcements</span>
               </a>
             </div>
           </div>
-          <?php endif; ?>
+
+          <!-- Upcoming Events Table -->
+          <div class="card-compact">
+            <div class="card-header-compact">
+              <h3><i class="fas fa-calendar"></i> Upcoming Events</h3>
+              <a href="registration.php" class="link-small">View All <i class="fas fa-arrow-right"></i></a>
+            </div>
+            <div class="table-container">
+              <?php if (!empty($upcomingEvents)): ?>
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th><i class="fas fa-calendar-alt"></i> Event</th>
+                    <th><i class="fas fa-tag"></i> Service</th>
+                    <th><i class="fas fa-map-marker-alt"></i> Location</th>
+                    <th><i class="fas fa-calendar-day"></i> Date</th>
+                    <th><i class="fas fa-info-circle"></i> Status</th>
+                    <th><i class="fas fa-cog"></i> Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <?php foreach ($upcomingEvents as $event): ?>
+                    <?php
+                    $daysUntil = ceil((strtotime($event['event_date']) - time()) / 86400);
+                    $urgencyClass = '';
+                    if ($daysUntil <= 3 && $daysUntil > 0) $urgencyClass = 'row-urgent';
+                    elseif ($event['event_date'] === date('Y-m-d')) $urgencyClass = 'row-today';
+                    ?>
+                    <tr class="<?= $urgencyClass ?>">
+                      <td class="td-title">
+                        <div class="table-title">
+                          <i class="fas fa-calendar-check"></i>
+                          <?= htmlspecialchars($event['title']) ?>
+                        </div>
+                      </td>
+                      <td>
+                        <span class="service-tag-small"><?= htmlspecialchars($event['major_service']) ?></span>
+                      </td>
+                      <td class="td-location">
+                        <i class="fas fa-map-marker-alt"></i>
+                        <?= htmlspecialchars(substr($event['location'], 0, 25)) ?><?= strlen($event['location']) > 25 ? '...' : '' ?>
+                      </td>
+                      <td class="td-date">
+                        <?= date('M d, Y', strtotime($event['event_date'])) ?>
+                        <?php if ($daysUntil <= 7 && $daysUntil > 0): ?>
+                          <span class="days-until">(<?= $daysUntil ?> days)</span>
+                        <?php endif; ?>
+                      </td>
+                      <td>
+                        <?php if ($event['registration_status']): ?>
+                          <span class="badge-status <?= $event['registration_status'] ?>">
+                            <?= ucfirst($event['registration_status']) ?>
+                          </span>
+                        <?php else: ?>
+                          <span class="badge-status open">Open</span>
+                        <?php endif; ?>
+                      </td>
+                      <td class="td-actions">
+                        <?php if (!$event['registration_status']): ?>
+                          <a href="registration.php?event_id=<?= $event['event_id'] ?>" class="btn-table primary">
+                            <i class="fas fa-user-plus"></i> Register
+                          </a>
+                        <?php else: ?>
+                          <a href="registration.php?event_id=<?= $event['event_id'] ?>" class="btn-table secondary">
+                            <i class="fas fa-eye"></i> View
+                          </a>
+                        <?php endif; ?>
+                      </td>
+                    </tr>
+                  <?php endforeach; ?>
+                </tbody>
+              </table>
+              <?php else: ?>
+              <div class="empty-table">
+                <i class="fas fa-calendar-alt"></i>
+                <h4>No Upcoming Events</h4>
+                <p>Check back later for new events and activities</p>
+              </div>
+              <?php endif; ?>
+            </div>
+          </div>
+
+          <!-- Training Sessions Table -->
+          <div class="card-compact">
+            <div class="card-header-compact">
+              <h3><i class="fas fa-graduation-cap"></i> Training Sessions</h3>
+              <a href="schedule.php" class="link-small">View All <i class="fas fa-arrow-right"></i></a>
+            </div>
+            <div class="table-container">
+              <?php if (!empty($upcomingTraining)): ?>
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th><i class="fas fa-book"></i> Training Program</th>
+                    <th><i class="fas fa-cog"></i> Service</th>
+                    <th><i class="fas fa-map-pin"></i> Venue</th>
+                    <th><i class="fas fa-calendar-day"></i> Date & Time</th>
+                    <th><i class="fas fa-info-circle"></i> Status</th>
+                    <th><i class="fas fa-cog"></i> Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <?php foreach ($upcomingTraining as $training): ?>
+                    <?php
+                    $daysUntil = ceil((strtotime($training['session_date']) - time()) / 86400);
+                    $urgencyClass = '';
+                    if ($daysUntil <= 3 && $daysUntil > 0) $urgencyClass = 'row-urgent';
+                    elseif ($training['session_date'] === date('Y-m-d')) $urgencyClass = 'row-today';
+                    ?>
+                    <tr class="<?= $urgencyClass ?>">
+                      <td class="td-title">
+                        <div class="table-title">
+                          <i class="fas fa-graduation-cap"></i>
+                          <?= htmlspecialchars($training['title']) ?>
+                        </div>
+                      </td>
+                      <td>
+                        <span class="service-tag-small training"><?= htmlspecialchars($training['major_service']) ?></span>
+                      </td>
+                      <td class="td-location">
+                        <i class="fas fa-map-pin"></i>
+                        <?= htmlspecialchars(substr($training['venue'], 0, 25)) ?><?= strlen($training['venue']) > 25 ? '...' : '' ?>
+                      </td>
+                      <td class="td-date">
+                        <?= date('M d, Y', strtotime($training['session_date'])) ?>
+                        <span class="time-display"><?= date('g:i A', strtotime($training['start_time'])) ?></span>
+                        <?php if ($daysUntil <= 7 && $daysUntil > 0): ?>
+                          <span class="days-until">(<?= $daysUntil ?> days)</span>
+                        <?php endif; ?>
+                      </td>
+                      <td>
+                        <?php if ($training['user_registered']): ?>
+                          <span class="badge-status registered">Registered</span>
+                        <?php else: ?>
+                          <span class="badge-status open">Open</span>
+                        <?php endif; ?>
+                      </td>
+                      <td class="td-actions">
+                        <?php if (!$training['user_registered']): ?>
+                          <a href="schedule.php?session_id=<?= $training['session_id'] ?>" class="btn-table primary">
+                            <i class="fas fa-user-plus"></i> Enroll
+                          </a>
+                        <?php else: ?>
+                          <a href="schedule.php?session_id=<?= $training['session_id'] ?>" class="btn-table secondary">
+                            <i class="fas fa-eye"></i> View
+                          </a>
+                        <?php endif; ?>
+                      </td>
+                    </tr>
+                  <?php endforeach; ?>
+                </tbody>
+              </table>
+              <?php else: ?>
+              <div class="empty-table">
+                <i class="fas fa-graduation-cap"></i>
+                <h4>No Training Sessions</h4>
+                <p>Check back for new training opportunities</p>
+              </div>
+              <?php endif; ?>
+            </div>
+          </div>
+
         </div>
+
+        <!-- Right Column -->
+        <div class="dashboard-column-right">
+          
+          <!-- Activity Stats -->
+          <div class="stats-grid-compact">
+            <div class="stat-card-mini">
+              <div class="stat-icon events"><i class="fas fa-calendar-check"></i></div>
+              <div class="stat-info">
+                <div class="stat-value"><?= $userStats['events_registered'] ?></div>
+                <div class="stat-name">Events Joined</div>
+              </div>
+            </div>
+            <div class="stat-card-mini">
+              <div class="stat-icon users"><i class="fas fa-clipboard-check"></i></div>
+              <div class="stat-info">
+                <div class="stat-value"><?= $userStats['events_attended'] ?></div>
+                <div class="stat-name">Attended</div>
+              </div>
+            </div>
+            <div class="stat-card-mini">
+              <div class="stat-icon training"><i class="fas fa-graduation-cap"></i></div>
+              <div class="stat-info">
+                <div class="stat-value"><?= $userStats['training_sessions'] ?></div>
+                <div class="stat-name">Trainings</div>
+              </div>
+            </div>
+            <div class="stat-card-mini">
+              <div class="stat-icon donations"><i class="fas fa-heart"></i></div>
+              <div class="stat-info">
+                <div class="stat-value"><?= $userStats['donations_made'] ?></div>
+                <div class="stat-name">Donations</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Compact Calendar -->
+          <div class="card-compact calendar-card">
+            <div class="card-header-compact">
+              <h3><i class="fas fa-calendar-alt"></i> Calendar</h3>
+              <button class="btn-icon" onclick="openCalendar()"><i class="fas fa-expand"></i></button>
+            </div>
+            
+            <div class="calendar-mini">
+              <div class="calendar-nav">
+                <button class="btn-icon-small" onclick="previousMonth()"><i class="fas fa-chevron-left"></i></button>
+                <span class="month-year"><?= date('F Y') ?></span>
+                <button class="btn-icon-small" onclick="nextMonth()"><i class="fas fa-chevron-right"></i></button>
+              </div>
+              
+              <div class="calendar-grid-mini" id="miniCalendarGrid">
+                <div class="day-label">S</div>
+                <div class="day-label">M</div>
+                <div class="day-label">T</div>
+                <div class="day-label">W</div>
+                <div class="day-label">T</div>
+                <div class="day-label">F</div>
+                <div class="day-label">S</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Upcoming This Week -->
+          <div class="card-compact">
+            <div class="card-header-compact">
+              <h3><i class="fas fa-clock"></i> Upcoming This Week</h3>
+            </div>
+            <div class="upcoming-list">
+              <?php
+              try {
+                $stmt = $pdo->prepare("
+                  SELECT title, event_date as date, location, major_service, 'event' as type
+                  FROM events 
+                  WHERE event_date >= CURDATE()
+                  AND event_date <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)
+                  UNION ALL
+                  SELECT title, session_date as date, venue as location, major_service, 'training' as type
+                  FROM training_sessions 
+                  WHERE session_date >= CURDATE()
+                  AND session_date <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)
+                  AND archived = 0
+                  ORDER BY date ASC
+                  LIMIT 5
+                ");
+                $stmt->execute();
+                $upcomingItems = $stmt->fetchAll();
+                
+                if (!empty($upcomingItems)):
+                  foreach ($upcomingItems as $item):
+                    $isTraining = $item['type'] === 'training';
+              ?>
+              <div class="upcoming-item <?= $isTraining ? 'training' : '' ?>">
+                <div class="upcoming-date">
+                  <span class="day"><?= date('j', strtotime($item['date'])) ?></span>
+                  <span class="month"><?= date('M', strtotime($item['date'])) ?></span>
+                </div>
+                <div class="upcoming-details">
+                  <span class="event-type-badge"><?= $isTraining ? 'Training' : 'Event' ?></span>
+                  <h5><?= htmlspecialchars($item['title']) ?></h5>
+                  <p><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars(substr($item['location'], 0, 25)) ?>...</p>
+                </div>
+              </div>
+              <?php
+                  endforeach;
+                else:
+              ?>
+              <div class="empty-small">
+                <i class="fas fa-calendar-alt"></i>
+                <p>No upcoming events this week</p>
+              </div>
+              <?php
+                endif;
+              } catch (Exception $e) {
+                echo '<div class="empty-small"><p>Unable to load events</p></div>';
+              }
+              ?>
+            </div>
+          </div>
+
+          <!-- Recent Announcements -->
+          <?php if (!empty($announcements)): ?>
+          <div class="card-compact">
+            <div class="card-header-compact">
+              <h3><i class="fas fa-bullhorn"></i> Announcements</h3>
+              <a href="announcements.php" class="link-small">View All <i class="fas fa-arrow-right"></i></a>
+            </div>
+            <div class="upcoming-list">
+              <?php foreach ($announcements as $announcement): ?>
+              <div class="upcoming-item announcement">
+                <div class="upcoming-date">
+                  <span class="day"><?= date('j', strtotime($announcement['created_at'])) ?></span>
+                  <span class="month"><?= date('M', strtotime($announcement['created_at'])) ?></span>
+                </div>
+                <div class="upcoming-details">
+                  <span class="event-type-badge">Announcement</span>
+                  <h5><?= htmlspecialchars($announcement['title']) ?></h5>
+                  <p><?= htmlspecialchars(substr($announcement['content'], 0, 60)) ?>...</p>
+                </div>
+              </div>
+              <?php endforeach; ?>
+            </div>
+          </div>
+          <?php endif; ?>
+
+        </div>
+
       </div>
     </div>
   </div>
 
-  <script src="js/notifications.js?v=<?php echo time(); ?>"></script>
+  <!-- Calendar Modal -->
+  <div id="calendarModal" class="calendar-modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2><i class="fas fa-calendar-alt"></i> Event Calendar</h2>
+        <button class="close-btn" onclick="closeCalendar()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="calendar-controls">
+          <button class="nav-btn" onclick="previousMonthModal()">&lt;</button>
+          <h3 class="modal-month-year"><?= date('F Y') ?></h3>
+          <button class="nav-btn" onclick="nextMonthModal()">&gt;</button>
+        </div>
+        <div class="full-calendar">
+          <div class="calendar-grid" id="modalCalendarGrid">
+            <div class="day-header">Sunday</div>
+            <div class="day-header">Monday</div>
+            <div class="day-header">Tuesday</div>
+            <div class="day-header">Wednesday</div>
+            <div class="day-header">Thursday</div>
+            <div class="day-header">Friday</div>
+            <div class="day-header">Saturday</div>
+          </div>
+        </div>
+        <div class="event-details-panel">
+          <h4>Event Details</h4>
+          <div id="selectedEventDetails">
+            <p>Click on a date with events to view details</p>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn secondary" onclick="closeCalendar()">Close</button>
+      </div>
+    </div>
+  </div>
+
   <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
   <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
   <script src="js/header.js?v=<?php echo time(); ?>"></script>
   <?php include 'chat_widget.php'; ?>
+    <?php include 'floating_notification_widget.php'; ?>
+  
   <script>
-    // Live indicator animation
-    document.addEventListener('DOMContentLoaded', function() {
-      const liveIndicator = document.getElementById('liveIndicator');
-      
-      setInterval(() => {
-        if (liveIndicator) {
-          liveIndicator.style.color = liveIndicator.style.color === 'rgb(40, 167, 69)' ? '#dc3545' : '#28a745';
-        }
-      }, 2000);
-      
-      // Activity item interactions
-      document.querySelectorAll('.activity-item').forEach(item => {
-        item.addEventListener('click', function() {
-          const link = this.closest('.activity-card').querySelector('.view-all');
-          if (link) {
-            window.location.href = link.href;
-          }
-        });
-      });
+    // ========================================
+    // CALENDAR FUNCTIONALITY
+    // ========================================
+    
+    let currentMonth = <?= date('n') - 1 ?>; // JavaScript months are 0-indexed
+    let currentYear = <?= date('Y') ?>;
+    let events = [];
 
-      // Action button enhancements
-      document.querySelectorAll('.action-btn').forEach(btn => {
-        btn.addEventListener('mouseenter', function() {
-          this.style.transform = 'translateY(-2px)';
+    // Fetch events and training sessions from database
+    async function fetchEvents() {
+      try {
+        const response= await fetch('get_user_calendar_events.php');
+        const data = await response.json();
+        events = data;
+        updateCalendars();
+      } catch (error) {
+        console.error('Error fetching events:', error);
+      }
+    }
+
+    // Calendar modal controls
+    function openCalendar() {
+      document.getElementById('calendarModal').style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+      updateModalCalendar();
+    }
+
+    function closeCalendar() {
+      document.getElementById('calendarModal').style.display = 'none';
+      document.body.style.overflow = 'auto';
+    }
+
+    // Navigation functions
+    function previousMonth() {
+      if (currentMonth === 0) {
+        currentMonth = 11;
+        currentYear--;
+      } else {
+        currentMonth--;
+      }
+      updateMiniCalendar();
+    }
+
+    function nextMonth() {
+      if (currentMonth === 11) {
+        currentMonth = 0;
+        currentYear++;
+      } else {
+        currentMonth++;
+      }
+      updateMiniCalendar();
+    }
+
+    function previousMonthModal() {
+      if (currentMonth === 0) {
+        currentMonth = 11;
+        currentYear--;
+      } else {
+        currentMonth--;
+      }
+      updateModalCalendar();
+    }
+
+    function nextMonthModal() {
+      if (currentMonth === 11) {
+        currentMonth = 0;
+        currentYear++;
+      } else {
+        currentMonth++;
+      }
+      updateModalCalendar();
+    }
+
+    // Calendar update functions
+    function updateMiniCalendar() {
+      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'];
+      const monthYearElement = document.querySelector('.month-year');
+      if (monthYearElement) {
+        monthYearElement.textContent = monthNames[currentMonth] + ' ' + currentYear;
+      }
+      
+      const grid = document.getElementById('miniCalendarGrid');
+      if (grid) {
+        const existingDays = grid.querySelectorAll('.day-cell');
+        existingDays.forEach(day => day.remove());
+        generateCalendarDays(grid, true);
+      }
+    }
+
+    function updateModalCalendar() {
+      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'];
+      const modalMonthElement = document.querySelector('.modal-month-year');
+      if (modalMonthElement) {
+        modalMonthElement.textContent = monthNames[currentMonth] + ' ' + currentYear;
+      }
+      
+      const grid = document.getElementById('modalCalendarGrid');
+      if (grid) {
+        const existingDays = grid.querySelectorAll('.day');
+        existingDays.forEach(day => day.remove());
+        generateCalendarDays(grid, false);
+      }
+    }
+
+    function generateCalendarDays(grid, isMini) {
+      const firstDay = new Date(currentYear, currentMonth, 1);
+      const startDate = new Date(firstDay);
+      startDate.setDate(startDate.getDate() - firstDay.getDay());
+      
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      for (let i = 0; i < 42; i++) {
+        const cellDate = new Date(startDate);
+        cellDate.setDate(startDate.getDate() + i);
+        
+        const day = document.createElement('div');
+        day.className = isMini ? 'day-cell' : 'day';
+        day.textContent = cellDate.getDate();
+        
+        if (cellDate.getMonth() !== currentMonth) {
+          day.classList.add('other-month');
+        }
+        
+        if (cellDate.toDateString() === today.toDateString()) {
+          day.classList.add('today');
+        }
+        
+        const dateStr = cellDate.getFullYear() + '-' + 
+                       String(cellDate.getMonth() + 1).padStart(2, '0') + '-' + 
+                       String(cellDate.getDate()).padStart(2, '0');
+        
+        const dayEvents = events.filter(event => {
+          if (event.event_date && event.event_date === dateStr) {
+            return true;
+          }
+          if (event.session_date && event.session_end_date) {
+            return dateStr >= event.session_date && dateStr <= event.session_end_date;
+          }
+          if (event.session_date && event.session_date === dateStr) {
+            return true;
+          }
+          return false;
         });
         
-        btn.addEventListener('mouseleave', function() {
-          this.style.transform = 'translateY(0)';
-        });
-      });
-
-      // Initialize notifications with PHP data
-      const notifications = <?php echo json_encode($userNotifications); ?>;
-      if (typeof initializeNotifications === 'function') {
-        initializeNotifications(notifications);
+        if (dayEvents.length > 0) {
+          const regularEvents = dayEvents.filter(event => event.event_date);
+          const trainingSessions = dayEvents.filter(event => event.session_date);
+          
+          if (regularEvents.length > 0 && trainingSessions.length > 0) {
+            day.classList.add('has-both');
+            if (!isMini) {
+              day.innerHTML += '<div class="event-dots"><span class="dot dot-event"></span><span class="dot dot-training"></span></div>';
+            }
+          } else if (trainingSessions.length > 0) {
+            day.classList.add('has-training');
+            if (!isMini) {
+              day.innerHTML += '<div class="event-dots"><span class="dot dot-training"></span></div>';
+            }
+          } else {
+            day.classList.add('has-event');
+            if (!isMini) {
+              day.innerHTML += '<div class="event-dots"><span class="dot dot-event"></span></div>';
+            }
+          }
+          
+          if (dayEvents.length > 1 && !isMini) {
+            const countBadge = document.createElement('span');
+            countBadge.className = 'event-count';
+            countBadge.textContent = dayEvents.length;
+            day.appendChild(countBadge);
+          }
+          
+          day.style.cursor = 'pointer';
+          day.setAttribute('data-events', JSON.stringify(dayEvents));
+          
+          if (!isMini) {
+            day.addEventListener('click', function() {
+              showEventDetails(dayEvents);
+            });
+          }
+        }
+        
+        grid.appendChild(day);
       }
+    }
+
+    function showEventDetails(dayEvents) {
+      const detailsPanel = document.getElementById('selectedEventDetails');
+      
+      if (!detailsPanel) return;
+      
+      if (!dayEvents || dayEvents.length === 0) {
+        detailsPanel.innerHTML = `
+          <div class="empty-details" style="text-align: center; padding: 2rem; color: #6b7280;">
+            <i class="fas fa-calendar-alt" style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.3;"></i>
+            <h5>No Events Selected</h5>
+            <p>Click on a date with events to view details</p>
+          </div>
+        `;
+        return;
+      }
+      
+      let html = '';
+      
+      dayEvents.forEach(event => {
+        const isTraining = !!event.session_date;
+        const icon = isTraining ? 'graduation-cap' : 'calendar';
+        const typeClass = isTraining ? 'training-event' : 'regular-event';
+        const eventType = isTraining ? 'Training Session' : 'Event';
+        const date = isTraining ? event.session_date : event.event_date;
+        const location = isTraining ? event.venue : event.location;
+        
+        html += `
+          <div class="selected-event ${typeClass}" style="border-left: 4px solid ${isTraining ? '#6366f1' : '#a00000'}; padding: 1rem; margin-bottom: 1rem; background: #f9fafb; border-radius: 8px;">
+            <div class="event-type-badge" style="display: inline-block; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600; margin-bottom: 0.5rem; background: ${isTraining ? 'rgba(99, 102, 241, 0.1)' : 'rgba(160, 0, 0, 0.1)'}; color: ${isTraining ? '#6366f1' : '#a00000'};">
+              ${eventType}
+            </div>
+            <h5 style="margin: 0.5rem 0; color: #111827;"><i class="fas fa-${icon}"></i> ${event.title || 'Untitled Event'}</h5>
+            <p style="margin: 0.25rem 0; color: #6b7280; font-size: 0.875rem;">
+              <i class="fas fa-calendar"></i> ${new Date(date).toLocaleDateString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+              })}
+              ${event.session_end_date && event.session_end_date !== event.session_date ? 
+                ' - ' + new Date(event.session_end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}
+            </p>
+            ${location ? `<p style="margin: 0.25rem 0; color: #6b7280; font-size: 0.875rem;"><i class="fas fa-map-marker-alt"></i> ${location.substring(0, 100)}${location.length > 100 ? '...' : ''}</p>` : ''}
+            <p style="margin: 0.25rem 0; color: #6b7280; font-size: 0.875rem;"><i class="fas fa-tags"></i> ${event.major_service || 'General Service'}</p>
+            ${event.description ? `<p style="margin: 0.5rem 0 0 0; color: #4b5563; font-size: 0.875rem;"><i class="fas fa-info-circle"></i> ${event.description.substring(0, 150)}${event.description.length > 150 ? '...' : ''}</p>` : ''}
+            ${isTraining && event.duration_days > 1 ? `<p style="margin: 0.5rem 0 0 0; color: #6366f1; font-weight: 600; font-size: 0.875rem;"><i class="fas fa-clock"></i> ${event.duration_days} days</p>` : ''}
+          </div>
+        `;
+      });
+      
+      detailsPanel.innerHTML = html;
+    }
+
+    function updateCalendars() {
+      updateMiniCalendar();
+      if (document.getElementById('calendarModal') && document.getElementById('calendarModal').style.display === 'flex') {
+        updateModalCalendar();
+      }
+    }
+
+    // ========================================
+    // INITIALIZE ON PAGE LOAD
+    // ========================================
+    
+    document.addEventListener('DOMContentLoaded', function() {
+      // Fetch calendar events
+      fetchEvents();
+      
+      // Close modal on outside click
+      const calendarModal = document.getElementById('calendarModal');
+      if (calendarModal) {
+        calendarModal.addEventListener('click', function(e) {
+          if (e.target === this) {
+            closeCalendar();
+          }
+        });
+      }
+      
+      // Live indicator animation
+      const liveIndicator = document.getElementById('liveIndicator');
+      setInterval(() => {
+        if (liveIndicator) {
+          liveIndicator.style.color = liveIndicator.style.color === 'rgb(16, 185, 129)' ? '#dc3545' : '#10b981';
+        }
+      }, 2000);
+
+      console.log('User dashboard with calendar initialized');
     });
+
+    // Clear notifications function
+    function clearNotifications() {
+      const section = document.querySelector('.notifications-compact');
+      if (section) {
+        section.style.opacity = '0';
+        section.style.transform = 'translateY(-10px)';
+        setTimeout(() => section.remove(), 300);
+      }
+    }
   </script>
 </body>
 </html>

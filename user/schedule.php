@@ -732,14 +732,14 @@ try {
   <link rel="stylesheet" href="../assets/styles.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/sidebar.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/dashboard.css?v=<?php echo time(); ?>">
-  <link rel="stylesheet" href="../assets/schedule.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/registration.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/header.css?v=<?php echo time(); ?>">
+  <link rel="stylesheet" href="../assets/schedule.css?v=<?php echo time(); ?>">
 </head>
 <body>
   <?php include 'sidebar.php'; ?>
   <div class="header-content">
-    <?php include 'header.php'; ?>
+
     
     <div class="admin-content">
       <div class="events-layout">
@@ -764,7 +764,6 @@ try {
                 <input type="hidden" name="service" value="<?= htmlspecialchars($serviceFilter) ?>">
                 <i class="fas fa-search"></i>
                 <input type="text" name="search" placeholder="Search training sessions..." value="<?= htmlspecialchars($search) ?>">
-                <button type="submit"><i class="fas fa-arrow-right"></i></button>
               </form>
               <button class="btn-request-training" onclick="openTrainingRequestModal()" style="margin-left: 1rem;">
     <i class="fas fa-chalkboard-teacher"></i> Request Training
@@ -825,7 +824,7 @@ try {
           </div>
 <div class="modal" id="trainingRequestModal">
     <div class="modal-content" style="max-width: 900px;">
-        <div class="modal-header">
+        <div class="modal-headers">
             <h2 class="modal-title">Request Training Program</h2>
             <button class="close-modal" onclick="closeTrainingRequestModal()">
                 <i class="fas fa-times"></i>
@@ -2032,11 +2031,12 @@ try {
     </div>
   </div>
   
-  <script src="js/notifications.js?v=<?php echo time(); ?>"></script>
+
   <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
   <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
-  <script src="js/header.js?v=<?php echo time(); ?>"></script>
-    <?php include 'chat_widget.php'; ?>
+
+  <?php include 'chat_widget.php'; ?>
+  <?php include 'floating_notification_widget.php'; ?>
   <script> 
 // Store training sessions and user registrations in global scope
 window.calendarTrainingsData = <?php echo json_encode($calendarTrainings); ?>;

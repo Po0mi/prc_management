@@ -406,23 +406,26 @@ function getRoleActivity($pdo, $role, $is_unrestricted) {
         $activity['events'] = $stmt ? $stmt->fetchAll() : [];
         
         // Recent Training Sessions with participant counts
-        $stmt = $pdo->prepare("
-            SELECT ts.title, ts.major_service, ts.session_date, ts.start_time, ts.venue, ts.session_id,
-                   COUNT(sr.registration_id) as participant_count,
-                   CASE 
-                       WHEN ts.session_date > CURDATE() THEN 'upcoming'
-                       WHEN ts.session_date = CURDATE() THEN 'today'
-                       ELSE 'completed'
-                   END as status
-            FROM training_sessions ts
-            LEFT JOIN session_registrations sr ON ts.session_id = sr.session_id
-            WHERE ts.session_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
-            GROUP BY ts.session_id
-            ORDER BY ts.session_date DESC 
-            LIMIT 10
-        ");
-        $stmt->execute();
-        $activity['sessions'] = $stmt ? $stmt->fetchAll() : [];
+// Recent Training Sessions with participant counts
+$stmt = $pdo->prepare("
+    SELECT ts.title, ts.major_service, ts.session_date, ts.start_time, ts.venue, ts.session_id,
+           ts.duration_days,
+           COUNT(sr.registration_id) as participant_count,
+           CASE 
+               WHEN ts.session_date > CURDATE() THEN 'upcoming'
+               WHEN ts.session_date = CURDATE() THEN 'today'
+               ELSE 'completed'
+           END as status
+    FROM training_sessions ts
+    LEFT JOIN session_registrations sr ON ts.session_id = sr.session_id
+    WHERE ts.session_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+    AND ts.archived = 0
+    GROUP BY ts.session_id
+    ORDER BY ts.session_date DESC 
+    LIMIT 10
+");
+$stmt->execute();
+$activity['sessions'] = $stmt ? $stmt->fetchAll() : [];
         
         // Recent Training Requests
         $stmt = $pdo->prepare("
@@ -544,7 +547,6 @@ $role_display = $role_info['name'];
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><?= htmlspecialchars($role_display) ?> Dashboard - PRC Portal</title>
 
-  <!-- Apply saved sidebar state BEFORE CSS -->
   <?php $collapsed = isset($_COOKIE['sidebarCollapsed']) && $_COOKIE['sidebarCollapsed'] === 'true'; ?>
   <script>
     (function() {
@@ -561,7 +563,6 @@ $role_display = $role_info['name'];
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="../assets/styles.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/sidebar_admin.css?v=<?php echo time(); ?>">
-  <link rel="stylesheet" href="../assets/header.css?v=<?php echo time(); ?>">
   <link rel="stylesheet" href="../assets/admin.css?v=<?php echo time(); ?>">
 </head>
 <body class="admin-<?= htmlspecialchars($user_role) ?>">
@@ -570,631 +571,335 @@ $role_display = $role_info['name'];
   <div class="header-content">
     <div class="dashboard-container">
       
-      <!-- Hero Welcome Section -->
-      <section class="dashboard-hero">
+      <!-- Compact Hero Section -->
+      <section class="dashboard-hero-compact">
         <div class="hero-background">
           <div class="hero-overlay"></div>
-          <div class="hero-particles">
-            <div class="particle"></div>
-            <div class="particle"></div>
-            <div class="particle"></div>
-            <div class="particle"></div>
-            <div class="particle"></div>
-          </div>
         </div>
-        <div class="hero-content">
-          <div class="hero-badge">
-            <i class="fas fa-user-shield"></i>
-            <span><?= htmlspecialchars(strtoupper($user_role)) ?> ADMIN</span>
+        <div class="hero-content-compact">
+          <div class="hero-left">
+            <div class="hero-badge">
+              <i class="fas fa-user-shield"></i>
+              <span><?= htmlspecialchars(strtoupper($user_role)) ?></span>
+            </div>
+            <h1>Welcome, <span class="title-highlight"><?= htmlspecialchars($username) ?></span></h1>
+            <p class="hero-subtitle">Administration Portal</p>
+              <div class="live-indicator">
+              <i class="fas fa-circle" id="liveIndicator"></i>
+              <span><?php echo date('M d, Y'); ?></span>
+            </div>
           </div>
-          <h1 class="hero-title">
-            Welcome back, 
-            <span class="title-highlight"><?= htmlspecialchars($username) ?></span>
-          </h1>
-          <p class="hero-subtitle">
-            Philippine Red Cross Administration Portal - Streamlined operations management for efficient service delivery.
-          </p>
-
-          <div class="live-indicator">
-            <i class="fas fa-circle" id="liveIndicator"></i>
-            <span>Live Dashboard - <?php echo date('F d, Y'); ?></span>
           </div>
         </div>
       </section>
 
-      <!-- Priority Notifications Section -->
+      <!-- Priority Notifications - Compact -->
       <?php if (!empty($adminNotifications)): ?>
-      <section class="notifications-section">
-        <div class="section-header">
-          <div class="header-badge">
-            <i class="fas fa-bell"></i>
-            <span>System Alerts</span>
-          </div>
-          <h2>Priority Notifications</h2>
-          <div class="notification-summary">
-            <?php 
-            $criticalCount = count(array_filter($adminNotifications, function($n) { return $n['priority'] === 'critical'; }));
-            $highCount = count(array_filter($adminNotifications, function($n) { return $n['priority'] === 'high'; }));
-            $mediumCount = count(array_filter($adminNotifications, function($n) { return $n['priority'] === 'medium'; }));
-            $lowCount = count(array_filter($adminNotifications, function($n) { return $n['priority'] === 'low'; }));
-            ?>
-            <div class="summary-badges">
+      <section class="notifications-compact">
+        <div class="section-header-inline">
+          <div class="header-left">
+            <h2><i class="fas fa-bell"></i> Alerts</h2>
+            <div class="summary-badges-inline">
+              <?php 
+              $criticalCount = count(array_filter($adminNotifications, function($n) { return $n['priority'] === 'critical'; }));
+              $highCount = count(array_filter($adminNotifications, function($n) { return $n['priority'] === 'high'; }));
+              $mediumCount = count(array_filter($adminNotifications, function($n) { return $n['priority'] === 'medium'; }));
+              ?>
               <?php if ($criticalCount > 0): ?>
-                <span class="priority-badge critical"><?= $criticalCount ?> Critical</span>
+                <span class="badge-mini critical"><?= $criticalCount ?></span>
               <?php endif; ?>
               <?php if ($highCount > 0): ?>
-                <span class="priority-badge high"><?= $highCount ?> High</span>
+                <span class="badge-mini high"><?= $highCount ?></span>
               <?php endif; ?>
               <?php if ($mediumCount > 0): ?>
-                <span class="priority-badge medium"><?= $mediumCount ?> Medium</span>
+                <span class="badge-mini medium"><?= $mediumCount ?></span>
               <?php endif; ?>
-              <?php if ($lowCount > 0): ?>
-                <span class="priority-badge low"><?= $lowCount ?> Low</span>
-              <?php endif; ?>
-              <span class="total-count"><?= count($adminNotifications) ?> total notifications</span>
             </div>
+          </div>
+          <div class="header-actions">
+            <button class="btn-icon" onclick="refreshNotifications()" title="Refresh">
+              <i class="fas fa-sync-alt"></i>
+            </button>
+            <button class="btn-icon" onclick="markAllNotificationsRead()" title="Clear All">
+              <i class="fas fa-check-double"></i>
+            </button>
           </div>
         </div>
         
-        <div class="notifications-grid">
-          <?php foreach ($adminNotifications as $notification): ?>
-            <div class="notification-card priority-<?= $notification['priority'] ?> <?= $notification['type'] ?>">
-              <div class="notification-priority">
-                <div class="priority-indicator priority-<?= $notification['priority'] ?>">
-                  <?php if ($notification['priority'] === 'critical'): ?>
-                    <i class="fas fa-exclamation-triangle"></i>
-                  <?php elseif ($notification['priority'] === 'high'): ?>
-                    <i class="fas fa-exclamation-circle"></i>
-                  <?php elseif ($notification['priority'] === 'medium'): ?>
-                    <i class="fas fa-info-circle"></i>
-                  <?php else: ?>
-                    <i class="fas fa-check-circle"></i>
-                  <?php endif; ?>
+        <div class="notifications-scroll">
+          <?php foreach (array_slice($adminNotifications, 0, 5) as $notification): ?>
+            <div class="notification-compact priority-<?= $notification['priority'] ?>">
+              <div class="notification-left">
+                <div class="notification-icon-small <?= $notification['type'] ?>">
+                  <i class="fas fa-<?= $notification['icon'] ?>"></i>
+                </div>
+                <div class="notification-content-compact">
+                  <h4><?= htmlspecialchars($notification['title']) ?></h4>
+                  <p><?= $notification['message'] ?></p>
                 </div>
               </div>
-              
-              <div class="notification-icon">
-                <i class="fas fa-<?= $notification['icon'] ?>"></i>
-              </div>
-              
-              <div class="notification-content">
-                <h3><?= htmlspecialchars($notification['title']) ?></h3>
-                <p><?= $notification['message'] ?></p>
-                
-                <?php if (isset($notification['action'])): ?>
-                  <div class="notification-action">
-                    <a href="<?= htmlspecialchars($notification['action']['link']) ?>" class="action-btn">
-                      <span><?= htmlspecialchars($notification['action']['text']) ?></span>
-                      <i class="fas fa-arrow-right"></i>
-                    </a>
-                  </div>
-                <?php endif; ?>
-              </div>
-              
-              <div class="notification-timestamp">
-                <?= date('g:i A', $notification['timestamp']) ?>
-              </div>
+              <?php if (isset($notification['action'])): ?>
+                <a href="<?= htmlspecialchars($notification['action']['link']) ?>" class="btn-compact">
+                  <?= htmlspecialchars($notification['action']['text']) ?>
+                  <i class="fas fa-arrow-right"></i>
+                </a>
+              <?php endif; ?>
             </div>
           <?php endforeach; ?>
-        </div>
-        
-        <div class="notification-controls">
-          <div class="filter-toggles">
-            <button class="filter-btn active" data-priority="all">
-              <i class="fas fa-list"></i> All
-            </button>
-            <?php if ($criticalCount > 0): ?>
-              <button class="filter-btn" data-priority="critical">
-                <i class="fas fa-exclamation-triangle"></i> Critical
-              </button>
-            <?php endif; ?>
-            <?php if ($highCount > 0): ?>
-              <button class="filter-btn" data-priority="high">
-                <i class="fas fa-exclamation-circle"></i> High
-              </button>
-            <?php endif; ?>
-          </div>
-          
-          <div class="control-actions">
-            <button class="control-btn" onclick="refreshNotifications()">
-              <i class="fas fa-sync-alt"></i> Refresh
-            </button>
-            <button class="control-btn" onclick="markAllNotificationsRead()">
-              <i class="fas fa-check-double"></i> Mark All Read
-            </button>
-          </div>
-        </div>
-      </section>
-      <?php else: ?>
-      <section class="notifications-section empty">
-        <div class="empty-state">
-          <div class="empty-icon">
-            <i class="fas fa-bell-slash"></i>
-          </div>
-          <h3>All Clear</h3>
-          <p>No active notifications. All systems are running smoothly.</p>
-          <div class="empty-actions">
-            <button class="control-btn primary" onclick="refreshNotifications()">
-              <i class="fas fa-sync-alt"></i> Check for Updates
-            </button>
-          </div>
         </div>
       </section>
       <?php endif; ?>
 
-      <!-- Main Content Grid -->
-      <div class="dashboard-main">
+      <!-- Main Dashboard Grid - Tighter Layout -->
+      <div class="dashboard-grid-compact">
         
-        <!-- Activity Feed -->
-        <section class="activity-section">
-          <div class="section-header">
-            <div class="header-badge">
-              <i class="fas fa-activity"></i>
-              <span>Recent Activity</span>
-            </div>
-            <h2>System Activity Feed</h2>
-            <div class="activity-controls">
-              <button class="control-btn" onclick="refreshActivity()">
-                <i class="fas fa-sync-alt"></i>
-              </button>
-              <button class="control-btn" onclick="openCalendar()">
-                <i class="fas fa-calendar"></i>
-              </button>
-              <div class="auto-refresh-status">
-                <i class="fas fa-circle" id="activityIndicator"></i>
-                <span>Auto-refresh: ON</span>
-              </div>
-            </div>
-          </div>
+        <!-- Left Column: Activity Feed -->
+        <div class="dashboard-column">
           
-          <div class="activity-feed">
-            
-            <!-- Events Activity -->
-            <?php if (!empty($activity['events'])): ?>
-            <div class="activity-card featured">
-              <div class="card-header">
-                <div class="card-icon events">
-                  <i class="fas fa-calendar"></i>
-                </div>
-                <div class="card-title">
-                  <h3>Recent Events</h3>
-                  <span class="card-count"><?= count($activity['events']) ?> items</span>
-                </div>
-                <a href="manage_events.php" class="card-action">
-                  <span>Manage All</span>
-                  <i class="fas fa-arrow-right"></i>
-                </a>
-              </div>
-              <div class="card-content">
-                <?php foreach ($activity['events'] as $event): ?>
-                  <div class="activity-item" data-status="<?= $event['status'] ?>">
-                    <div class="item-status status-<?= $event['status'] ?>"></div>
-                    <div class="item-content">
-                      <h4><?= htmlspecialchars($event['title']) ?></h4>
-                      <div class="item-meta">
-                        <span class="service-tag"><?= htmlspecialchars($event['major_service']) ?></span>
-                        <span class="location"><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars(substr($event['location'], 0, 30)) ?>...</span>
-                        <span class="registrations"><i class="fas fa-users"></i> <?= $event['registration_count'] ?> registered</span>
-                      </div>
-                      <div class="item-date"><?= date('M d, Y', strtotime($event['event_date'])) ?></div>
-                    </div>
-                    <div class="item-badge badge-<?= $event['status'] ?>">
-                      <?= ucfirst($event['status']) ?>
-                    </div>
-                  </div>
-                <?php endforeach; ?>
-              </div>
+          <!-- Quick Actions Card -->
+          <div class="card-compact actions-grid">
+            <div class="card-header-compact">
+              <h3><i class="fas fa-bolt"></i> Quick Actions</h3>
             </div>
-            <?php endif; ?>
-
-            <!-- Training Requests -->
-            <?php if (!empty($activity['training_requests'])): ?>
-            <div class="activity-card">
-              <div class="card-header">
-                <div class="card-icon training">
-                  <i class="fas fa-clipboard-list"></i>
-                </div>
-                <div class="card-title">
-                  <h3>Training Requests</h3>
-                  <span class="card-count"><?= count($activity['training_requests']) ?> items</span>
-                </div>
-                <a href="manage_training_requests.php" class="card-action">
-                  <span>Manage All</span>
-                  <i class="fas fa-arrow-right"></i>
-                </a>
-              </div>
-              <div class="card-content">
-                <?php foreach ($activity['training_requests'] as $request): ?>
-                  <div class="activity-item" data-status="<?= $request['status'] ?>">
-                    <div class="item-status status-<?= $request['status'] ?>"></div>
-                    <div class="item-content">
-                      <h4><?= htmlspecialchars($request['training_program']) ?></h4>
-                      <div class="item-meta">
-                        <span class="service-tag"><?= htmlspecialchars($request['service_type']) ?></span>
-                        <span class="organization"><i class="fas fa-building"></i> <?= htmlspecialchars($request['organization_name'] ?: 'Individual') ?></span>
-                        <span class="participants"><i class="fas fa-users"></i> <?= $request['participant_count'] ?> participants</span>
-                      </div>
-                      <div class="item-date"><?= date('M d, Y g:i A', strtotime($request['created_at'])) ?></div>
-                    </div>
-                    <div class="item-badge badge-<?= $request['status'] ?>">
-                      <?= ucfirst(str_replace('_', ' ', $request['status'])) ?>
-                    </div>
-                  </div>
-                <?php endforeach; ?>
-              </div>
+            <div class="actions-list">
+              <a href="manage_events.php" class="action-item-compact">
+                <div class="action-icon-small events"><i class="fas fa-calendar"></i></div>
+                <span>Events</span>
+              </a>
+              <a href="manage_sessions.php" class="action-item-compact">
+                <div class="action-icon-small training"><i class="fas fa-graduation-cap"></i></div>
+                <span>Training</span>
+              </a>
+              <a href="manage_users.php" class="action-item-compact">
+                <div class="action-icon-small users"><i class="fas fa-users"></i></div>
+                <span>Users</span>
+              </a>
+              <a href="manage_donations.php" class="action-item-compact">
+                <div class="action-icon-small donations"><i class="fas fa-donate"></i></div>
+                <span>Donations</span>
+              </a>
+              <a href="manage_inventory.php" class="action-item-compact">
+                <div class="action-icon-small inventory"><i class="fas fa-boxes"></i></div>
+                <span>Inventory</span>
+              </a>
+              <a href="manage_volunteers.php" class="action-item-compact">
+                <div class="action-icon-small volunteers"><i class="fas fa-hands-helping"></i></div>
+                <span>Volunteers</span>
+              </a>
             </div>
-            <?php endif; ?>
-
-            <!-- Inventory Alerts -->
-            <?php if (!empty($activity['inventory'])): ?>
-            <div class="activity-card alert">
-              <div class="card-header">
-                <div class="card-icon inventory">
-                  <i class="fas fa-exclamation-triangle"></i>
-                </div>
-                <div class="card-title">
-                  <h3>Inventory Alerts</h3>
-                  <span class="card-count"><?= count($activity['inventory']) ?> items</span>
-                </div>
-                <a href="manage_inventory.php" class="card-action">
-                  <span>Manage Stock</span>
-                  <i class="fas fa-arrow-right"></i>
-                </a>
-              </div>
-              <div class="card-content">
-                <?php foreach ($activity['inventory'] as $item): ?>
-                  <div class="activity-item inventory-alert" data-status="<?= $item['stock_status'] ?>">
-                    <div class="item-status status-<?= $item['stock_status'] ?>"></div>
-                    <div class="item-content">
-                      <h4><?= htmlspecialchars($item['item_name']) ?></h4>
-                      <div class="item-meta">
-                        <span class="quantity stock-<?= $item['stock_status'] ?>">
-                          <i class="fas fa-cubes"></i> <?= $item['current_stock'] ?> remaining
-                        </span>
-                        <span class="location"><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($item['location'] ?? 'N/A') ?></span>
-                        <span class="minimum"><i class="fas fa-level-down-alt"></i> Min: <?= $item['minimum_stock'] ?></span>
-                      </div>
-                    </div>
-                    <div class="item-badge badge-<?= $item['stock_status'] ?>">
-                      <?= ucfirst(str_replace('_', ' ', $item['stock_status'])) ?>
-                    </div>
-                  </div>
-                <?php endforeach; ?>
-              </div>
-            </div>
-            <?php endif; ?>
-
-            <!-- Additional activity cards for other types -->
-            <?php if (!empty($activity['users']) || !empty($activity['donations']) || !empty($activity['volunteers'])): ?>
-            <div class="activity-grid">
-              
-              <!-- Users -->
-              <?php if (!empty($activity['users'])): ?>
-              <div class="activity-card compact">
-                <div class="card-header">
-                  <div class="card-icon users">
-                    <i class="fas fa-users"></i>
-                  </div>
-                  <div class="card-title">
-                    <h3>New Users</h3>
-                    <span class="card-count"><?= count($activity['users']) ?> items</span>
-                  </div>
-                </div>
-                <div class="card-content">
-                  <?php foreach (array_slice($activity['users'], 0, 3) as $user): ?>
-                    <div class="activity-item compact">
-                      <div class="item-content">
-                        <h4><?= htmlspecialchars($user['full_name'] ?: $user['username']) ?></h4>
-                        <div class="item-meta">
-                          <span class="registrations"><i class="fas fa-calendar-check"></i> <?= $user['total_registrations'] ?> registrations</span>
-                        </div>
-                        <div class="item-date"><?= date('M d, Y', strtotime($user['created_at'])) ?></div>
-                      </div>
-                    </div>
-                  <?php endforeach; ?>
-                </div>
-              </div>
-              <?php endif; ?>
-
-              <!-- Donations -->
-              <?php if (!empty($activity['donations'])): ?>
-              <div class="activity-card compact">
-                <div class="card-header">
-                  <div class="card-icon donations">
-                    <i class="fas fa-hand-holding-heart"></i>
-                  </div>
-                  <div class="card-title">
-                    <h3>Recent Donations</h3>
-                    <span class="card-count"><?= count($activity['donations']) ?> items</span>
-                  </div>
-                </div>
-                <div class="card-content">
-                  <?php foreach (array_slice($activity['donations'], 0, 3) as $donation): ?>
-                    <div class="activity-item compact">
-                      <div class="item-content">
-                        <h4>₱<?= number_format($donation['amount'], 2) ?></h4>
-                        <div class="item-meta">
-                          <span class="donor"><?= htmlspecialchars($donation['donor_name']) ?></span>
-                          <span class="status-badge status-<?= $donation['status'] ?>"><?= ucfirst($donation['status']) ?></span>
-                        </div>
-                        <div class="item-date"><?= date('M d, Y', strtotime($donation['donation_date'])) ?></div>
-                      </div>
-                    </div>
-                  <?php endforeach; ?>
-                </div>
-              </div>
-              <?php endif; ?>
-
-              <!-- Volunteers -->
-              <?php if (!empty($activity['volunteers'])): ?>
-              <div class="activity-card compact">
-                <div class="card-header">
-                  <div class="card-icon volunteers">
-                    <i class="fas fa-hands-helping"></i>
-                  </div>
-                  <div class="card-title">
-                    <h3>New Volunteers</h3>
-                    <span class="card-count"><?= count($activity['volunteers']) ?> items</span>
-                  </div>
-                </div>
-                <div class="card-content">
-                  <?php foreach (array_slice($activity['volunteers'], 0, 3) as $volunteer): ?>
-                    <div class="activity-item compact">
-                      <div class="item-content">
-                        <h4><?= htmlspecialchars($volunteer['full_name']) ?></h4>
-                        <div class="item-meta">
-                          <span class="service-tag"><?= htmlspecialchars($volunteer['service']) ?></span>
-                          <span class="location"><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($volunteer['location']) ?></span>
-                        </div>
-                        <div class="item-date"><?= date('M d, Y', strtotime($volunteer['created_at'])) ?></div>
-                      </div>
-                    </div>
-                  <?php endforeach; ?>
-                </div>
-              </div>
-              <?php endif; ?>
-
-            </div>
-            <?php endif; ?>
-
-            <!-- No Activity State -->
-            <?php if (empty($activity['events']) && empty($activity['sessions']) && empty($activity['training_requests']) && 
-                       empty($activity['users']) && empty($activity['donations']) && empty($activity['volunteers']) && 
-                       empty($activity['inventory'])): ?>
-            <div class="empty-state">
-              <div class="empty-icon">
-                <i class="fas fa-calendar-alt"></i>
-              </div>
-              <h3>No Recent Activity</h3>
-              <p>System is ready for new operations</p>
-            </div>
-            <?php endif; ?>
-
-          </div>
-        </section>
-
-        <!-- Management Hub -->
-        <section class="management-section">
-          <div class="section-header">
-            <div class="header-badge">
-              <i class="fas fa-cogs"></i>
-              <span>Quick Actions</span>
-            </div>
-            <h2>Management Hub</h2>
           </div>
 
-          <div class="management-grid">
+          <!-- Recent Events -->
+          <?php if (!empty($activity['events'])): ?>
+          <div class="card-compact">
+            <div class="card-header-compact">
+              <h3><i class="fas fa-calendar"></i> Recent Events</h3>
+              <a href="manage_events.php" class="link-small">View All <i class="fas fa-arrow-right"></i></a>
+            </div>
+            <div class="list-compact">
+              <?php foreach (array_slice($activity['events'], 0, 4) as $event): ?>
+                <div class="list-item-compact">
+                  <div class="item-indicator status-<?= $event['status'] ?>"></div>
+                  <div class="item-content-compact">
+                    <h4><?= htmlspecialchars($event['title']) ?></h4>
+                    <div class="item-meta-compact">
+                      <span class="tag-small"><?= htmlspecialchars($event['major_service']) ?></span>
+                      <span><i class="fas fa-users"></i> <?= $event['registration_count'] ?></span>
+                      <span><i class="fas fa-calendar"></i> <?= date('M d', strtotime($event['event_date'])) ?></span>
+                    </div>
+                  </div>
+                  <span class="badge-status <?= $event['status'] ?>"><?= ucfirst($event['status']) ?></span>
+                </div>
+              <?php endforeach; ?>
+            </div>
+          </div>
+          <?php endif; ?>
+          <!-- Recent Training Sessions -->
+<?php if (!empty($activity['sessions'])): ?>
+<div class="card-compact">
+  <div class="card-header-compact">
+    <h3><i class="fas fa-graduation-cap"></i> Recent Training Sessions</h3>
+    <a href="manage_sessions.php" class="link-small">View All <i class="fas fa-arrow-right"></i></a>
+  </div>
+  <div class="list-compact">
+    <?php foreach (array_slice($activity['sessions'], 0, 4) as $session): ?>
+      <div class="list-item-compact">
+        <div class="item-indicator status-<?= $session['status'] ?>"></div>
+        <div class="item-content-compact">
+          <h4><?= htmlspecialchars($session['title']) ?></h4>
+          <div class="item-meta-compact">
+            <span class="tag-small"><?= htmlspecialchars($session['major_service']) ?></span>
+            <span><i class="fas fa-users"></i> <?= $session['participant_count'] ?></span>
+            <span><i class="fas fa-calendar"></i> <?= date('M d', strtotime($session['session_date'])) ?></span>
+            <?php if ($session['duration_days'] > 1): ?>
+              <span class="duration-badge"><i class="fas fa-clock"></i> <?= $session['duration_days'] ?> days</span>
+            <?php endif; ?>
+          </div>
+        </div>
+        <span class="badge-status <?= $session['status'] ?>"><?= ucfirst($session['status']) ?></span>
+      </div>
+    <?php endforeach; ?>
+  </div>
+</div>
+<?php endif; ?>
+          <!-- Training Requests -->
+          <?php if (!empty($activity['training_requests'])): ?>
+          <div class="card-compact">
+            <div class="card-header-compact">
+              <h3><i class="fas fa-clipboard-list"></i> Training Requests</h3>
+              <a href="manage_training_requests.php" class="link-small">View All <i class="fas fa-arrow-right"></i></a>
+            </div>
+            <div class="list-compact">
+              <?php foreach (array_slice($activity['training_requests'], 0, 4) as $request): ?>
+                <div class="list-item-compact">
+                  <div class="item-indicator status-<?= $request['status'] ?>"></div>
+                  <div class="item-content-compact">
+                    <h4><?= htmlspecialchars($request['training_program']) ?></h4>
+                    <div class="item-meta-compact">
+                      <span><i class="fas fa-building"></i> <?= htmlspecialchars($request['organization_name'] ?: 'Individual') ?></span>
+                      <span><i class="fas fa-users"></i> <?= $request['participant_count'] ?> pax</span>
+                    </div>
+                  </div>
+                  <span class="badge-status <?= $request['status'] ?>"><?= ucfirst(str_replace('_', ' ', $request['status'])) ?></span>
+                </div>
+              <?php endforeach; ?>
+            </div>
+          </div>
+          <?php endif; ?>
+
+          <!-- Inventory Alerts -->
+          <?php if (!empty($activity['inventory'])): ?>
+          <div class="card-compact alert-card">
+            <div class="card-header-compact">
+              <h3><i class="fas fa-exclamation-triangle"></i> Inventory Alerts</h3>
+              <a href="manage_inventory.php" class="link-small">Manage <i class="fas fa-arrow-right"></i></a>
+            </div>
+            <div class="list-compact">
+              <?php foreach (array_slice($activity['inventory'], 0, 4) as $item): ?>
+                <div class="list-item-compact">
+                  <div class="item-indicator stock-<?= $item['stock_status'] ?>"></div>
+                  <div class="item-content-compact">
+                    <h4><?= htmlspecialchars($item['item_name']) ?></h4>
+                    <div class="item-meta-compact">
+                      <span class="stock-level stock-<?= $item['stock_status'] ?>">
+                        <i class="fas fa-cubes"></i> <?= $item['current_stock'] ?> left
+                      </span>
+                      <span><i class="fas fa-level-down-alt"></i> Min: <?= $item['minimum_stock'] ?></span>
+                    </div>
+                  </div>
+                  <span class="badge-status <?= $item['stock_status'] ?>"><?= ucfirst(str_replace('_', ' ', $item['stock_status'])) ?></span>
+                </div>
+              <?php endforeach; ?>
+            </div>
+          </div>
+          <?php endif; ?>
+
+        </div>
+
+        <!-- Right Column: Calendar & Stats -->
+        <div class="dashboard-column-right">
+          
+
+
+          <!-- Compact Calendar -->
+          <div class="card-compact calendar-card">
+            <div class="card-header-compact">
+              <h3><i class="fas fa-calendar-alt"></i> Calendar</h3>
+              <button class="btn-icon" onclick="openCalendar()"><i class="fas fa-expand"></i></button>
+            </div>
             
-            <!-- Primary Actions -->
-            <div class="action-group">
-              <h3>
-                <i class="fas fa-star"></i>
-                Primary Operations
-              </h3>
-              <div class="action-cards">
-                <a href="manage_events.php" class="action-card primary">
-                  <div class="action-icon">
-                    <i class="fas fa-calendar-plus"></i>
-                  </div>
-                  <div class="action-content">
-                    <h4>Manage Events</h4>
-                    <p>Create and oversee community events</p>
-                  </div>
-                  <div class="action-arrow">
-                    <i class="fas fa-arrow-right"></i>
-                  </div>
-                </a>
-
-                <a href="manage_sessions.php" class="action-card primary">
-                  <div class="action-icon">
-                    <i class="fas fa-graduation-cap"></i>
-                  </div>
-                  <div class="action-content">
-                    <h4>Training Sessions</h4>
-                    <p>Manage educational programs</p>
-                  </div>
-                  <div class="action-arrow">
-                    <i class="fas fa-arrow-right"></i>
-                  </div>
-                </a>
-
-                <a href="manage_users.php" class="action-card primary">
-                  <div class="action-icon">
-                    <i class="fas fa-users-cog"></i>
-                  </div>
-                  <div class="action-content">
-                    <h4>User Management</h4>
-                    <p>Oversee user accounts and permissions</p>
-                  </div>
-                  <div class="action-arrow">
-                    <i class="fas fa-arrow-right"></i>
-                  </div>
-                </a>
-              </div>
-            </div>
-
-            <!-- Secondary Actions -->
-            <div class="action-group">
-              <h3>
-                <i class="fas fa-tools"></i>
-                System Tools
-              </h3>
-              <div class="action-cards">
-                <a href="manage_donations.php" class="action-card">
-                  <div class="action-icon">
-                    <i class="fas fa-donate"></i>
-                  </div>
-                  <div class="action-content">
-                    <h4>Donations</h4>
-                    <p>Track and manage contributions</p>
-                  </div>
-                  <div class="action-arrow">
-                    <i class="fas fa-arrow-right"></i>
-                  </div>
-                </a>
-
-                <a href="manage_inventory.php" class="action-card">
-                  <div class="action-icon">
-                    <i class="fas fa-boxes"></i>
-                  </div>
-                  <div class="action-content">
-                    <h4>Inventory</h4>
-                    <p>Monitor stock and supplies</p>
-                  </div>
-                  <div class="action-arrow">
-                    <i class="fas fa-arrow-right"></i>
-                  </div>
-                </a>
-
-                <a href="manage_volunteers.php" class="action-card">
-                  <div class="action-icon">
-                    <i class="fas fa-hands-helping"></i>
-                  </div>
-                  <div class="action-content">
-                    <h4>Volunteers</h4>
-                    <p>Coordinate volunteer activities</p>
-                  </div>
-                  <div class="action-arrow">
-                    <i class="fas fa-arrow-right"></i>
-                  </div>
-                </a>
-              </div>
-            </div>
-
-            <!-- Calendar Widget -->
-            <div class="calendar-widget">
-              <div class="widget-header">
-                <h3>
-                  <i class="fas fa-calendar-alt"></i>
-                  Event Calendar
-                </h3>
-                <button class="expand-btn" onclick="openCalendar()">
-                  <i class="fas fa-expand"></i>
-                </button>
+            <div class="calendar-mini">
+              <div class="calendar-nav">
+                <button class="btn-icon-small" onclick="previousMonth()"><i class="fas fa-chevron-left"></i></button>
+                <span class="month-year"><?= date('F Y') ?></span>
+                <button class="btn-icon-small" onclick="nextMonth()"><i class="fas fa-chevron-right"></i></button>
               </div>
               
-              <div class="mini-calendar">
-                <div class="calendar-header">
-                  <button class="nav-btn" onclick="previousMonth()">&lt;</button>
-                  <span class="month-year"><?= date('F Y') ?></span>
-                  <button class="nav-btn" onclick="nextMonth()">&gt;</button>
-                </div>
+              <div class="calendar-grid-mini" id="miniCalendarGrid">
+                <div class="day-label">S</div>
+                <div class="day-label">M</div>
+                <div class="day-label">T</div>
+                <div class="day-label">W</div>
+                <div class="day-label">T</div>
+                <div class="day-label">F</div>
+                <div class="day-label">S</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Upcoming Events Sidebar -->
+          <div class="card-compact">
+            <div class="card-header-compact">
+              <h3><i class="fas fa-clock"></i> Upcoming</h3>
+            </div>
+            <div class="upcoming-list">
+              <?php
+              try {
+                $stmt = $pdo->prepare("
+                  SELECT title, event_date as date, location, major_service, 'event' as type
+                  FROM events 
+                  WHERE event_date >= CURDATE()
+                  UNION ALL
+                  SELECT title, session_date as date, venue as location, major_service, 'training' as type
+                  FROM training_sessions 
+                  WHERE session_date >= CURDATE()
+                  ORDER BY date ASC
+                  LIMIT 5
+                ");
+                $stmt->execute();
+                $upcomingItems = $stmt->fetchAll();
                 
-                <div class="calendar-grid" id="miniCalendarGrid">
-                  <div class="day-header">Sun</div>
-                  <div class="day-header">Mon</div>
-                  <div class="day-header">Tue</div>
-                  <div class="day-header">Wed</div>
-                  <div class="day-header">Thu</div>
-                  <div class="day-header">Fri</div>
-                  <div class="day-header">Sat</div>
-                  <!-- Days will be generated by JavaScript -->
+                if (!empty($upcomingItems)):
+                  foreach ($upcomingItems as $item):
+                    $isTraining = $item['type'] === 'training';
+              ?>
+              <div class="upcoming-item <?= $isTraining ? 'training' : '' ?>">
+                <div class="upcoming-date">
+                  <span class="day"><?= date('j', strtotime($item['date'])) ?></span>
+                  <span class="month"><?= date('M', strtotime($item['date'])) ?></span>
+                </div>
+                <div class="upcoming-details">
+                  <span class="event-type-badge"><?= $isTraining ? 'Training' : 'Event' ?></span>
+                  <h5><?= htmlspecialchars($item['title']) ?></h5>
+                  <p><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars(substr($item['location'], 0, 25)) ?>...</p>
                 </div>
               </div>
-
-              <div class="upcoming-events">
-                <h4>Upcoming This Week</h4>
-                <div class="event-list">
-                  <?php
-                  try {
-                    $stmt = $pdo->prepare("
-                      SELECT title, event_date as date, location, major_service, 'event' as type, description
-                      FROM events 
-                      WHERE event_date >= CURDATE()
-                      UNION ALL
-                      SELECT title, session_date as date, venue as location, major_service, 'training' as type, description
-                      FROM training_sessions 
-                      WHERE session_date >= CURDATE()
-                      ORDER BY date ASC
-                      LIMIT 4
-                    ");
-                    $stmt->execute();
-                    $upcomingItems = $stmt->fetchAll();
-                    
-                    if (!empty($upcomingItems)):
-                      foreach ($upcomingItems as $item):
-                        $isTraining = $item['type'] === 'training' || 
-                                     (isset($item['major_service']) && (
-                                       stripos($item['major_service'], 'training') !== false ||
-                                       stripos($item['major_service'], 'safety') !== false ||
-                                       stripos($item['major_service'], 'education') !== false
-                                     ));
-                  ?>
-                  <div class="event-item <?= $isTraining ? 'training-event' : '' ?>">
-                    <div class="event-date">
-                      <span class="day"><?= date('j', strtotime($item['date'])) ?></span>
-                      <span class="month"><?= date('M', strtotime($item['date'])) ?></span>
-                    </div>
-                    <div class="event-details">
-                      <div class="event-type"><?= $isTraining ? 'Training' : 'Event' ?></div>
-                      <h5><?= htmlspecialchars($item['title']) ?></h5>
-                      <div class="event-meta">
-                        <span class="location"><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($item['location']) ?></span>
-                        <span class="time"><i class="fas fa-clock"></i> <?= date('M j, Y', strtotime($item['date'])) ?></span>
-                      </div>
-                    </div>
-                  </div>
-                  <?php
-                      endforeach;
-                    else:
-                  ?>
-                  <div class="no-events">
-                    <i class="fas fa-calendar-alt"></i>
-                    <h5>No Upcoming Events</h5>
-                    <p>Schedule new events to see them here</p>
-                  </div>
-                  <?php
-                    endif;
-                  } catch (Exception $e) {
-                    echo '<div class="no-events"><h5>Unable to load events</h5></div>';
-                  }
-                  ?>
-                </div>
+              <?php
+                  endforeach;
+                else:
+              ?>
+              <div class="empty-small">
+                <i class="fas fa-calendar-alt"></i>
+                <p>No upcoming events</p>
               </div>
+              <?php
+                endif;
+              } catch (Exception $e) {
+                echo '<div class="empty-small"><p>Unable to load events</p></div>';
+              }
+              ?>
             </div>
-
           </div>
-        </section>
+
+        </div>
 
       </div>
     </div>
   </div>
 
-  <!-- Calendar Modal -->
+  <!-- Calendar Modal (keep existing) -->
   <div id="calendarModal" class="calendar-modal">
     <div class="modal-content">
       <div class="modal-header">
         <h2><i class="fas fa-calendar-alt"></i> Event Calendar</h2>
         <button class="close-btn" onclick="closeCalendar()">&times;</button>
       </div>
-      
       <div class="modal-body">
         <div class="calendar-controls">
           <button class="nav-btn" onclick="previousMonthModal()">&lt;</button>
           <h3 class="modal-month-year"><?= date('F Y') ?></h3>
           <button class="nav-btn" onclick="nextMonthModal()">&gt;</button>
         </div>
-        
         <div class="full-calendar">
           <div class="calendar-grid" id="modalCalendarGrid">
             <div class="day-header">Sunday</div>
@@ -1204,10 +909,8 @@ $role_display = $role_info['name'];
             <div class="day-header">Thursday</div>
             <div class="day-header">Friday</div>
             <div class="day-header">Saturday</div>
-            <!-- Full calendar days will be generated by JavaScript -->
           </div>
         </div>
-        
         <div class="event-details-panel">
           <h4>Event Details</h4>
           <div id="selectedEventDetails">
@@ -1215,7 +918,6 @@ $role_display = $role_info['name'];
           </div>
         </div>
       </div>
-      
       <div class="modal-footer">
         <button class="btn secondary" onclick="closeCalendar()">Close</button>
         <button class="btn primary" onclick="addNewEvent()">Add Event</button>
@@ -1229,365 +931,361 @@ $role_display = $role_info['name'];
   <script src="../user/js/sidebar.js?v=<?php echo time(); ?>"></script>
   <script src="../user/js/header.js?v=<?php echo time(); ?>"></script>
   <?php include 'chat_widget.php'; ?>
+  <?php include 'floating_notification_widget.php'; ?>
 
   <script>
    // ========================================
     // GLOBAL VARIABLES
     // ========================================
-    let currentMonth = <?= date('n') - 1 ?>; // JavaScript months are 0-indexed
-    let currentYear = <?= date('Y') ?>;
-    let events = []; // Will be populated with events from database
+    // ========================================
+// CALENDAR FUNCTIONALITY
+// ========================================
 
-    // ========================================
-    // CALENDAR FUNCTIONALITY
-    // ========================================
+let currentMonth = <?= date('n') - 1 ?>; // JavaScript months are 0-indexed
+let currentYear = <?= date('Y') ?>;
+let events = []; // Will be populated with events from database
+
+// Fetch events and training sessions from database
+async function fetchEvents() {
+  try {
+    const response = await fetch('get_calendar_events.php');
+    const data = await response.json();
+    events = data;
+    updateCalendars();
+  } catch (error) {
+    console.error('Error fetching events:', error);
+  }
+}
+
+// Calendar modal controls
+function openCalendar() {
+  document.getElementById('calendarModal').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  updateModalCalendar();
+}
+
+function closeCalendar() {
+  document.getElementById('calendarModal').style.display = 'none';
+  document.body.style.overflow = 'auto';
+}
+
+// Navigation functions
+function previousMonth() {
+  if (currentMonth === 0) {
+    currentMonth = 11;
+    currentYear--;
+  } else {
+    currentMonth--;
+  }
+  updateMiniCalendar();
+}
+
+function nextMonth() {
+  if (currentMonth === 11) {
+    currentMonth = 0;
+    currentYear++;
+  } else {
+    currentMonth++;
+  }
+  updateMiniCalendar();
+}
+
+function previousMonthModal() {
+  if (currentMonth === 0) {
+    currentMonth = 11;
+    currentYear--;
+  } else {
+    currentMonth--;
+  }
+  updateModalCalendar();
+}
+
+function nextMonthModal() {
+  if (currentMonth === 11) {
+    currentMonth = 0;
+    currentYear++;
+  } else {
+    currentMonth++;
+  }
+  updateModalCalendar();
+}
+
+// Calendar update functions
+function updateMiniCalendar() {
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'];
+  const monthYearElement = document.querySelector('.month-year');
+  if (monthYearElement) {
+    monthYearElement.textContent = monthNames[currentMonth] + ' ' + currentYear;
+  }
+  
+  const grid = document.getElementById('miniCalendarGrid');
+  if (grid) {
+    // Clear existing days (keep day labels)
+    const existingDays = grid.querySelectorAll('.day-cell');
+    existingDays.forEach(day => day.remove());
+    generateCalendarDays(grid, true);
+  }
+}
+
+function updateModalCalendar() {
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'];
+  const modalMonthElement = document.querySelector('.modal-month-year');
+  if (modalMonthElement) {
+    modalMonthElement.textContent = monthNames[currentMonth] + ' ' + currentYear;
+  }
+  
+  const grid = document.getElementById('modalCalendarGrid');
+  if (grid) {
+    // Clear existing days (keep headers)
+    const existingDays = grid.querySelectorAll('.day');
+    existingDays.forEach(day => day.remove());
+    generateCalendarDays(grid, false);
+  }
+}
+
+function generateCalendarDays(grid, isMini) {
+  const firstDay = new Date(currentYear, currentMonth, 1);
+  const startDate = new Date(firstDay);
+  startDate.setDate(startDate.getDate() - firstDay.getDay());
+  
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  for (let i = 0; i < 42; i++) {
+    const cellDate = new Date(startDate);
+    cellDate.setDate(startDate.getDate() + i);
     
-    // Fetch events from database
-    async function fetchEvents() {
-      try {
-        const response = await fetch('get_calendar_events.php');
-        const data = await response.json();
-        events = data;
-        updateCalendars();
-      } catch (error) {
-        console.error('Error fetching events:', error);
+    const day = document.createElement('div');
+    day.className = isMini ? 'day-cell' : 'day';
+    day.textContent = cellDate.getDate();
+    
+    // Add classes based on date
+    if (cellDate.getMonth() !== currentMonth) {
+      day.classList.add('other-month');
+    }
+    
+    if (cellDate.toDateString() === today.toDateString()) {
+      day.classList.add('today');
+    }
+    
+    // Check for events and training on this date
+    const dateStr = cellDate.getFullYear() + '-' + 
+                   String(cellDate.getMonth() + 1).padStart(2, '0') + '-' + 
+                   String(cellDate.getDate()).padStart(2, '0');
+    
+    const dayEvents = events.filter(event => {
+      // Check if date falls within event/session date range
+      if (event.event_date && event.event_date === dateStr) {
+        return true;
       }
-    }
-
-    // Calendar modal controls
-    function openCalendar() {
-      document.getElementById('calendarModal').style.display = 'flex';
-      document.body.style.overflow = 'hidden';
-      updateModalCalendar();
-    }
-
-    function closeCalendar() {
-      document.getElementById('calendarModal').style.display = 'none';
-      document.body.style.overflow = 'auto';
-    }
-
-    // Navigation functions
-    function previousMonth() {
-      if (currentMonth === 0) {
-        currentMonth = 11;
-        currentYear--;
-      } else {
-        currentMonth--;
+      if (event.session_date && event.session_end_date) {
+        return dateStr >= event.session_date && dateStr <= event.session_end_date;
       }
-      updateMiniCalendar();
-    }
-
-    function nextMonth() {
-      if (currentMonth === 11) {
-        currentMonth = 0;
-        currentYear++;
-      } else {
-        currentMonth++;
+      if (event.session_date && event.session_date === dateStr) {
+        return true;
       }
-      updateMiniCalendar();
-    }
-
-    function previousMonthModal() {
-      if (currentMonth === 0) {
-        currentMonth = 11;
-        currentYear--;
-      } else {
-        currentMonth--;
-      }
-      updateModalCalendar();
-    }
-
-    function nextMonthModal() {
-      if (currentMonth === 11) {
-        currentMonth = 0;
-        currentYear++;
-      } else {
-        currentMonth++;
-      }
-      updateModalCalendar();
-    }
-
-    // Calendar update functions
-    function updateMiniCalendar() {
-      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'];
-      const monthYearElement = document.querySelector('.month-year');
-      if (monthYearElement) {
-        monthYearElement.textContent = monthNames[currentMonth] + ' ' + currentYear;
-      }
+      return false;
+    });
+    
+    if (dayEvents.length > 0) {
+      // Separate events and training
+      const regularEvents = dayEvents.filter(event => event.event_date);
+      const trainingSessions = dayEvents.filter(event => event.session_date);
       
-      const grid = document.getElementById('miniCalendarGrid');
-      if (grid) {
-        // Clear existing days
-        const existingDays = grid.querySelectorAll('.day');
-        existingDays.forEach(day => day.remove());
-        generateCalendarDays(grid, true);
-      }
-    }
-
-    function updateModalCalendar() {
-      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'];
-      const modalMonthElement = document.querySelector('.modal-month-year');
-      if (modalMonthElement) {
-        modalMonthElement.textContent = monthNames[currentMonth] + ' ' + currentYear;
-      }
-      
-      const grid = document.getElementById('modalCalendarGrid');
-      if (grid) {
-        // Clear existing days
-        const existingDays = grid.querySelectorAll('.day');
-        existingDays.forEach(day => day.remove());
-        generateCalendarDays(grid, false);
-      }
-    }
-
-    function generateCalendarDays(grid, isMini) {
-      const firstDay = new Date(currentYear, currentMonth, 1);
-      const startDate = new Date(firstDay);
-      startDate.setDate(startDate.getDate() - firstDay.getDay());
-      
-      const today = new Date();
-      
-      for (let i = 0; i < 42; i++) {
-        const cellDate = new Date(startDate);
-        cellDate.setDate(startDate.getDate() + i);
-        
-        const day = document.createElement('div');
-        day.className = 'day';
-        day.textContent = cellDate.getDate();
-        
-        // Add classes based on date
-        if (cellDate.getMonth() !== currentMonth) {
-          day.className += ' other-month';
+      // Apply appropriate classes and dots
+      if (regularEvents.length > 0 && trainingSessions.length > 0) {
+        day.classList.add('has-both');
+        if (!isMini) {
+          day.innerHTML += '<div class="event-dots"><span class="dot dot-event"></span><span class="dot dot-training"></span></div>';
         }
-        
-        if (cellDate.toDateString() === today.toDateString()) {
-          day.className += ' today';
+      } else if (trainingSessions.length > 0) {
+        day.classList.add('has-training');
+        if (!isMini) {
+          day.innerHTML += '<div class="event-dots"><span class="dot dot-training"></span></div>';
         }
-        
-        // Check for events and training on this date
-        const dateStr = cellDate.getFullYear() + '-' + 
-                       String(cellDate.getMonth() + 1).padStart(2, '0') + '-' + 
-                       String(cellDate.getDate()).padStart(2, '0');
-        
-        const dayEvents = events.filter(event => event.event_date === dateStr);
-        
-        if (dayEvents.length > 0) {
-          // Separate events and training
-          const regularEvents = dayEvents.filter(event => event.major_service && !event.major_service.includes('Training'));
-          const trainingSessions = dayEvents.filter(event => event.major_service && event.major_service.includes('Training'));
-          
-          // Apply appropriate classes
-          if (regularEvents.length > 0 && trainingSessions.length > 0) {
-            day.className += ' has-both';
-          } else if (trainingSessions.length > 0) {
-            day.className += ' has-training';
-          } else {
-            day.className += ' has-event';
-          }
-          
-          // Add count indicator for multiple items
-          if (dayEvents.length > 1) {
-            day.className += ' has-multiple';
-            day.setAttribute('data-count', dayEvents.length);
-          }
-          
-          day.setAttribute('data-events', JSON.stringify(dayEvents));
-          
-          // Add click event for event details
-          day.addEventListener('click', function() {
-            showEventDetails(dayEvents);
-          });
+      } else {
+        day.classList.add('has-event');
+        if (!isMini) {
+          day.innerHTML += '<div class="event-dots"><span class="dot dot-event"></span></div>';
         }
-        
-        grid.appendChild(day);
-      }
-    }
-
-    function showEventDetails(dayEvents) {
-      const detailsPanel = document.getElementById('selectedEventDetails');
-      
-      if (!detailsPanel) return;
-      
-      if (!dayEvents || dayEvents.length === 0) {
-        detailsPanel.innerHTML = `
-          <div class="empty-details">
-            <i class="fas fa-calendar-alt"></i>
-            <h5>No Events Selected</h5>
-            <p>Click on a date with events to view details</p>
-          </div>
-        `;
-        return;
       }
       
-      let html = '';
+      // Add count indicator for multiple items
+      if (dayEvents.length > 1 && !isMini) {
+        const countBadge = document.createElement('span');
+        countBadge.className = 'event-count';
+        countBadge.textContent = dayEvents.length;
+        day.appendChild(countBadge);
+      }
       
-      dayEvents.forEach(event => {
-        const isTraining = event.major_service && (
-          event.major_service.toLowerCase().includes('training') || 
-          event.major_service.toLowerCase().includes('safety') ||
-          event.major_service.toLowerCase().includes('education')
-        );
-        
-        const icon = isTraining ? 'graduation-cap' : 'calendar';
-        const typeClass = isTraining ? 'training-event' : 'regular-event';
-        const eventType = isTraining ? 'Training' : 'Event';
-        
-        html += `
-          <div class="selected-event ${typeClass}">
-            <div class="event-type ${isTraining ? 'training' : ''}">${eventType}</div>
-            <h5><i class="fas fa-${icon}"></i> ${event.title || 'Untitled Event'}</h5>
-            <p><i class="fas fa-calendar"></i> ${new Date(event.event_date).toLocaleDateString('en-US', {
-              weekday: 'long',
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric'
-            })}</p>
-            <p><i class="fas fa-map-marker-alt"></i> ${event.location || event.venue || 'Location TBA'}</p>
-            <p><i class="fas fa-tags"></i> ${event.major_service || 'General Service'}</p>
-            ${event.description ? `<p class="event-description"><i class="fas fa-info-circle"></i> ${event.description.substring(0, 150)}${event.description.length > 150 ? '...' : ''}</p>` : ''}
-          </div>
-        `;
-      });
+      day.style.cursor = 'pointer';
+      day.setAttribute('data-events', JSON.stringify(dayEvents));
       
-      detailsPanel.innerHTML = html;
-    }
-
-    function updateCalendars() {
-      updateMiniCalendar();
-      if (document.getElementById('calendarModal') && document.getElementById('calendarModal').style.display === 'flex') {
-        updateModalCalendar();
+      // Add click event for event details
+      if (!isMini) {
+        day.addEventListener('click', function() {
+          showEventDetails(dayEvents);
+        });
       }
     }
+    
+    grid.appendChild(day);
+  }
+}
 
-    function addNewEvent() {
-      window.location.href = 'manage_events.php?action=add';
-    }
+function showEventDetails(dayEvents) {
+  const detailsPanel = document.getElementById('selectedEventDetails');
+  
+  if (!detailsPanel) return;
+  
+  if (!dayEvents || dayEvents.length === 0) {
+    detailsPanel.innerHTML = `
+      <div class="empty-details" style="text-align: center; padding: 2rem; color: #6b7280;">
+        <i class="fas fa-calendar-alt" style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.3;"></i>
+        <h5>No Events Selected</h5>
+        <p>Click on a date with events to view details</p>
+      </div>
+    `;
+    return;
+  }
+  
+  let html = '';
+  
+  dayEvents.forEach(event => {
+    const isTraining = !!event.session_date;
+    const icon = isTraining ? 'graduation-cap' : 'calendar';
+    const typeClass = isTraining ? 'training-event' : 'regular-event';
+    const eventType = isTraining ? 'Training Session' : 'Event';
+    const date = isTraining ? event.session_date : event.event_date;
+    const location = isTraining ? event.venue : event.location;
+    
+    html += `
+      <div class="selected-event ${typeClass}" style="border-left: 4px solid ${isTraining ? '#6366f1' : '#a00000'}; padding: 1rem; margin-bottom: 1rem; background: #f9fafb; border-radius: 8px;">
+        <div class="event-type-badge" style="display: inline-block; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600; margin-bottom: 0.5rem; background: ${isTraining ? 'rgba(99, 102, 241, 0.1)' : 'rgba(160, 0, 0, 0.1)'}; color: ${isTraining ? '#6366f1' : '#a00000'};">
+          ${eventType}
+        </div>
+        <h5 style="margin: 0.5rem 0; color: #111827;"><i class="fas fa-${icon}"></i> ${event.title || 'Untitled Event'}</h5>
+        <p style="margin: 0.25rem 0; color: #6b7280; font-size: 0.875rem;">
+          <i class="fas fa-calendar"></i> ${new Date(date).toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          })}
+          ${event.session_end_date && event.session_end_date !== event.session_date ? 
+            ' - ' + new Date(event.session_end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}
+        </p>
+        ${location ? `<p style="margin: 0.25rem 0; color: #6b7280; font-size: 0.875rem;"><i class="fas fa-map-marker-alt"></i> ${location.substring(0, 100)}${location.length > 100 ? '...' : ''}</p>` : ''}
+        <p style="margin: 0.25rem 0; color: #6b7280; font-size: 0.875rem;"><i class="fas fa-tags"></i> ${event.major_service || 'General Service'}</p>
+        ${event.description ? `<p style="margin: 0.5rem 0 0 0; color: #4b5563; font-size: 0.875rem;"><i class="fas fa-info-circle"></i> ${event.description.substring(0, 150)}${event.description.length > 150 ? '...' : ''}</p>` : ''}
+        ${isTraining && event.duration_days > 1 ? `<p style="margin: 0.5rem 0 0 0; color: #6366f1; font-weight: 600; font-size: 0.875rem;"><i class="fas fa-clock"></i> ${event.duration_days} days</p>` : ''}
+      </div>
+    `;
+  });
+  
+  detailsPanel.innerHTML = html;
+}
+
+function updateCalendars() {
+  updateMiniCalendar();
+  if (document.getElementById('calendarModal') && document.getElementById('calendarModal').style.display === 'flex') {
+    updateModalCalendar();
+  }
+}
+
+function addNewEvent() {
+  window.location.href = 'manage_events.php?action=add';
+}
 
     // ========================================
     // NOTIFICATION FUNCTIONALITY
     // ========================================
     
-    function refreshNotifications() {
-      const btn = event.target.closest('button');
-      const icon = btn ? btn.querySelector('i') : event.target;
-      
-      if (icon) {
-        icon.style.animation = 'spin 1s linear';
-        setTimeout(() => {
-          icon.style.animation = '';
-        }, 1000);
-      }
-      
-      // Trigger refresh indicator
-      const indicator = document.getElementById('liveIndicator');
-      if (indicator) {
-        indicator.style.color = '#10b981';
-        setTimeout(() => {
-          indicator.style.color = '';
-        }, 500);
-      }
-      
-      console.log('Refreshing notifications...');
-    }
+// ========================================
+// NOTIFICATION FUNCTIONALITY
+// ========================================
 
-    function markAllNotificationsRead() {
-      const cards = document.querySelectorAll('.notification-card');
-      
-      if (cards.length === 0) return;
-      
-      // Hide all notification cards with animation
-      cards.forEach((card, index) => {
-        setTimeout(() => {
-          card.style.opacity = '0.5';
-          card.style.transform = 'translateX(20px)';
-          setTimeout(() => {
-            card.style.display = 'none';
-          }, 300);
-        }, index * 100);
-      });
-      
-      // Update summary badges
-      setTimeout(() => {
-        const summaryBadges = document.querySelector('.summary-badges');
-        if (summaryBadges) {
-          summaryBadges.innerHTML = '<span class="total-count">All notifications cleared</span>';
-        }
-        
-        // Show empty state after a delay
-        setTimeout(() => {
-          const notificationsSection = document.querySelector('.notifications-section');
-          if (notificationsSection && !notificationsSection.classList.contains('empty')) {
-            notificationsSection.classList.add('empty');
-            notificationsSection.innerHTML = `
-              <div class="empty-state">
-                <div class="empty-icon">
-                  <i class="fas fa-bell-slash"></i>
-                </div>
-                <h3>All Clear</h3>
-                <p>No active notifications. All systems are running smoothly.</p>
-                <div class="empty-actions">
-                  <button class="control-btn primary" onclick="refreshNotifications()">
-                     Check for Updates
-                  </button>
-                </div>
-              </div>
-            `;
-          }
-        }, 1000);
-      }, cards.length * 100 + 300);
-    }
+function refreshNotifications() {
+  const btn = event.currentTarget;
+  const icon = btn.querySelector('i');
+  
+  if (icon) {
+    icon.style.animation = 'spin 1s linear';
+    setTimeout(() => {
+      icon.style.animation = '';
+    }, 1000);
+  }
+  
+  // Trigger refresh indicator
+  const indicator = document.getElementById('liveIndicator');
+  if (indicator) {
+    indicator.style.color = '#10b981';
+    setTimeout(() => {
+      indicator.style.color = '';
+    }, 500);
+  }
+  
+  // Reload the page to get fresh notifications
+  setTimeout(() => {
+    window.location.reload();
+  }, 1000);
+}
 
-    function initializeNotificationFilters() {
-      const filterButtons = document.querySelectorAll('.filter-btn');
-      const notificationCards = document.querySelectorAll('.notification-card');
-      
-      filterButtons.forEach(btn => {
-        btn.addEventListener('click', function() {
-          // Remove active class from all buttons
-          filterButtons.forEach(b => b.classList.remove('active'));
-          
-          // Add active class to clicked button
-          this.classList.add('active');
-          
-          const priority = this.getAttribute('data-priority');
-          
-          // Filter notification cards
-          notificationCards.forEach(card => {
-            if (priority === 'all') {
-              // Show all cards
-              card.style.display = 'flex';
-              card.style.opacity = '1';
-              card.style.transform = 'translateX(0)';
-            } else if (card.classList.contains(`priority-${priority}`)) {
-              // Show cards matching the priority
-              card.style.display = 'flex';
-              card.style.opacity = '1';
-              card.style.transform = 'translateX(0)';
-            } else {
-              // Hide cards that don't match
-              card.style.opacity = '0.3';
-              card.style.transform = 'translateX(-10px)';
-              setTimeout(() => {
-                if (!card.classList.contains(`priority-${priority}`) && priority !== 'all') {
-                  card.style.display = 'none';
-                }
-              }, 200);
-            }
-          });
-          
-          // Update visible count
-          setTimeout(() => {
-            const visibleCards = Array.from(notificationCards).filter(card => 
-              card.style.display !== 'none' && card.style.opacity !== '0.3'
-            );
-            
-            console.log(`Showing ${visibleCards.length} notifications for priority: ${priority}`);
-          }, 300);
-        });
-      });
+function markAllNotificationsRead() {
+  const notificationsSection = document.querySelector('.notifications-compact');
+  const cards = document.querySelectorAll('.notification-compact');
+  
+  if (!cards.length) {
+    console.log('No notifications to clear');
+    return;
+  }
+  
+  // Animate cards removal
+  cards.forEach((card, index) => {
+    setTimeout(() => {
+      card.style.opacity = '0';
+      card.style.transform = 'translateX(100px)';
+    }, index * 50);
+  });
+  
+  // Show empty state after animations
+  setTimeout(() => {
+    if (notificationsSection) {
+      notificationsSection.innerHTML = `
+        <div class="empty-state" style="padding: 2rem; text-align: center;">
+          <div class="empty-icon" style="font-size: 3rem; color: #9ca3af; margin-bottom: 1rem;">
+            <i class="fas fa-bell-slash"></i>
+          </div>
+          <h3 style="color: #374151; margin-bottom: 0.5rem;">All Clear</h3>
+          <p style="color: #6b7280; margin-bottom: 1.5rem;">No active notifications. All systems running smoothly.</p>
+          <button class="btn-compact" onclick="refreshNotifications()" style="background: #a00000; color: white; border: none; padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer;">
+            <i class="fas fa-sync-alt"></i> Check for Updates
+          </button>
+        </div>
+      `;
     }
+  }, cards.length * 50 + 300);
+}
+
+// Optional: Add this if you want to dismiss individual notifications
+function dismissNotification(element) {
+  const notification = element.closest('.notification-compact');
+  if (notification) {
+    notification.style.opacity = '0';
+    notification.style.transform = 'translateX(100px)';
+    setTimeout(() => {
+      notification.remove();
+      
+      // Check if no more notifications
+      const remaining = document.querySelectorAll('.notification-compact');
+      if (remaining.length === 0) {
+        markAllNotificationsRead();
+      }
+    }, 300);
+  }
+}
 
     function initializeNotificationInteractions() {
       const notificationCards = document.querySelectorAll('.notification-card');

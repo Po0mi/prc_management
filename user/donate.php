@@ -307,7 +307,7 @@ error_log("=== DONATION FORM DEBUG END ===");
 <body>
   <?php include 'sidebar.php'; ?>
     <div class="header-content">
-    <?php include 'header.php'; ?>
+
   <div class="main-content">
     <div class="donation-container">
       <div class="donation-header">
@@ -754,11 +754,12 @@ error_log("=== DONATION FORM DEBUG END ===");
       </div>
     </div>
   </div>
-  <script src="js/notifications.js?v=<?php echo time(); ?>"></script>
+
  <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
   <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
-  <script src="js/header.js?v=<?php echo time(); ?>"></script>
-    <?php include 'chat_widget.php'; ?>
+
+        <?php include 'chat_widget.php'; ?>
+        <?php include 'floating_notification_widget.php'; ?>
   <script>
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Donation form initialized');

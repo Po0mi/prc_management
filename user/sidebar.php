@@ -1,5 +1,5 @@
 <?php
-// Clean sidebar without notification badges
+// User sidebar with mobile FAB
 ?>
 
 <aside class="sidebar" id="sidebar">
@@ -57,10 +57,62 @@
         </a>
     </nav>
 
-    <!-- Collapse button -->
+    <!-- Desktop Collapse button -->
     <button class="collapse-btn" id="sidebarCollapseBtn">
         <i class="fas fa-chevron-left"></i>
         <i class="fas fa-bars"></i>
     </button>
 </aside>
 
+<!-- Mobile Menu FAB -->
+<button class="mobile-menu-fab" id="mobileMenuFab">
+  <i class="fas fa-bars"></i>
+  <span class="fab-notification-badge hidden" id="fabNotificationBadge">3</span>
+</button>
+
+<!-- Mobile Overlay -->
+<div class="sidebar-mobile-overlay" id="sidebarOverlay"></div>
+
+<script>
+// Mobile menu toggle functionality
+document.addEventListener('DOMContentLoaded', function() {
+  const sidebar = document.querySelector('.sidebar');
+  const mobileFab = document.getElementById('mobileMenuFab');
+  const overlay = document.getElementById('sidebarOverlay');
+  
+  function toggleSidebar() {
+    sidebar.classList.toggle('expanded');
+    document.body.classList.toggle('sidebar-expanded');
+  }
+  
+  mobileFab?.addEventListener('click', toggleSidebar);
+  overlay?.addEventListener('click', toggleSidebar);
+  
+  // Close sidebar when clicking a nav link on mobile
+  const navLinks = document.querySelectorAll('.nav-link');
+  navLinks.forEach(link => {
+    link.addEventListener('click', function() {
+      if (window.innerWidth <= 768) {
+        toggleSidebar();
+      }
+    });
+  });
+  
+  // Update FAB notification badge from actual notifications
+  // This should be connected to your notification system
+  function updateFabBadge(count) {
+    const badge = document.getElementById('fabNotificationBadge');
+    if (badge) {
+      if (count > 0) {
+        badge.textContent = count > 9 ? '9+' : count;
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+    }
+  }
+  
+  // Example: Update badge based on your notification system
+  // updateFabBadge(3);
+});
+</script>

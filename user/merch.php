@@ -127,7 +127,7 @@ $categories = [
   ?>
   
   <div class="header-content">
-    <?php include 'header.php'; ?>
+
   
   <div class="main-container">
     <!-- Page Header -->
@@ -320,6 +320,7 @@ $categories = [
     <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
     <script src="js/darkmode.js?v=<?php echo time(); ?>"></script>
     <script src="js/header.js?v=<?php echo time(); ?>"></script>
+        <?php include 'floating_notification_widget.php'; ?>
   <script>
     // Merchandise store functionality
     document.addEventListener('DOMContentLoaded', function() {

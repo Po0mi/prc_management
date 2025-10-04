@@ -12,7 +12,7 @@ $successMessage = '';
 $view = $_GET['view'] ?? 'active';
 
 // Get current filter month
-$filterMonth = $_GET['month'] ?? date('Y-m');
+$filterMonth = $_GET['month'] ?? 'all';
 
 // Handle image upload
 function uploadImage($file) {
@@ -197,25 +197,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['restore_announcement'
 }
 
 // Get announcements based on view and filter
+// Get announcements based on view and filter
 if ($view === 'archive') {
     // Get archived announcements
-    $stmt = $pdo->prepare("
-        SELECT * FROM announcements 
-        WHERE archived = 1 
-        AND DATE_FORMAT(posted_at, '%Y-%m') = ?
-        ORDER BY posted_at DESC
-    ");
-    $stmt->execute([$filterMonth]);
+    if ($filterMonth === 'all') {
+        $stmt = $pdo->prepare("
+            SELECT * FROM announcements 
+            WHERE archived = 1 
+            ORDER BY posted_at DESC
+        ");
+        $stmt->execute();
+    } else {
+        $stmt = $pdo->prepare("
+            SELECT * FROM announcements 
+            WHERE archived = 1 
+            AND DATE_FORMAT(posted_at, '%Y-%m') = ?
+            ORDER BY posted_at DESC
+        ");
+        $stmt->execute([$filterMonth]);
+    }
     $announcements = $stmt->fetchAll();
 } else {
     // Get active announcements
-    $stmt = $pdo->prepare("
-        SELECT * FROM announcements 
-        WHERE archived = 0 
-        AND DATE_FORMAT(posted_at, '%Y-%m') = ?
-        ORDER BY posted_at DESC
-    ");
-    $stmt->execute([$filterMonth]);
+    if ($filterMonth === 'all') {
+        $stmt = $pdo->prepare("
+            SELECT * FROM announcements 
+            WHERE archived = 0 
+            ORDER BY posted_at DESC
+        ");
+        $stmt->execute();
+    } else {
+        $stmt = $pdo->prepare("
+            SELECT * FROM announcements 
+            WHERE archived = 0 
+            AND DATE_FORMAT(posted_at, '%Y-%m') = ?
+            ORDER BY posted_at DESC
+        ");
+        $stmt->execute([$filterMonth]);
+    }
     $announcements = $stmt->fetchAll();
 }
 
@@ -269,7 +288,7 @@ if (isset($_GET['edit'])) {
   <?php include 'sidebar.php'; ?>
   <div class="admin-content">
     <div class="announcements-container">
-       <?php include 'header.php'; ?>
+    
       
       <div class="page-header">
         <h1>Manage Announcements</h1>
@@ -320,14 +339,17 @@ if (isset($_GET['edit'])) {
       <div class="filter-section">
         <div class="filter-controls">
           <label for="month-filter"><strong>Filter by Month:</strong></label>
-          <select id="month-filter" onchange="filterByMonth()">
-            <?php foreach ($availableMonths as $month): ?>
-              <option value="<?= $month['month_year'] ?>" 
-                      <?= $month['month_year'] === $filterMonth ? 'selected' : '' ?>>
-                <?= $month['month_name'] ?>
-              </option>
-            <?php endforeach; ?>
-          </select>
+     <select id="month-filter" onchange="filterByMonth()">
+    <option value="all" <?= $filterMonth === 'all' ? 'selected' : '' ?>>
+        All Months
+    </option>
+    <?php foreach ($availableMonths as $month): ?>
+      <option value="<?= $month['month_year'] ?>" 
+              <?= $month['month_year'] === $filterMonth ? 'selected' : '' ?>>
+        <?= $month['month_name'] ?>
+      </option>
+    <?php endforeach; ?>
+</select>
           
           <?php if ($view === 'archive'): ?>
             <div class="archive-notice">
@@ -414,9 +436,6 @@ if (isset($_GET['edit'])) {
             </button>
             
             <?php if ($editAnnouncement): ?>
-              <a href="?" class="btn btn-secondary">
-                <i class="fas fa-times"></i> Cancel
-              </a>
             <?php endif; ?>
           </form>
         </section>
@@ -512,6 +531,7 @@ if (isset($_GET['edit'])) {
   <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
   <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
   <?php include 'chat_widget.php'; ?>
+    <?php include 'floating_notification_widget.php'; ?>
   
   <script>
     // Image upload preview

@@ -1,8 +1,4 @@
 <aside class="sidebar">   
-  <button class="mobile-collapse-btn">
-    <i class="fas fa-bars"></i>
-  </button>
-  
   <div class="sidebar-header">     
     <div class="logo-title">       
       <a href="../index.php">       
@@ -41,14 +37,14 @@
         <span>Training Sessions</span>       
       </a>     
     </div>
-      <a href="training_request.php" class="nav-link">  
-        <i class="fa-solid fa-clipboard"></i>
-        <span class="link-text">Training Request</span>
-      </a>
-        <a href="manage_merch.php" class="nav-link">  
-        <i class="fas fa-store"></i>
-        <span class="link-text">Manage Merch</span>
-      </a>
+    <a href="training_request.php" class="nav-link">  
+      <i class="fa-solid fa-clipboard"></i>
+      <span class="link-text">Training Request</span>
+    </a>
+    <a href="manage_merch.php" class="nav-link">  
+      <i class="fas fa-store"></i>
+      <span class="link-text">Manage Merch</span>
+    </a>
     <a href="manage_donations.php" class="nav-link">       
       <i class="fas fa-donate"></i>       
       <span>Donations</span>     
@@ -72,3 +68,56 @@
   </button>   
   <script src="js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
 </aside>
+
+<!-- Mobile Menu FAB -->
+<button class="mobile-menu-fab" id="mobileMenuFab">
+  <i class="fas fa-bars"></i>
+  <span class="fab-notification-badge hidden" id="fabNotificationBadge">3</span>
+</button>
+
+<!-- Mobile Overlay -->
+<div class="sidebar-mobile-overlay" id="sidebarOverlay"></div>
+
+<script>
+// Mobile menu toggle functionality
+document.addEventListener('DOMContentLoaded', function() {
+  const sidebar = document.querySelector('.sidebar');
+  const mobileFab = document.getElementById('mobileMenuFab');
+  const overlay = document.getElementById('sidebarOverlay');
+  
+  function toggleSidebar() {
+    sidebar.classList.toggle('expanded');
+    document.body.classList.toggle('sidebar-expanded');
+  }
+  
+  mobileFab?.addEventListener('click', toggleSidebar);
+  overlay?.addEventListener('click', toggleSidebar);
+  
+  // Close sidebar when clicking a nav link on mobile
+  const navLinks = document.querySelectorAll('.nav-link');
+  navLinks.forEach(link => {
+    link.addEventListener('click', function() {
+      if (window.innerWidth <= 768) {
+        toggleSidebar();
+      }
+    });
+  });
+  
+  // Update FAB notification badge from actual notifications
+  // This should be connected to your notification system
+  function updateFabBadge(count) {
+    const badge = document.getElementById('fabNotificationBadge');
+    if (badge) {
+      if (count > 0) {
+        badge.textContent = count > 9 ? '9+' : count;
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+    }
+  }
+  
+  // Example: Update badge based on your notification system
+  // updateFabBadge(3);
+});
+</script>

@@ -1,85 +1,265 @@
 :root {
-  --sidebar-width: 250px;
-  --sidebar-collapsed-width: 70px;
+  --sidebar-width: 260px;
+  --sidebar-collapsed-width: 75px;
   --prc-red: #a00000;
+  --prc-red-dark: #800000;
+  --prc-red-light: #c00000;
   --transition-speed: 0.3s;
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.2);
 }
 
 .sidebar {
   width: var(--sidebar-width);
-  background-color: var(--prc-red);
+  background: linear-gradient(
+    180deg,
+    var(--prc-red) 0%,
+    var(--prc-red-dark) 100%
+  );
   color: white;
   position: fixed;
   height: 100vh;
   overflow: hidden;
-  transition: width var(--transition-speed), transform var(--transition-speed);
+  transition: width var(--transition-speed) ease,
+    transform var(--transition-speed) ease;
   z-index: 100;
   display: flex;
   flex-direction: column;
+  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15);
+}
+
+.sidebar::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.05) 0%,
+    transparent 50%
+  );
+  pointer-events: none;
 }
 
 .sidebar.collapsed {
   width: var(--sidebar-collapsed-width);
 }
 
+/* Header Section */
 .sidebar-header {
-  padding: 1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 1.5rem 1.2rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   position: relative;
-  /* Dynamic height based on content */
-  min-height: auto;
+  z-index: 1;
+  background: rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(10px);
 }
 
 .logo-title {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  margin-bottom: 0.6rem;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  transition: all var(--transition-speed);
+}
+
+.logo-title a {
+  display: flex;
+  align-items: center;
+  transition: transform 0.2s;
+}
+
+.logo-title a:hover {
+  transform: scale(1.05);
 }
 
 .logo-title img {
-  width: 40px;
-  min-width: 40px;
+  width: 45px;
+  min-width: 45px;
+  height: 45px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+  transition: filter 0.3s;
+}
+
+.logo-title img:hover {
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+}
+
+.logo-title div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
 }
 
 .logo-title h1 {
-  font-size: 1rem;
+  font-size: 1.1rem;
   margin: 0;
-  line-height: 1.1;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .logo-title p {
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   margin: 0;
-  opacity: 0.9;
+  opacity: 0.85;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
 }
 
+/* User Info Card */
 .user-info {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  margin-top: 0.6rem;
-  transition: padding var(--transition-speed);
+  gap: 10px;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  border-radius: 10px;
+  margin-top: 1rem;
+  transition: all var(--transition-speed);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.user-info:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .user-info i {
-  font-size: 1.2rem;
+  font-size: 1.25rem;
+  color: rgba(255, 255, 255, 0.95);
 }
 
 .user-info span {
   font-weight: 600;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.95);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* Fixed collapse button positioning */
+/* Navigation */
+.sidebar-nav {
+  padding: 1.5rem 0.5rem 1rem 0.5rem;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* Navigation Links */
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: rgba(255, 255, 255, 0.9);
+  text-decoration: none;
+  padding: 0.85rem 1rem;
+  margin: 0.25rem 0;
+  transition: all 0.2s ease;
+  font-weight: 500;
+  font-size: 0.88rem;
+  border-radius: 10px;
+  position: relative;
+  overflow: hidden;
+}
+
+.nav-link::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: white;
+  transform: scaleY(0);
+  transition: transform 0.2s ease;
+}
+
+.nav-link i {
+  width: 24px;
+  text-align: center;
+  font-size: 1.15rem;
+  transition: all 0.2s ease;
+  z-index: 1;
+}
+
+.nav-link span {
+  transition: all 0.2s ease;
+  z-index: 1;
+}
+
+.nav-link:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+  transform: translateX(3px);
+  padding-left: 1.2rem;
+}
+
+.nav-link:hover::before {
+  transform: scaleY(1);
+}
+
+.nav-link:hover i {
+  transform: scale(1.1);
+}
+
+.nav-link.active {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.nav-link.active::before {
+  transform: scaleY(1);
+}
+
+/* Logout Link */
+.logout-link {
+  margin-top: auto;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.logout-link:hover {
+  background: rgba(0, 0, 0, 0.35);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Collapse Button */
 .collapse-btn {
   position: absolute;
-  bottom: 30%; /* Smaller overlap */
-  left: 50%;
-  transform: translateX(-50%);
+  bottom: 2rem;
+  right: -18px;
   background: white;
   border: none;
   border-radius: 50%;
@@ -89,9 +269,14 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-  transition: all var(--transition-speed) ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s ease;
   z-index: 101;
+}
+
+.collapse-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
 }
 
 .collapse-btn i {
@@ -100,65 +285,34 @@
   transition: transform var(--transition-speed);
 }
 
-/* Hide hamburger by default */
 .collapse-btn i.fa-bars {
   display: none;
 }
 
-.sidebar-nav {
-  padding: 1.2rem 0 0.8rem 0; /* Much more compact */
-  flex: 1;
-  overflow-y: auto; /* Allow scrolling if content is too long */
-}
-
-.nav-link {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: white;
-  text-decoration: none;
-  padding: 1rem 1.2rem;
-  transition: all var(--transition-speed);
-  font-weight: 500;
-  font-size: 0.85rem;
-}
-
-.nav-link i {
-  width: 24px;
-  text-align: center;
-  font-size: 1.1rem;
-}
-
-.nav-link:hover,
-.nav-link.active {
-  background-color: rgba(255, 255, 255, 0.15);
-}
-
-.logout-link {
-  margin-top: auto;
-  background-color: rgba(0, 0, 0, 0.15);
-}
-
-.logout-link:hover {
-  background-color: rgba(0, 0, 0, 0.25);
-}
-
-/* Collapsed state styles */
+/* Collapsed State */
 .sidebar.collapsed .logo-title h1,
 .sidebar.collapsed .logo-title p,
 .sidebar.collapsed .user-info span,
 .sidebar.collapsed .nav-link span {
-  display: none;
+  opacity: 0;
+  visibility: hidden;
+  width: 0;
 }
 
 .sidebar.collapsed .nav-link {
   justify-content: center;
   padding: 1rem 0;
+  margin: 0.3rem 0;
+}
+
+.sidebar.collapsed .nav-link:hover {
+  transform: translateX(0);
+  padding-left: 0;
 }
 
 .sidebar.collapsed .user-info {
   justify-content: center;
-  padding: 10px 0;
+  padding: 0.75rem 0;
 }
 
 .sidebar.collapsed .collapse-btn i.fa-chevron-left {
@@ -167,75 +321,190 @@
 
 .sidebar.collapsed .logo-title {
   justify-content: center;
-  align-items: center;
   gap: 0;
-  width: 100%;
+  margin-bottom: 0.75rem;
 }
 
 .sidebar.collapsed .logo-title img {
-  max-width: 100%;
-  height: auto;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
 }
 
-/* Mobile-specific collapse button */
-.mobile-collapse-btn {
+/* Mobile Menu FAB (Floating Action Button) */
+.mobile-menu-fab {
   display: none;
-  position: absolute;
-  top: 1.5rem;
-  left: 1.5rem;
-  background: none;
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  background: linear-gradient(
+    135deg,
+    var(--prc-red) 0%,
+    var(--prc-red-dark) 100%
+  );
   border: none;
   color: white;
-  font-size: 1.5rem;
-  cursor: pointer;
+  cursor: move;
   z-index: 102;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  box-shadow: 0 6px 20px rgba(160, 0, 0, 0.5);
+  transition: box-shadow 0.3s ease;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 2px;
+  touch-action: none;
+  user-select: none;
 }
-/* Sidebar Notification Bell - Transferred from Header */
 
-/* Notification section in sidebar */
+.mobile-menu-fab.dragging {
+  box-shadow: 0 8px 28px rgba(160, 0, 0, 0.7);
+  transition: none;
+  cursor: grabbing;
+}
+
+.mobile-menu-fab::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 50%;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.2) 0%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+.mobile-menu-fab i {
+  font-size: 1.5rem;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.mobile-menu-fab:active:not(.dragging) {
+  transform: scale(0.92);
+}
+
+/* Notification badge on FAB */
+.mobile-menu-fab .fab-notification-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  background: linear-gradient(135deg, #ff4444, #cc0000);
+  color: white;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border: 2px solid white;
+  box-shadow: 0 2px 8px rgba(255, 68, 68, 0.5);
+  animation: pulse 2s infinite;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.mobile-menu-fab .fab-notification-badge.hidden {
+  display: none;
+}
+
+/* Ripple effect on tap */
+.mobile-menu-fab::after {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(0);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mobile-menu-fab:active:not(.dragging)::after {
+  animation: ripple 0.6s ease-out;
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(0);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+/* Hide FAB when sidebar is open */
+.sidebar.expanded ~ .mobile-menu-fab,
+body.sidebar-expanded .mobile-menu-fab {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Old mobile collapse button - kept for backwards compatibility */
+.mobile-collapse-btn {
+  display: none;
+}
+
+/* Notification Section */
 .sidebar-notification-section {
-  padding: 0.5rem 1rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.5rem 0.5rem 1rem 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
   margin-top: auto;
 }
 
-/* Notification Bell in Sidebar */
 .sidebar .notification-bell {
   position: relative;
   cursor: pointer;
   width: 100%;
-  height: 44px;
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 10px;
-  color: white;
+  gap: 12px;
+  color: rgba(255, 255, 255, 0.9);
   text-decoration: none;
-  padding: 1rem 1.2rem;
-  transition: all 0.3s ease;
+  padding: 0.85rem 1rem;
+  transition: all 0.2s ease;
   font-weight: 500;
-  font-size: 0.85rem;
+  font-size: 0.88rem;
   border: none;
   background: none;
-  border-radius: 6px;
+  border-radius: 10px;
 }
 
 .sidebar .notification-bell:hover {
-  background-color: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+  transform: translateX(3px);
 }
 
 .sidebar .notification-bell i {
   width: 24px;
   text-align: center;
-  font-size: 1.1rem;
+  font-size: 1.15rem;
+  transition: all 0.2s ease;
 }
 
-/* Notification Badge in Sidebar */
+.sidebar .notification-bell:hover i {
+  transform: scale(1.1);
+}
+
 .sidebar .notification-badge {
   position: absolute;
-  top: 8px;
-  left: 20px;
-  background-color: #ff4444;
+  top: 0.5rem;
+  left: 1.3rem;
+  background: linear-gradient(135deg, #ff4444, #cc0000);
   color: white;
   border-radius: 50%;
   width: 18px;
@@ -244,96 +513,35 @@
   align-items: center;
   justify-content: center;
   font-size: 0.7rem;
-  font-weight: bold;
+  font-weight: 700;
   z-index: 1;
+  box-shadow: 0 2px 6px rgba(255, 68, 68, 0.4);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
 }
 
 .sidebar .notification-badge.hidden {
   display: none;
 }
 
-/* Notification Panel in Sidebar */
-.sidebar .notification-panel {
-  display: none;
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  right: 0;
-  background-color: var(--card-bg, white);
-  border: 1px solid var(--border-color, #e0e0e0);
-  border-radius: 8px;
-  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 1000;
-  margin-bottom: 0.5rem;
-  color: var(--text-color, #333);
-}
-
-.sidebar .notification-panel.active {
-  display: block;
-}
-
-.sidebar .notification-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem;
-  border-bottom: 1px solid var(--border-color, #e0e0e0);
-}
-
-.sidebar .notification-header h3 {
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 1rem;
-  color: var(--text-color, #333);
-}
-
-.sidebar .notification-count {
-  background-color: var(--prc-red, #a00000);
-  color: white;
-  border-radius: 10px;
-  padding: 0.15rem 0.5rem;
-  font-size: 0.8rem;
-}
-
-.sidebar .mark-all-read {
-  background: none;
-  border: none;
-  color: var(--prc-red, #a00000);
-  cursor: pointer;
-  font-size: 0.8rem;
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-  transition: background-color 0.2s;
-}
-
-.sidebar .mark-all-read:hover {
-  background-color: rgba(160, 0, 0, 0.1);
-}
-
-.sidebar .notification-list {
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.sidebar .notification-loading {
-  padding: 2rem;
-  text-align: center;
-  color: #777;
-}
-
-/* Collapsed sidebar adjustments */
 .sidebar.collapsed .notification-bell {
   justify-content: center;
   padding: 1rem 0;
 }
 
 .sidebar.collapsed .notification-bell span {
-  display: none;
+  opacity: 0;
+  visibility: hidden;
+  width: 0;
 }
 
 .sidebar.collapsed .notification-badge {
@@ -341,750 +549,632 @@
   transform: translateX(-50%);
 }
 
-.sidebar.collapsed .notification-panel {
-  left: 100%;
-  bottom: 0;
-  width: 320px;
-  margin-left: 0.5rem;
-  margin-bottom: 0;
+/* Notification Panel */
+.sidebar .notification-panel {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  background-color: white;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+  margin-bottom: 0.5rem;
+  color: #333;
+  max-height: 400px;
+  overflow: hidden;
 }
 
-/* Mobile responsive */
-@media (max-width: 768px) {
-  .sidebar-notification-section {
-    margin-bottom: 20px; /* No collapse button on mobile */
-    padding: 0.3rem 0.8rem;
-  }
-
-  /* Match existing mobile sidebar behavior */
-  .sidebar:not(.expanded) .notification-bell span {
-    display: none;
-  }
-
-  .sidebar:not(.expanded) .notification-bell {
-    justify-content: center;
-    padding: 1rem 0;
-  }
-
-  .sidebar:not(.expanded) .notification-badge {
-    left: 50%;
-    transform: translateX(-50%);
-  }
-
-  .sidebar.expanded .notification-bell {
-    justify-content: flex-start;
-    padding: 0.5rem 1rem;
-  }
-
-  .sidebar.expanded .notification-panel {
-    left: 0;
-    right: 0;
-    width: auto;
-  }
-
-  .sidebar:not(.expanded) .notification-panel {
-    left: 100%;
-    bottom: 0;
-    width: 280px;
-    margin-left: 0.5rem;
-    margin-bottom: 0;
-  }
+.sidebar .notification-panel.active {
+  display: block;
 }
 
-/* Very small devices */
-@media (max-width: 350px) {
-  .sidebar-notification-section {
-    padding: 0.3rem 0.6rem;
-  }
-
-  .sidebar.expanded .notification-bell {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.75rem;
-  }
-
-  .sidebar.expanded .notification-bell i {
-    font-size: 1rem;
-  }
-}
-
-/* Landscape tablets - match existing behavior */
-@media (max-width: 992px) and (min-width: 769px) and (orientation: landscape) {
-  .sidebar-notification-section {
-    margin-bottom: 40px; /* Smaller collapse button */
-    padding: 0.4rem 0.8rem;
-  }
-
-  .sidebar .notification-bell {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.7rem;
-  }
-
-  .sidebar .notification-bell i {
-    font-size: 0.9rem;
-  }
-}
-
-/* Match existing medium screen adjustments */
-@media (max-width: 1005px) and (min-width: 901px) {
-  .sidebar-notification-section {
-    margin-bottom: 60px;
-    padding: 0.4rem 0.8rem;
-  }
-
-  .sidebar .notification-bell {
-    padding: 0.45rem 0.8rem;
-    font-size: 0.75rem;
-  }
-}
-
-/* Toast container positioning */
-.toast-container {
+/* Overlay for Mobile */
+.sidebar-mobile-overlay {
+  display: none;
   position: fixed;
-  top: 20px;
-  right: 20px;
-  z-index: 2000;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 99;
+  transition: opacity 0.3s ease;
+  -webkit-tap-highlight-color: transparent;
 }
-/* Small desktop screens - like in screenshot */
-@media (max-width: 1440px) and (min-width: 900px) {
-  .sidebar-header {
-    padding: 1rem;
+
+/* ==================== MOBILE RESPONSIVE ==================== */
+
+/* Large Tablets (Portrait) */
+@media (max-width: 1024px) and (min-width: 769px) {
+  :root {
+    --sidebar-width: 240px;
   }
 
-  .logo-title {
-    gap: 0.8rem;
-    margin-bottom: 0.8rem;
+  .sidebar-header {
+    padding: 1.2rem 1rem;
   }
 
   .logo-title img {
     width: 42px;
     min-width: 42px;
+    height: 42px;
   }
 
   .logo-title h1 {
     font-size: 1.05rem;
   }
 
+  .nav-link {
+    padding: 0.8rem 0.95rem;
+    font-size: 0.86rem;
+  }
+
+  .collapse-btn {
+    width: 34px;
+    height: 34px;
+  }
+}
+
+/* Standard Tablets and Small Laptops */
+@media (max-width: 900px) and (min-width: 769px) {
+  :root {
+    --sidebar-width: 220px;
+    --sidebar-collapsed-width: 70px;
+  }
+
+  .sidebar-header {
+    padding: 1rem 0.9rem;
+  }
+
+  .logo-title {
+    gap: 0.6rem;
+    margin-bottom: 0.8rem;
+  }
+
+  .logo-title img {
+    width: 38px;
+    min-width: 38px;
+    height: 38px;
+  }
+
+  .logo-title h1 {
+    font-size: 0.98rem;
+  }
+
   .logo-title p {
-    font-size: 0.72rem;
+    font-size: 0.68rem;
   }
 
   .user-info {
-    padding: 8px;
-    margin-top: 0.8rem;
+    padding: 0.65rem;
     gap: 8px;
+  }
+
+  .user-info i {
+    font-size: 1.15rem;
+  }
+
+  .user-info span {
+    font-size: 0.8rem;
+  }
+
+  .nav-link {
+    padding: 0.75rem 0.85rem;
+    font-size: 0.82rem;
+    gap: 10px;
+  }
+
+  .nav-link i {
+    font-size: 1.08rem;
+  }
+
+  .collapse-btn {
+    width: 32px;
+    height: 32px;
+    right: -16px;
+  }
+
+  .collapse-btn i {
+    font-size: 0.85rem;
+  }
+}
+
+/* Mobile Devices (All) */
+@media (max-width: 768px) {
+  .sidebar {
+    width: var(--sidebar-collapsed-width);
+    transform: translateX(calc(-1 * var(--sidebar-collapsed-width)));
+    box-shadow: none;
+  }
+
+  .sidebar.expanded {
+    width: 280px;
+    transform: translateX(0);
+    box-shadow: 8px 0 32px rgba(0, 0, 0, 0.4);
+  }
+
+  .sidebar-header {
+    padding: 1rem 0.8rem;
+  }
+
+  .sidebar.expanded .sidebar-header {
+    padding: 1.2rem 1rem;
+    padding-top: 1.5rem;
+  }
+
+  /* Show FAB on mobile */
+  .mobile-menu-fab {
+    display: flex;
+  }
+
+  /* Collapse Button Hidden on Mobile */
+  .collapse-btn {
+    display: none;
+  }
+
+  /* Logo and Header Adjustments */
+  .logo-title {
+    justify-content: center;
+    gap: 0;
+    margin-bottom: 0.6rem;
+  }
+
+  .sidebar.expanded .logo-title {
+    justify-content: flex-start;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .logo-title img {
+    width: 35px;
+    min-width: 35px;
+    height: 35px;
+  }
+
+  .sidebar.expanded .logo-title img {
+    width: 48px;
+    min-width: 48px;
+    height: 48px;
+  }
+
+  .logo-title h1,
+  .logo-title p {
+    display: none;
+  }
+
+  .sidebar.expanded .logo-title h1 {
+    display: block;
+    font-size: 1.15rem;
+  }
+
+  .sidebar.expanded .logo-title p {
+    display: block;
+    font-size: 0.75rem;
+  }
+
+  /* User Info */
+  .user-info {
+    justify-content: center;
+    padding: 0.6rem 0;
+    margin-top: 0.6rem;
+  }
+
+  .sidebar.expanded .user-info {
+    justify-content: flex-start;
+    padding: 0.8rem;
+    margin-top: 1rem;
+  }
+
+  .user-info span {
+    display: none;
+  }
+
+  .sidebar.expanded .user-info span {
+    display: block;
+    font-size: 0.88rem;
   }
 
   .user-info i {
     font-size: 1.3rem;
   }
 
-  .user-info span {
-    font-size: 0.82rem;
-  }
-
-  .nav-link {
-    padding: 0.65rem 1.3rem;
-    gap: 10px;
-  }
-
-  .nav-link i {
-    font-size: 1.05rem;
-  }
-
-  .collapse-btn {
-    width: 42px;
-    height: 42px;
-    bottom: 130px;
-  }
-
-  .collapse-btn i {
-    font-size: 0.85rem;
-  }
-
-  .sidebar-nav {
-    padding-top: 1.8rem;
-  }
-
-  /* Collapsed state for small desktop */
-  .sidebar.collapsed .sidebar-header {
-    padding: 0.8rem;
-  }
-
-  .sidebar.collapsed .logo-title img {
-    width: 35px;
-    min-width: 35px;
-  }
-
-  .sidebar.collapsed .user-info {
-    padding: 6px 0;
-  }
-
-  .sidebar.collapsed .user-info i {
-    font-size: 1.15rem;
-  }
-
-  .sidebar.collapsed .nav-link {
-    padding: 0.8rem 0;
-  }
-
-  .sidebar.collapsed .nav-link i {
-    font-size: 1rem;
-  }
-}
-
-/* Tablet and smaller desktop adjustments */
-@media (max-width: 1200px) {
-  .sidebar-header {
-    padding: 0.8rem;
-  }
-
-  .logo-title {
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
-  }
-
-  .logo-title img {
-    width: 35px;
-    min-width: 35px;
-  }
-
-  .logo-title h1 {
-    font-size: 0.9rem;
-  }
-
-  .logo-title p {
-    font-size: 0.65rem;
-  }
-
-  .user-info {
-    padding: 5px;
-    margin-top: 0.5rem;
-    gap: 6px;
-  }
-
-  .user-info i {
-    font-size: 1.1rem;
-  }
-
-  .user-info span {
-    font-size: 0.75rem;
-  }
-
-  .nav-link {
-    padding: 0.5rem 1rem;
-    font-size: 0.8rem;
-    gap: 8px;
-  }
-
-  .collapse-btn {
-    width: 32px;
-    height: 32px;
-    bottom: -16px;
-  }
-
-  .collapse-btn i {
-    font-size: 0.75rem;
-  }
-
-  .sidebar-nav {
-    padding-top: 1rem;
-  }
-
-  /* Collapsed state for tablets */
-  .sidebar.collapsed .sidebar-header {
-    padding: 0.6rem;
-  }
-
-  .sidebar.collapsed .logo-title img {
-    width: 28px;
-    min-width: 28px;
-  }
-
-  .sidebar.collapsed .user-info {
-    padding: 4px 0;
-  }
-
-  .sidebar.collapsed .user-info i {
-    font-size: 1rem;
-  }
-
-  .sidebar.collapsed .nav-link {
-    padding: 0.7rem 0;
-  }
-
-  .sidebar.collapsed .nav-link i {
-    font-size: 0.95rem;
-  }
-}
-
-/* Medium screens adjustments */
-@media (max-width: 1005px) and (min-width: 901px) {
-  .sidebar-header {
-    padding: 0.6rem;
-  }
-
-  .logo-title {
-    gap: 0.4rem;
-    margin-bottom: 0.4rem;
-  }
-
-  .logo-title img {
-    width: 30px;
-    min-width: 30px;
-  }
-
-  .logo-title h1 {
-    font-size: 0.85rem;
-  }
-
-  .logo-title p {
-    font-size: 0.6rem;
-  }
-
-  .user-info {
-    padding: 4px;
-    margin-top: 0.4rem;
-    gap: 5px;
-  }
-
-  .user-info i {
-    font-size: 1rem;
-  }
-
-  .user-info span {
-    font-size: 0.7rem;
-  }
-
-  .nav-link {
-    padding: 0.45rem 0.8rem;
-    font-size: 0.75rem;
-  }
-
-  .collapse-btn {
-    width: 28px;
-    height: 28px;
-    bottom: 150px;
-  }
-
-  /* Collapsed state for medium screens */
-  .sidebar.collapsed .sidebar-header {
-    padding: 0.5rem;
-  }
-
-  .sidebar.collapsed .logo-title img {
-    width: 24px;
-    min-width: 24px;
-  }
-
-  .sidebar.collapsed .user-info {
-    padding: 3px 0;
-  }
-
-  .sidebar.collapsed .user-info i {
-    font-size: 0.9rem;
-  }
-
-  .sidebar.collapsed .nav-link {
-    padding: 0.6rem 0;
-  }
-
-  .sidebar.collapsed .nav-link i {
-    font-size: 0.85rem;
-  }
-}
-/* Medium screens adjustments */
-@media (max-width: 978px) and (min-width: 901px) {
-  .sidebar-header {
-    padding: 0.6rem;
-  }
-
-  .logo-title {
-    gap: 0.4rem;
-    margin-bottom: 0.4rem;
-  }
-
-  .logo-title img {
-    width: 30px;
-    min-width: 30px;
-  }
-
-  .logo-title h1 {
-    font-size: 0.85rem;
-  }
-
-  .logo-title p {
-    font-size: 0.6rem;
-  }
-
-  .user-info {
-    padding: 4px;
-    margin-top: 0.4rem;
-    gap: 5px;
-  }
-
-  .user-info i {
-    font-size: 1rem;
-  }
-
-  .user-info span {
-    font-size: 0.7rem;
-  }
-
-  .nav-link {
-    padding: 0.45rem 0.8rem;
-    font-size: 0.75rem;
-  }
-
-  .collapse-btn {
-    width: 28px;
-    height: 28px;
-    bottom: 150px;
-  }
-
-  /* Collapsed state for medium screens */
-  .sidebar.collapsed .sidebar-header {
-    padding: 0.5rem;
-  }
-
-  .sidebar.collapsed .logo-title img {
-    width: 24px;
-    min-width: 24px;
-  }
-
-  .sidebar.collapsed .user-info {
-    padding: 3px 0;
-  }
-
-  .sidebar.collapsed .user-info i {
-    font-size: 0.9rem;
-  }
-
-  .sidebar.collapsed .nav-link {
-    padding: 0.6rem 0;
-  }
-
-  .sidebar.collapsed .nav-link i {
-    font-size: 0.85rem;
-  }
-}
-
-/* Mobile rules */
-@media (max-width: 768px) {
-  .sidebar {
-    width: var(--sidebar-collapsed-width);
-    transform: translateX(calc(-1 * var(--sidebar-collapsed-width)));
-    transition: transform var(--transition-speed) ease;
-  }
-
-  .sidebar.expanded {
-    width: var(--sidebar-width);
-    transform: translateX(0);
-    box-shadow: 5px 0 15px rgba(0, 0, 0, 0.3);
-  }
-
-  /* Compact header for mobile */
-  .sidebar-header {
-    padding: 0.8rem;
-  }
-
-  .sidebar.expanded .sidebar-header {
-    padding: 1rem;
-  }
-
-  /* Hide the main collapse button on mobile */
-  .collapse-btn {
-    display: none;
-  }
-
-  /* Show mobile collapse button */
-  .mobile-collapse-btn {
-    display: block;
-  }
-
-  /* Mobile hamburger button - fixed position */
-  .mobile-collapse-btn {
-    position: fixed;
-    top: 1rem;
-    left: 1rem;
-    background: var(--prc-red);
-    border-radius: 4px;
-    padding: 8px;
-    width: 40px;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  }
-
-  /* Hide text in collapsed state by default */
-  .logo-title h1,
-  .logo-title p,
-  .user-info span,
-  .nav-link span {
-    display: none;
-  }
-
-  .sidebar.expanded .logo-title h1,
-  .sidebar.expanded .logo-title p,
-  .sidebar.expanded .user-info span,
-  .sidebar.expanded .nav-link span {
-    display: flex;
-  }
-
-  /* Adjust logo in mobile - compact sizes */
-  .logo-title {
-    justify-content: center;
-    padding: 0.5rem 0;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
-  }
-
-  .sidebar.expanded .logo-title {
-    padding: 0.8rem 0;
-    padding-left: 2.5rem; /* Space for mobile button when expanded */
-    gap: 0.8rem;
-    margin-bottom: 0.8rem;
-  }
-
-  .sidebar:not(.expanded) .logo-title {
-    padding-left: 0;
-  }
-
-  .logo-title img {
-    width: 30px;
-    min-width: 30px;
-  }
-
-  .sidebar.expanded .logo-title img {
-    width: 40px;
-    min-width: 40px;
-  }
-
-  .sidebar.expanded .logo-title h1 {
-    font-size: 1rem;
-  }
-
-  .sidebar.expanded .logo-title p {
-    font-size: 0.7rem;
-  }
-
-  /* User info compact styling */
-  .user-info {
-    justify-content: center;
-    padding: 5px 0;
-    margin-top: 0.5rem;
-  }
-
-  .sidebar.expanded .user-info {
-    justify-content: flex-start;
-    padding: 6px;
-    margin-top: 0.8rem;
-  }
-
   .sidebar.expanded .user-info i {
-    font-size: 1.2rem;
+    font-size: 1.35rem;
   }
 
-  .sidebar.expanded .user-info span {
-    font-size: 0.8rem;
+  /* Navigation Links */
+  .sidebar-nav {
+    padding: 1.2rem 0.3rem 1rem 0.3rem;
   }
 
-  /* Center align everything in collapsed state */
+  .sidebar.expanded .sidebar-nav {
+    padding: 1.5rem 0.5rem 1rem 0.5rem;
+  }
+
   .nav-link {
     justify-content: center;
     padding: 1rem 0;
+    margin: 0.2rem 0;
+    min-height: 52px;
   }
 
   .sidebar.expanded .nav-link {
     justify-content: flex-start;
-    padding: 0.5rem 1rem;
-    font-size: 0.8rem;
+    padding: 1rem 1.1rem;
+    margin: 0.3rem 0;
   }
 
-  /* Remove extra padding from nav when collapsed */
-  .sidebar-nav {
-    padding-top: 1rem;
+  .nav-link span {
+    display: none;
   }
 
-  .sidebar.expanded .sidebar-nav {
-    padding-top: 1.5rem;
+  .sidebar.expanded .nav-link span {
+    display: block;
+    font-size: 0.9rem;
+  }
+
+  .nav-link i {
+    font-size: 1.25rem;
+  }
+
+  .sidebar.expanded .nav-link i {
+    font-size: 1.2rem;
+  }
+
+  /* Touch-friendly active states */
+  .nav-link:active {
+    background: rgba(255, 255, 255, 0.25);
+    transform: scale(0.98);
+  }
+
+  .sidebar.expanded .nav-link:active {
+    transform: translateX(2px) scale(0.98);
+  }
+
+  /* Notification Section */
+  .sidebar-notification-section {
+    padding: 0.3rem 0.3rem 0.8rem;
+  }
+
+  .sidebar.expanded .sidebar-notification-section {
+    padding: 0.5rem 0.5rem 1rem;
+  }
+
+  .sidebar .notification-bell {
+    justify-content: center;
+    padding: 1rem 0;
+    min-height: 52px;
+  }
+
+  .sidebar.expanded .notification-bell {
+    justify-content: flex-start;
+    padding: 1rem 1.1rem;
+  }
+
+  .sidebar .notification-bell span {
+    display: none;
+  }
+
+  .sidebar.expanded .notification-bell span {
+    display: block;
+  }
+
+  .sidebar .notification-badge {
+    left: 50%;
+    transform: translateX(-50%);
+    top: 0.6rem;
+  }
+
+  .sidebar.expanded .notification-badge {
+    left: 1.3rem;
+    transform: none;
+  }
+
+  /* Notification Panel */
+  .sidebar .notification-panel {
+    left: 100%;
+    bottom: 0;
+    width: 300px;
+    margin-left: 0.5rem;
+    margin-bottom: 0;
+  }
+
+  .sidebar.expanded .notification-panel {
+    left: 0;
+    right: 0;
+    width: auto;
+    bottom: 100%;
+    margin-left: 0;
+    margin-bottom: 0.5rem;
+  }
+
+  /* Mobile Overlay */
+  .sidebar.expanded + .sidebar-mobile-overlay,
+  body.sidebar-expanded .sidebar-mobile-overlay {
+    display: block;
+  }
+
+  body.sidebar-expanded {
+    overflow: hidden;
+  }
+
+  /* Logout Link */
+  .logout-link {
+    margin-top: 0.5rem;
+  }
+
+  .sidebar.expanded .logout-link {
+    margin-top: auto;
   }
 }
 
-/* Very small devices */
-@media (max-width: 350px) {
+/* Small Mobile Devices */
+@media (max-width: 480px) {
   .sidebar.expanded {
-    width: 100vw;
-    z-index: 1000;
+    width: 260px;
   }
 
-  .sidebar-header {
-    padding: 0.6rem;
+  .mobile-menu-fab {
+    width: 56px;
+    height: 56px;
+    top: 1rem;
+    left: 1rem;
+  }
+
+  .mobile-menu-fab i {
+    font-size: 1.4rem;
+  }
+
+  .mobile-menu-fab .fab-notification-badge {
+    width: 20px;
+    height: 20px;
+    font-size: 0.65rem;
+  }
+
+  .sidebar.expanded .sidebar-header {
+    padding: 1rem 0.9rem;
+    padding-top: 1.2rem;
+  }
+
+  .sidebar.expanded .logo-title h1 {
+    font-size: 1.08rem;
+  }
+
+  .sidebar.expanded .logo-title p {
+    font-size: 0.72rem;
+  }
+
+  .sidebar.expanded .logo-title img {
+    width: 45px;
+    min-width: 45px;
+    height: 45px;
+  }
+
+  .sidebar.expanded .user-info span {
+    font-size: 0.85rem;
+  }
+
+  .sidebar.expanded .nav-link {
+    padding: 0.95rem 1rem;
+    font-size: 0.88rem;
+  }
+
+  .sidebar .notification-panel {
+    width: 280px;
+  }
+}
+
+/* Extra Small Mobile Devices */
+@media (max-width: 375px) {
+  .sidebar.expanded {
+    width: 240px;
+  }
+
+  .mobile-menu-fab {
+    width: 54px;
+    height: 54px;
+    top: 0.8rem;
+    left: 0.8rem;
+  }
+
+  .mobile-menu-fab i {
+    font-size: 1.35rem;
+  }
+
+  .mobile-menu-fab .fab-notification-badge {
+    width: 19px;
+    height: 19px;
+    font-size: 0.62rem;
+  }
+
+  .sidebar.expanded .sidebar-header {
+    padding: 0.9rem 0.8rem;
+    padding-top: 1rem;
+  }
+
+  .sidebar.expanded .logo-title {
+    gap: 0.65rem;
+  }
+
+  .sidebar.expanded .logo-title img {
+    width: 42px;
+    min-width: 42px;
+    height: 42px;
+  }
+
+  .sidebar.expanded .logo-title h1 {
+    font-size: 1.02rem;
+  }
+
+  .sidebar.expanded .logo-title p {
+    font-size: 0.68rem;
+  }
+
+  .sidebar.expanded .user-info {
+    padding: 0.7rem;
+  }
+
+  .sidebar.expanded .user-info span {
+    font-size: 0.82rem;
+  }
+
+  .sidebar.expanded .nav-link {
+    padding: 0.9rem 0.95rem;
+    font-size: 0.85rem;
+  }
+
+  .sidebar.expanded .nav-link i {
+    font-size: 1.15rem;
+  }
+
+  .sidebar .notification-panel {
+    width: 260px;
+  }
+}
+
+/* Landscape Mode on Mobile */
+@media (max-width: 900px) and (orientation: landscape) and (max-height: 500px) {
+  .sidebar.expanded {
+    width: 240px;
+  }
+
+  .mobile-menu-fab {
+    width: 50px;
+    height: 50px;
+    top: 0.8rem;
+    left: 0.8rem;
+  }
+
+  .mobile-menu-fab i {
+    font-size: 1.3rem;
   }
 
   .sidebar.expanded .sidebar-header {
     padding: 0.8rem;
-  }
-
-  .logo-title {
-    gap: 0.4rem;
-    margin-bottom: 0.4rem;
+    padding-top: 1rem;
   }
 
   .sidebar.expanded .logo-title {
-    gap: 0.6rem;
     margin-bottom: 0.6rem;
-    padding-left: 2rem; /* Less space for smaller button */
-  }
-
-  .logo-title img {
-    width: 25px;
-    min-width: 25px;
+    gap: 0.6rem;
   }
 
   .sidebar.expanded .logo-title img {
-    width: 35px;
-    min-width: 35px;
+    width: 38px;
+    min-width: 38px;
+    height: 38px;
   }
 
   .sidebar.expanded .logo-title h1 {
-    font-size: 0.9rem;
+    font-size: 0.95rem;
   }
 
   .sidebar.expanded .logo-title p {
     font-size: 0.65rem;
   }
 
-  .user-info {
-    margin-top: 0.4rem;
-  }
-
   .sidebar.expanded .user-info {
-    padding: 5px;
+    padding: 0.6rem;
     margin-top: 0.6rem;
   }
 
-  .sidebar.expanded .user-info i {
-    font-size: 1.1rem;
-  }
-
   .sidebar.expanded .user-info span {
-    font-size: 0.75rem;
-  }
-
-  .nav-link {
-    padding: 0.75rem 1rem;
-  }
-
-  .mobile-collapse-btn {
-    top: 0.5rem;
-    left: 0.5rem;
-    width: 35px;
-    height: 35px;
-    font-size: 1.2rem;
-  }
-}
-
-/* Landscape tablets */
-@media (max-width: 992px) and (min-width: 769px) and (orientation: landscape) {
-  .sidebar {
-    width: var(--sidebar-width);
-    transform: translateX(0);
-  }
-
-  .sidebar-header {
-    padding: 0.5rem;
-  }
-
-  .logo-title {
-    gap: 0.3rem;
-    margin-bottom: 0.3rem;
-  }
-
-  .logo-title img {
-    width: 25px;
-    min-width: 25px;
-  }
-
-  .logo-title h1 {
-    font-size: 0.8rem;
-  }
-
-  .logo-title p {
-    font-size: 0.55rem;
-  }
-
-  .user-info {
-    padding: 3px;
-    margin-top: 0.3rem;
-    gap: 4px;
-  }
-
-  .user-info i {
-    font-size: 0.9rem;
-  }
-
-  .user-info span {
-    font-size: 0.65rem;
-  }
-
-  .nav-link {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.7rem;
-  }
-
-  .collapse-btn {
-    display: flex;
-    width: 24px;
-    height: 24px;
-    bottom: -12px;
-  }
-
-  .collapse-btn i {
-    font-size: 0.6rem;
-  }
-
-  .mobile-collapse-btn {
-    display: none;
-  }
-
-  /* Show all text elements */
-  .logo-title h1,
-  .logo-title p,
-  .user-info span,
-  .nav-link span {
-    display: flex;
-  }
-
-  .nav-link {
-    justify-content: flex-start;
-  }
-
-  .user-info {
-    justify-content: flex-start;
+    font-size: 0.78rem;
   }
 
   .sidebar-nav {
-    padding-top: 0.8rem;
+    padding: 0.8rem 0.3rem 0.5rem;
+  }
+
+  .sidebar.expanded .sidebar-nav {
+    padding: 1rem 0.4rem 0.5rem;
+  }
+
+  .sidebar.expanded .nav-link {
+    padding: 0.7rem 0.9rem;
+    margin: 0.15rem 0;
+    font-size: 0.8rem;
+    min-height: 44px;
+  }
+
+  .sidebar.expanded .nav-link i {
+    font-size: 1.05rem;
+  }
+
+  .mobile-collapse-btn {
+    width: 44px;
+    height: 44px;
+    top: 0.6rem;
+    left: 0.6rem;
+  }
+
+  .sidebar-notification-section {
+    padding: 0.3rem 0.3rem 0.5rem;
+  }
+}
+
+/* Focus States for Accessibility */
+.nav-link:focus,
+.collapse-btn:focus,
+.mobile-collapse-btn:focus,
+.notification-bell:focus {
+  outline: 2px solid rgba(255, 255, 255, 0.8);
+  outline-offset: 2px;
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Main Content Adjustment */
+@media (min-width: 769px) {
+  .main-content {
+    margin-left: var(--sidebar-width);
+    transition: margin-left var(--transition-speed);
+  }
+
+  .sidebar.collapsed ~ .main-content {
+    margin-left: var(--sidebar-collapsed-width);
   }
 }
 
 /* Touch device improvements */
 @media (hover: none) and (pointer: coarse) {
-  .nav-link {
-    min-height: 44px;
-    padding: 1rem 1.5rem;
+  .nav-link,
+  .sidebar .notification-bell {
+    min-height: 52px;
   }
 
-  .collapse-btn,
+  .sidebar.expanded .nav-link,
+  .sidebar.expanded .notification-bell {
+    min-height: 56px;
+  }
+
   .mobile-collapse-btn {
-    min-width: 44px;
-    min-height: 44px;
+    display: none;
   }
 
-  .nav-link:active {
-    background-color: rgba(255, 255, 255, 0.25);
+  .mobile-menu-fab {
+    min-width: 60px;
+    min-height: 60px;
+  }
+
+  /* Larger touch targets */
+  .nav-link:active,
+  .sidebar .notification-bell:active {
+    background: rgba(255, 255, 255, 0.25);
+  }
+
+  .mobile-collapse-btn:active {
+    transform: scale(0.92);
   }
 }
 
@@ -1096,68 +1186,5 @@
 
   .nav-link {
     border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-  }
-}
-
-/* Reduced motion support */
-@media (prefers-reduced-motion: reduce) {
-  .sidebar {
-    transition: none;
-  }
-
-  .collapse-btn i {
-    transition: none;
-  }
-
-  * {
-    transition: none !important;
-  }
-}
-
-/* Overlay for mobile */
-.sidebar-mobile-overlay {
-  display: none;
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 99;
-}
-
-@media (max-width: 768px) {
-  .sidebar.expanded + .sidebar-mobile-overlay,
-  body.sidebar-expanded .sidebar-mobile-overlay {
-    display: block;
-  }
-
-  body.sidebar-expanded {
-    overflow: hidden;
-  }
-}
-
-/* Improved focus states for accessibility */
-.nav-link:focus,
-.collapse-btn:focus,
-.mobile-collapse-btn:focus {
-  outline: 2px solid white;
-  outline-offset: -2px;
-}
-
-/* Ensure sidebar doesn't cause horizontal scroll */
-.sidebar {
-  max-width: 100vw;
-}
-
-/* Fix for main content when sidebar is visible */
-@media (min-width: 769px) {
-  .main-content {
-    margin-left: var(--sidebar-width);
-    transition: margin-left var(--transition-speed);
-  }
-
-  .sidebar.collapsed ~ .main-content {
-    margin-left: var(--sidebar-collapsed-width);
   }
 }

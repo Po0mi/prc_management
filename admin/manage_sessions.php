@@ -1175,7 +1175,7 @@ if (!function_exists('get_role_color')) {
         <?php endif; ?>
         
         <?php if ($reg['status'] !== 'pending'): ?>
-            <form method="POST" style="display: inline; margin-bottom: 0.3rem;">
+            <form method="POST" style="display: inline; ">
                 <input type="hidden" name="update_registration_status" value="1">
                 <input type="hidden" name="registration_id" value="<?= (int)$reg['registration_id'] ?>">
                 <input type="hidden" name="new_status" value="pending">
@@ -1509,7 +1509,7 @@ if (!function_exists('get_role_color')) {
             </button>
         </div>
       
-      <form method="POST" id="sessionForm">
+      <form method="POST" id="sessionForm" style="display: inline; padding: 1rem;">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
             <input type="hidden" name="create_session" value="1" id="formAction">
             <input type="hidden" name="session_id" id="sessionId">
@@ -1677,6 +1677,7 @@ if (!function_exists('get_role_color')) {
   <script src="../admin/js/sidebar-notifications.js?v=<?php echo time(); ?>"></script>
 <script src="../user/js/general-ui.js?v=<?php echo time(); ?>"></script>
   <?php include 'chat_widget.php'; ?>
+    <?php include 'floating_notification_widget.php'; ?>
 <script>
 // COMPLETE JAVASCRIPT FIX FOR manage_sessions.php
 // Replace all your existing JavaScript with this cleaned-up version
