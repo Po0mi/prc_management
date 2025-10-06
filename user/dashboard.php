@@ -341,8 +341,8 @@ $userNotifications = getUserNotifications($latestReg, $upcomingEvents, $isNewUse
 
           <!-- Upcoming Events Table -->
           <div class="card-compact">
-            <div class="card-header-compact">
-              <h3><i class="fas fa-calendar"></i> Upcoming Events</h3>
+            <div class="card-header-compact" style="background: linear-gradient(135deg, var(--success), #20c997);">
+              <h3 style="color: white;"><i class="fas fa-calendar" style="color: white;"></i> Upcoming Events</h3>
               <a href="registration.php" class="link-small">View All <i class="fas fa-arrow-right"></i></a>
             </div>
             <div class="table-container">
@@ -422,8 +422,8 @@ $userNotifications = getUserNotifications($latestReg, $upcomingEvents, $isNewUse
 
           <!-- Training Sessions Table -->
           <div class="card-compact">
-            <div class="card-header-compact">
-              <h3><i class="fas fa-graduation-cap"></i> Training Sessions</h3>
+            <div class="card-header-compact" style="background: linear-gradient(135deg, var(--info), #6610f2);">
+              <h3 style="color: white;"><i class="fas fa-graduation-cap" style="color: white;"></i> Training Sessions</h3>
               <a href="schedule.php" class="link-small">View All <i class="fas fa-arrow-right"></i></a>
             </div>
             <div class="table-container">
@@ -501,8 +501,8 @@ $userNotifications = getUserNotifications($latestReg, $upcomingEvents, $isNewUse
           </div>
           <!-- My Training Requests -->
 <div class="card-compact">
-    <div class="card-header-compact">
-        <h3><i class="fas fa-chalkboard-teacher"></i> My Training Requests</h3>
+            <div class="card-header-compact" style="background: linear-gradient(135deg, var(--info), #6610f2);">
+        <h3 style="color: white;"><i class="fas fa-chalkboard-teacher" style="color: white;"></i> My Training Requests</h3>
         <a href="schedule.php#training-requests" class="link-small">View All <i class="fas fa-arrow-right"></i></a>
     </div>
     <div class="table-container">

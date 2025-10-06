@@ -103,6 +103,7 @@ body {
   box-shadow: var(--shadow-lg);
   color: var(--white);
   text-align: center;
+  border-radius: 10px;
 }
 
 .hero-background {

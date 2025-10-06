@@ -692,8 +692,8 @@ $role_display = $role_info['name'];
           <!-- Recent Events -->
           <?php if (!empty($activity['events'])): ?>
           <div class="card-compact">
-            <div class="card-header-compact">
-              <h3><i class="fas fa-calendar"></i> Recent Events</h3>
+            <div class="card-header-compact" style="background: linear-gradient(135deg, var(--success), #20c997);">
+              <h3 style="color: white;"><i class="fas fa-calendar"style="color: white;"></i> Recent Events</h3>
               <a href="manage_events.php" class="link-small">View All <i class="fas fa-arrow-right"></i></a>
             </div>
             <div class="list-compact">
@@ -717,8 +717,8 @@ $role_display = $role_info['name'];
           <!-- Recent Training Sessions -->
 <?php if (!empty($activity['sessions'])): ?>
 <div class="card-compact">
-  <div class="card-header-compact">
-    <h3><i class="fas fa-graduation-cap"></i> Recent Training Sessions</h3>
+  <div class="card-header-compact" style="background: linear-gradient(135deg, var(--info), #6610f2);">
+    <h3 style="color: white;"><i class="fas fa-graduation-cap" style="color: white;"></i> Recent Training Sessions</h3>
     <a href="manage_sessions.php" class="link-small">View All <i class="fas fa-arrow-right"></i></a>
   </div>
   <div class="list-compact">
@@ -745,8 +745,8 @@ $role_display = $role_info['name'];
           <!-- Training Requests -->
           <?php if (!empty($activity['training_requests'])): ?>
           <div class="card-compact">
-            <div class="card-header-compact">
-              <h3><i class="fas fa-clipboard-list"></i> Training Requests</h3>
+           <div class="card-header-compact" style="background: linear-gradient(135deg, var(--info), #6610f2);">
+              <h3 style="color: white;"><i class="fas fa-clipboard-list" style="color: white;"></i> Training Requests</h3>
               <a href="manage_training_requests.php" class="link-small">View All <i class="fas fa-arrow-right"></i></a>
             </div>
             <div class="list-compact">
@@ -770,8 +770,8 @@ $role_display = $role_info['name'];
           <!-- Inventory Alerts -->
           <?php if (!empty($activity['inventory'])): ?>
           <div class="card-compact alert-card">
-            <div class="card-header-compact">
-              <h3><i class="fas fa-exclamation-triangle"></i> Inventory Alerts</h3>
+            <div class="card-header-compact" style="background: linear-gradient(135deg, var(--warning), #e07c24);">
+              <h3 style="color: white;"><i class="fas fa-exclamation-triangle" style="color: white;"></i> Inventory Alerts</h3>
               <a href="manage_inventory.php" class="link-small">Manage <i class="fas fa-arrow-right"></i></a>
             </div>
             <div class="list-compact">

@@ -1431,7 +1431,7 @@ form {
 .registrations-table tbody td {
   padding: var(--spacing-lg);
   border-bottom: 1px solid var(--gray-200);
-  vertical-align: top;
+  vertical-align: center;
   font-size: 0.875rem;
 }
 
