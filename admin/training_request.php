@@ -12,6 +12,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../user/notifications_api.php';
 ensure_logged_in();
 ensure_admin();
 
@@ -260,6 +261,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_request_status
                     $result = $stmt->execute([$newStatus, $adminNotes, $current_user_id, $requestId]);
                     
                     if ($result) {
+    try {
+        notifyTrainingRequest($pdo, $requestId, $newStatus);
+    } catch (Exception $e) {
+        error_log("Notification error: " . $e->getMessage());
+    }
                         // If status changed to approved, automatically create training session
                         if ($shouldCreateSession) {
                             try {
@@ -395,7 +401,7 @@ if (empty($request['preferred_start_time']) && empty($request['preferred_end_tim
                         } else {
                             $successMessage = "Training request status updated successfully!";
                         }
-                        
+                         notifyTrainingRequest($pdo, $requestId, $newStatus);
                         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
                     } else {
                         $errorMessage = "Failed to update request status.";

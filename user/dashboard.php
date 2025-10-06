@@ -122,7 +122,23 @@ try {
 } catch (PDOException $e) {
     $announcements = [];
 }
-
+// Get user's training requests
+try {
+    $userRequestsStmt = $pdo->prepare("
+        SELECT tr.*, tp.program_name
+        FROM training_requests tr
+        LEFT JOIN training_programs tp ON tr.training_program = tp.program_code 
+            AND tr.service_type = tp.service_type
+        WHERE tr.user_id = ?
+        ORDER BY tr.created_at DESC
+        LIMIT 5
+    ");
+    $userRequestsStmt->execute([$userId]);
+    $userTrainingRequests = $userRequestsStmt->fetchAll();
+} catch (PDOException $e) {
+    error_log("Error fetching training requests: " . $e->getMessage());
+    $userTrainingRequests = [];
+}
 // Get user notifications
 function getUserNotifications($latestReg, $upcomingEvents, $isNewUser, $userType) {
     $notifications = [];
@@ -483,7 +499,85 @@ $userNotifications = getUserNotifications($latestReg, $upcomingEvents, $isNewUse
               <?php endif; ?>
             </div>
           </div>
-
+          <!-- My Training Requests -->
+<div class="card-compact">
+    <div class="card-header-compact">
+        <h3><i class="fas fa-chalkboard-teacher"></i> My Training Requests</h3>
+        <a href="schedule.php#training-requests" class="link-small">View All <i class="fas fa-arrow-right"></i></a>
+    </div>
+    <div class="table-container">
+        <?php if (!empty($userTrainingRequests)): ?>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th><i class="fas fa-hashtag"></i> Request</th>
+                    <th><i class="fas fa-graduation-cap"></i> Program</th>
+                    <th><i class="fas fa-users"></i> Participants</th>
+                    <th><i class="fas fa-calendar"></i> Requested Date</th>
+                    <th><i class="fas fa-info-circle"></i> Status</th>
+                    <th><i class="fas fa-clock"></i> Submitted</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($userTrainingRequests as $request): ?>
+                <tr>
+                    <td class="td-title">
+                        <div class="table-title">
+                            <i class="fas fa-file-alt"></i>
+                            #<?= $request['request_id'] ?>
+                        </div>
+                    </td>
+                    <td>
+                        <span class="service-tag-small"><?= htmlspecialchars($request['service_type']) ?></span>
+                        <div style="font-size: 0.8rem; margin-top: 0.2rem;">
+                            <?= htmlspecialchars($request['program_name'] ?: $request['training_program']) ?>
+                        </div>
+                    </td>
+                    <td>
+                        <span class="count-badge"><?= $request['participant_count'] ?></span>
+                    </td>
+                    <td class="td-date">
+                        <?php if ($request['preferred_start_date']): ?>
+                            <?= date('M d, Y', strtotime($request['preferred_start_date'])) ?>
+                            <?php if ($request['preferred_end_date'] && $request['preferred_end_date'] !== $request['preferred_start_date']): ?>
+                                <span style="font-size: 0.75rem; color: var(--gray);">
+                                    to <?= date('M d', strtotime($request['preferred_end_date'])) ?>
+                                </span>
+                            <?php endif; ?>
+                        <?php else: ?>
+                            <span style="font-style: italic; color: var(--gray);">Flexible</span>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <span class="badge-status <?= $request['status'] ?>">
+                            <i class="fas <?= 
+                                $request['status'] === 'pending' ? 'fa-clock' : 
+                                ($request['status'] === 'under_review' ? 'fa-search' :
+                                ($request['status'] === 'approved' ? 'fa-check-circle' :
+                                ($request['status'] === 'scheduled' ? 'fa-calendar-check' :
+                                ($request['status'] === 'completed' ? 'fa-graduation-cap' : 'fa-times-circle')))) ?>"></i>
+                            <?= ucwords(str_replace('_', ' ', $request['status'])) ?>
+                        </span>
+                    </td>
+                    <td class="td-date">
+                        <?= date('M d, Y', strtotime($request['created_at'])) ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+        <?php else: ?>
+        <div class="empty-table">
+            <i class="fas fa-clipboard-list"></i>
+            <h4>No Training Requests</h4>
+            <p>You haven't submitted any training requests yet</p>
+            <a href="schedule.php" class="btn-table primary" style="margin-top: 1rem;">
+                <i class="fas fa-plus"></i> Request Training
+            </a>
+        </div>
+        <?php endif; ?>
+    </div>
+</div>
         </div>
 
         <!-- Right Column -->

@@ -19,6 +19,7 @@ if (isset($_GET['show_archived']) && $_GET['show_archived'] === '1') {
     $whereConditions[] = "e.archived = 0";
 }
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../user/notifications_api.php';
 ensure_logged_in();
 ensure_admin();
 
@@ -469,6 +470,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_registration_s
                     $result = $stmt->execute([$new_status, $registration_id]);
                     
                     if ($result) {
+                            try {
+        notifyEventRegistration($pdo, $registration_id, $new_status);
+    } catch (Exception $e) {
+        error_log("Notification error: " . $e->getMessage());
+    }
                         $successMessage = "Registration status updated successfully!";
                         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
                     } else {

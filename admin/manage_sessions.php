@@ -12,6 +12,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../user/notifications_api.php'; 
 ensure_logged_in();
 ensure_admin();
 
@@ -419,7 +420,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_session'])) {
     }
 }
 
-// Handle REGISTRATION ACTIONS
+
 // Handle REGISTRATION ACTIONS
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_registration_status'])) {
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
@@ -456,6 +457,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_registration_s
                     $result = $stmt->execute([$new_status, $registration_id]);
                     
                     if ($result && $stmt->rowCount() > 0) {
+                        // SEND NOTIFICATION TO USER
+                        try {
+                            notifySessionRegistration($pdo, $registration_id, $new_status);
+                        } catch (Exception $e) {
+                            error_log("Notification error: " . $e->getMessage());
+                        }
+                        
                         $successMessage = "Registration status updated to '$new_status' successfully!";
                         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
                     } else {

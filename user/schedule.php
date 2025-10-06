@@ -2034,7 +2034,6 @@ try {
 
   <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
   <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
-
   <?php include 'chat_widget.php'; ?>
   <?php include 'floating_notification_widget.php'; ?>
   <script> 

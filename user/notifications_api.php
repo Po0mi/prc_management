@@ -3,63 +3,74 @@
 ini_set('display_errors', 0);
 error_reporting(E_ALL);
 
-try {
-    require_once __DIR__ . '/../config.php';
-    
-    if (!isset($_SESSION['user_id'])) {
-        throw new Exception('User not logged in');
-    }
+// Only execute API logic if called directly with an action parameter
+if (isset($_GET['action']) || isset($_POST['action'])) {
+    try {
+        require_once __DIR__ . '/../config.php';
+        
+        if (!isset($_SESSION['user_id'])) {
+            throw new Exception('User not logged in');
+        }
 
-    $pdo = $GLOBALS['pdo'];
-    $user_id = $_SESSION['user_id'];
-    $action = $_GET['action'] ?? 'check';
+        $pdo = $GLOBALS['pdo'];
+        $user_id = $_SESSION['user_id'];
+        $action = $_GET['action'] ?? $_POST['action'] ?? 'check';
 
-    header('Content-Type: application/json');
-    header('Cache-Control: no-cache, must-revalidate');
+        header('Content-Type: application/json');
+        header('Cache-Control: no-cache, must-revalidate');
 
-    switch ($action) {
-        case 'check':
-            $since = isset($_GET['since']) ? (int)$_GET['since'] : 0;
-            $sinceDate = $since > 0 ? date('Y-m-d H:i:s', $since / 1000) : date('Y-m-d H:i:s', strtotime('-1 hour'));
-            
-            $notifications = getNewNotifications($pdo, $user_id, $sinceDate);
-            echo json_encode([
-                'success' => true,
-                'notifications' => $notifications,
-                'count' => count($notifications),
-                'timestamp' => date('c')
-            ]);
-            break;
-
-        case 'mark_read':
-            if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-                $input = json_decode(file_get_contents('php://input'), true);
-                $result = markAsRead($pdo, $user_id, $input['notification_id'] ?? '');
+        switch ($action) {
+            case 'check':
+                $since = isset($_GET['since']) ? (int)$_GET['since'] : 0;
+                $sinceDate = $since > 0 ? date('Y-m-d H:i:s', $since / 1000) : date('Y-m-d H:i:s', strtotime('-1 hour'));
+                
+                $notifications = getNewNotifications($pdo, $user_id, $sinceDate);
                 echo json_encode([
-                    'success' => $result,
-                    'message' => $result ? 'Marked as read' : 'Failed'
+                    'success' => true,
+                    'notifications' => $notifications,
+                    'count' => count($notifications),
+                    'timestamp' => date('c')
                 ]);
-            }
-            break;
+                break;
 
-        case 'mark_all_read':
-            if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-                $result = markAllAsRead($pdo, $user_id);
-                echo json_encode([
-                    'success' => $result,
-                    'message' => $result ? 'All marked as read' : 'Failed'
-                ]);
-            }
-            break;
+            case 'mark_read':
+                if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+                    $input = json_decode(file_get_contents('php://input'), true);
+                    $result = markAsRead($pdo, $user_id, $input['notification_id'] ?? '');
+                    echo json_encode([
+                        'success' => $result,
+                        'message' => $result ? 'Marked as read' : 'Failed'
+                    ]);
+                }
+                break;
 
-        default:
-            echo json_encode(['success' => false, 'message' => 'Invalid action']);
+            case 'mark_all_read':
+                if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+                    $result = markAllAsRead($pdo, $user_id);
+                    echo json_encode([
+                        'success' => $result,
+                        'message' => $result ? 'All marked as read' : 'Failed'
+                    ]);
+                }
+                break;
+
+            default:
+                echo json_encode(['success' => false, 'message' => 'Invalid action']);
+        }
+
+    } catch (Exception $e) {
+        error_log("Notification API Error: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Server error']);
     }
-
-} catch (Exception $e) {
-    error_log("Notification API Error: " . $e->getMessage());
-    echo json_encode(['success' => false, 'message' => 'Server error']);
+    exit();
 }
+
+// If we get here, file is being included - just load config and define functions
+require_once __DIR__ . '/../config.php';
+
+// ============================================
+// FUNCTION DEFINITIONS
+// ============================================
 
 function getNewNotifications($pdo, $user_id, $sinceDate) {
     $notifications = [];

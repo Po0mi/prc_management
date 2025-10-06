@@ -108,8 +108,7 @@ $announcements = $stmt->fetchAll();
     <script src="js/announcements.js"></script>
     <script src="js/sidebar.js?v=<?php echo time(); ?>"></script>
     <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
-
-        <?php include 'chat_widget.php'; ?>
-        <?php include 'floating_notification_widget.php'; ?>
+    <?php include 'chat_widget.php'; ?>
+    <?php include 'floating_notification_widget.php'; ?>
 </body>
 </html>
