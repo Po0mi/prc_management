@@ -13,10 +13,16 @@ $user_role = get_user_role();
 $admin_role = $_SESSION['admin_role'] ?? 'super';
 
 // Only super admin and specific roles can manage merchandise
-$allowed_roles = ['super', 'welfare']; // Welfare can manage merchandise as it's related to community support
+$allowed_roles = ['super', 'welfare'];
 if (!in_array($admin_role, $allowed_roles)) {
     header('Location: dashboard.php');
     exit;
+}
+
+// Create uploads directory if it doesn't exist
+$upload_dir = __DIR__ . '/../uploads/merchandise/';
+if (!file_exists($upload_dir)) {
+    mkdir($upload_dir, 0755, true);
 }
 
 // Create merchandise table if it doesn't exist
@@ -29,6 +35,7 @@ $pdo->exec("
       `price` decimal(10,2) NOT NULL DEFAULT 0.00,
       `stock_quantity` int(11) NOT NULL DEFAULT 0,
       `image_url` varchar(500) DEFAULT NULL,
+      `image_type` enum('upload','url') DEFAULT 'url',
       `is_available` tinyint(1) NOT NULL DEFAULT 1,
       `created_by` int(11) DEFAULT NULL,
       `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
@@ -41,12 +48,11 @@ $pdo->exec("
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ");
 
-// Add created_by column if it doesn't exist
+// Add image_type column if it doesn't exist
 try {
-    $stmt = $pdo->query("SHOW COLUMNS FROM merchandise LIKE 'created_by'");
+    $stmt = $pdo->query("SHOW COLUMNS FROM merchandise LIKE 'image_type'");
     if ($stmt->rowCount() == 0) {
-        $pdo->exec("ALTER TABLE `merchandise` ADD COLUMN `created_by` int(11) DEFAULT NULL");
-        $pdo->exec("ALTER TABLE `merchandise` ADD FOREIGN KEY (`created_by`) REFERENCES `users`(`user_id`) ON DELETE SET NULL");
+        $pdo->exec("ALTER TABLE `merchandise` ADD COLUMN `image_type` enum('upload','url') DEFAULT 'url' AFTER `image_url`");
     }
 } catch (PDOException $e) {
     error_log("Merchandise table migration error: " . $e->getMessage());
@@ -59,38 +65,91 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_merch'])) {
     $category = $_POST['category'];
     $price = (float)$_POST['price'];
     $stock_quantity = (int)$_POST['stock_quantity'];
-    $image_url = trim($_POST['image_url']);
     $is_available = isset($_POST['is_available']) ? 1 : 0;
     $merch_id = isset($_POST['merch_id']) ? (int)$_POST['merch_id'] : 0;
     
-    if ($name && $category && $price >= 0 && $stock_quantity >= 0) {
+    $image_url = '';
+    $image_type = 'url';
+    
+    // Handle image upload
+    if (isset($_FILES['image_file']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
+        $file = $_FILES['image_file'];
+        $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+        $max_size = 5 * 1024 * 1024; // 5MB
+        
+        if (!in_array($file['type'], $allowed_types)) {
+            $errorMessage = "Invalid file type. Only JPG, PNG, GIF, and WebP are allowed.";
+        } elseif ($file['size'] > $max_size) {
+            $errorMessage = "File too large. Maximum size is 5MB.";
+        } else {
+            // Generate unique filename
+            $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
+            $filename = 'merch_' . time() . '_' . uniqid() . '.' . $extension;
+            $filepath = $upload_dir . $filename;
+            
+            if (move_uploaded_file($file['tmp_name'], $filepath)) {
+                $image_url = 'uploads/merchandise/' . $filename;
+                $image_type = 'upload';
+                
+                // Delete old image if updating
+                if ($merch_id) {
+                    $stmt = $pdo->prepare("SELECT image_url, image_type FROM merchandise WHERE merch_id = ?");
+                    $stmt->execute([$merch_id]);
+                    $old_merch = $stmt->fetch();
+                    if ($old_merch && $old_merch['image_type'] === 'upload' && $old_merch['image_url']) {
+                        $old_file = __DIR__ . '/../' . $old_merch['image_url'];
+                        if (file_exists($old_file)) {
+                            unlink($old_file);
+                        }
+                    }
+                }
+            } else {
+                $errorMessage = "Failed to upload image.";
+            }
+        }
+    } elseif (isset($_POST['image_url']) && trim($_POST['image_url'])) {
+        // Use URL if provided
+        $image_url = trim($_POST['image_url']);
+        $image_type = 'url';
+    } elseif ($merch_id) {
+        // Keep existing image if editing and no new image provided
+        $stmt = $pdo->prepare("SELECT image_url, image_type FROM merchandise WHERE merch_id = ?");
+        $stmt->execute([$merch_id]);
+        $existing = $stmt->fetch();
+        if ($existing) {
+            $image_url = $existing['image_url'];
+            $image_type = $existing['image_type'];
+        }
+    }
+    
+    if (!$errorMessage && $name && $category && $price >= 0 && $stock_quantity >= 0) {
         try {
             if ($merch_id) {
                 // Update existing item
                 $stmt = $pdo->prepare("
                     UPDATE merchandise 
                     SET name = ?, description = ?, category = ?, price = ?, 
-                        stock_quantity = ?, image_url = ?, is_available = ?
+                        stock_quantity = ?, image_url = ?, image_type = ?, is_available = ?
                     WHERE merch_id = ?
                 ");
                 $stmt->execute([$name, $description, $category, $price, 
-                               $stock_quantity, $image_url, $is_available, $merch_id]);
+                               $stock_quantity, $image_url, $image_type, $is_available, $merch_id]);
                 $successMessage = "Merchandise item updated successfully!";
             } else {
                 // Add new item
                 $stmt = $pdo->prepare("
                     INSERT INTO merchandise 
-                    (name, description, category, price, stock_quantity, image_url, is_available, created_by) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (name, description, category, price, stock_quantity, image_url, image_type, is_available, created_by) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([$name, $description, $category, $price, 
-                               $stock_quantity, $image_url, $is_available, $user_id]);
+                               $stock_quantity, $image_url, $image_type, $is_available, $user_id]);
                 $successMessage = "New merchandise item added successfully!";
             }
         } catch (PDOException $e) {
             $errorMessage = "Error saving merchandise: " . $e->getMessage();
         }
-    } else {
+    } elseif (!$errorMessage) {
         $errorMessage = "Please fill in all required fields with valid values.";
     }
 }
@@ -100,10 +159,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_merch'])) {
     $merch_id = (int)$_POST['merch_id'];
     
     try {
+        // Get image info before deleting
+        $stmt = $pdo->prepare("SELECT image_url, image_type FROM merchandise WHERE merch_id = ?");
+        $stmt->execute([$merch_id]);
+        $merch = $stmt->fetch();
+        
+        // Delete from database
         $stmt = $pdo->prepare("DELETE FROM merchandise WHERE merch_id = ?");
         $stmt->execute([$merch_id]);
         
         if ($stmt->rowCount() > 0) {
+            // Delete image file if it was uploaded
+            if ($merch && $merch['image_type'] === 'upload' && $merch['image_url']) {
+                $image_file = __DIR__ . '/../' . $merch['image_url'];
+                if (file_exists($image_file)) {
+                    unlink($image_file);
+                }
+            }
             $successMessage = "Merchandise item deleted successfully!";
         } else {
             $errorMessage = "Item not found or already deleted.";
@@ -407,13 +479,23 @@ $stock_filters = [
                   $stock_class = 'in-stock';
                   $stock_text = 'In Stock';
                 }
+                
+                // Build image path
+                $image_path = '';
+                if ($item['image_url']) {
+                    if ($item['image_type'] === 'upload') {
+                        $image_path = '../' . $item['image_url'];
+                    } else {
+                        $image_path = $item['image_url'];
+                    }
+                }
               ?>
               <tr>
                 <td>
                   <div style="display: flex; align-items: center; gap: 1rem;">
                     <div style="width: 50px; height: 50px; border-radius: 8px; background: #f8f9fa; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                      <?php if ($item['image_url']): ?>
-                        <img src="<?= htmlspecialchars($item['image_url']) ?>" 
+                      <?php if ($image_path): ?>
+                        <img src="<?= htmlspecialchars($image_path) ?>" 
                              alt="<?= htmlspecialchars($item['name']) ?>" 
                              style="width: 100%; height: 100%; object-fit: cover; border-radius: 8px;">
                       <?php else: ?>
@@ -505,7 +587,7 @@ $stock_filters = [
         </button>
       </div>
       
-      <form method="POST" id="merchForm">
+      <form method="POST" id="merchForm" enctype="multipart/form-data">
         <input type="hidden" name="save_merch" value="1">
         <input type="hidden" name="merch_id" id="merchId">
         
@@ -541,10 +623,36 @@ $stock_filters = [
             <label>Initial Stock Quantity *</label>
             <input type="number" name="stock_quantity" id="merchStock" min="0" required placeholder="0">
           </div>
-          
-          <div class="form-group">
-            <label>Image URL</label>
-            <input type="url" name="image_url" id="merchImage" placeholder="https://example.com/image.jpg">
+        </div>
+        
+        <div class="form-group">
+          <label>Product Image</label>
+          <div style="display: flex; flex-direction: column; gap: 1rem;">
+            <!-- Image Preview -->
+            <div id="imagePreview" style="display: none; margin-bottom: 0.5rem;">
+              <img id="previewImg" src="" alt="Preview" style="max-width: 200px; max-height: 200px; border-radius: 8px; border: 2px solid #e9ecef;">
+              <button type="button" onclick="clearImage()" style="display: block; margin-top: 0.5rem; color: #dc3545; background: none; border: none; cursor: pointer;">
+                <i class="fas fa-times"></i> Remove Image
+              </button>
+            </div>
+            
+            <!-- Upload Option -->
+            <div class="image-upload-box" style="border: 2px dashed #dee2e6; border-radius: 8px; padding: 1.5rem; text-align: center; background: #f8f9fa; cursor: pointer;" onclick="document.getElementById('imageFile').click()">
+              <i class="fas fa-cloud-upload-alt" style="font-size: 2rem; color: #6c757d; margin-bottom: 0.5rem;"></i>
+              <p style="margin: 0; color: #6c757d;">Click to upload image</p>
+              <small style="color: #adb5bd;">JPG, PNG, GIF, WebP (Max 5MB)</small>
+              <input type="file" name="image_file" id="imageFile" accept="image/jpeg,image/png,image/gif,image/webp" style="display: none;" onchange="previewImage(this)">
+            </div>
+            
+            <!-- OR Divider -->
+            <div style="text-align: center; color: #6c757d; margin: 0.5rem 0;">
+              <span style="background: white; padding: 0 0.5rem;">OR</span>
+            </div>
+            
+            <!-- URL Option -->
+            <div>
+              <input type="url" name="image_url" id="merchImage" placeholder="Or paste image URL: https://example.com/image.jpg" style="width: 100%;">
+            </div>
           </div>
         </div>
         
@@ -615,6 +723,36 @@ $stock_filters = [
     <?php include 'chat_widget.php'; ?>
       <?php include 'floating_notification_widget.php'; ?>
   <script>
+    // Image Preview Function
+    function previewImage(input) {
+      const preview = document.getElementById('imagePreview');
+      const previewImg = document.getElementById('previewImg');
+      const urlInput = document.getElementById('merchImage');
+      
+      if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        
+        reader.onload = function(e) {
+          previewImg.src = e.target.result;
+          preview.style.display = 'block';
+          // Clear URL input when file is selected
+          urlInput.value = '';
+        };
+        
+        reader.readAsDataURL(input.files[0]);
+      }
+    }
+    
+    function clearImage() {
+      const fileInput = document.getElementById('imageFile');
+      const preview = document.getElementById('imagePreview');
+      const previewImg = document.getElementById('previewImg');
+      
+      fileInput.value = '';
+      previewImg.src = '';
+      preview.style.display = 'none';
+    }
+    
     // Merchandise Management JavaScript
     
     function openMerchModal() {
@@ -622,6 +760,7 @@ $stock_filters = [
       document.getElementById('merchId').value = '';
       document.getElementById('merchForm').reset();
       document.getElementById('merchAvailable').checked = true;
+      clearImage();
       openModal('merchModal');
     }
     
@@ -633,8 +772,29 @@ $stock_filters = [
       document.getElementById('merchCategory').value = merch.category || '';
       document.getElementById('merchPrice').value = merch.price || '';
       document.getElementById('merchStock').value = merch.stock_quantity || '';
-      document.getElementById('merchImage').value = merch.image_url || '';
       document.getElementById('merchAvailable').checked = merch.is_available == 1;
+      
+      // Clear file input
+      document.getElementById('imageFile').value = '';
+      
+      // Handle existing image
+      if (merch.image_url) {
+        const preview = document.getElementById('imagePreview');
+        const previewImg = document.getElementById('previewImg');
+        
+        if (merch.image_type === 'upload') {
+          previewImg.src = '../' + merch.image_url;
+          preview.style.display = 'block';
+          document.getElementById('merchImage').value = '';
+        } else {
+          document.getElementById('merchImage').value = merch.image_url;
+          preview.style.display = 'none';
+        }
+      } else {
+        clearImage();
+        document.getElementById('merchImage').value = '';
+      }
+      
       openModal('merchModal');
     }
     
@@ -673,70 +833,13 @@ $stock_filters = [
       }
     }
     
-    // Real-time stock updates (WebSocket simulation)
-    function simulateStockUpdates() {
-      // This would normally connect to a WebSocket server
-      // For now, we'll simulate with random updates
-      setInterval(function() {
-        if (Math.random() < 0.1) { // 10% chance every 10 seconds
-          const stockBadges = document.querySelectorAll('.stock-badge');
-          if (stockBadges.length > 0) {
-            const randomBadge = stockBadges[Math.floor(Math.random() * stockBadges.length)];
-            const currentStock = parseInt(randomBadge.textContent);
-            
-            if (currentStock > 0 && Math.random() < 0.5) {
-              const newStock = Math.max(0, currentStock - 1);
-              randomBadge.textContent = newStock;
-              
-              // Update badge class
-              if (newStock === 0) {
-                randomBadge.className = 'stock-badge out-of-stock';
-              } else if (newStock <= 5) {
-                randomBadge.className = 'stock-badge low-stock';
-              }
-              
-              // Show notification
-              showNotification(`Stock updated: Product now has ${newStock} units remaining`);
-            }
-          }
-        }
-      }, 10000); // Check every 10 seconds
-    }
-    
-    function showNotification(message) {
-      // Create notification element
-      const notification = document.createElement('div');
-      notification.className = 'notification';
-      notification.innerHTML = `
-        <i class="fas fa-info-circle"></i>
-        <span>${message}</span>
-      `;
-      notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: #28a745;
-        color: white;
-        padding: 1rem 1.5rem;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        z-index: 10001;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        animation: slideInRight 0.3s ease-out;
-      `;
-      
-      document.body.appendChild(notification);
-      
-      // Auto-remove after 5 seconds
-      setTimeout(() => {
-        notification.style.animation = 'slideOutRight 0.3s ease-in forwards';
-        setTimeout(() => {
-          document.body.removeChild(notification);
-        }, 300);
-      }, 5000);
-    }
+    // Clear file input when URL is entered
+    document.getElementById('merchImage').addEventListener('input', function() {
+      if (this.value) {
+        document.getElementById('imageFile').value = '';
+        clearImage();
+      }
+    });
     
     // Add CSS animations
     const style = document.createElement('style');
@@ -813,6 +916,11 @@ $stock_filters = [
         from { opacity: 0; transform: translateY(20px); }
         to { opacity: 1; transform: translateY(0); }
       }
+      
+      .image-upload-box:hover {
+        background: #e9ecef !important;
+        border-color: #adb5bd !important;
+      }
     `;
     document.head.appendChild(style);
     
@@ -862,11 +970,6 @@ $stock_filters = [
           }, 300);
         }, 5000);
       });
-
-      // Initialize stock update simulation
-      if (window.location.search.includes('demo=true')) {
-        simulateStockUpdates();
-      }
 
       // Enhanced search
       const searchInput = document.querySelector('input[name="search"]');

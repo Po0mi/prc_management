@@ -14,6 +14,7 @@ $pdo->exec("
       `price` decimal(10,2) NOT NULL DEFAULT 0.00,
       `stock_quantity` int(11) NOT NULL DEFAULT 0,
       `image_url` varchar(500) DEFAULT NULL,
+      `image_type` enum('upload','url') DEFAULT 'url',
       `is_available` tinyint(1) NOT NULL DEFAULT 1,
       `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
       `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
@@ -22,6 +23,16 @@ $pdo->exec("
       KEY `is_available` (`is_available`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ");
+
+// Add image_type column if it doesn't exist
+try {
+    $stmt = $pdo->query("SHOW COLUMNS FROM merchandise LIKE 'image_type'");
+    if ($stmt->rowCount() == 0) {
+        $pdo->exec("ALTER TABLE `merchandise` ADD COLUMN `image_type` enum('upload','url') DEFAULT 'url' AFTER `image_url`");
+    }
+} catch (PDOException $e) {
+    error_log("Merchandise table migration error: " . $e->getMessage());
+}
 
 // Insert sample merchandise if table is empty
 $stmt = $pdo->query("SELECT COUNT(*) FROM merchandise");
@@ -257,11 +268,33 @@ $categories = [
               $stock_class = 'in-stock';
               $stock_text = 'In Stock';
             }
+            
+            // Build image path based on type
+            $image_path = '';
+          // Around line 158-168, change this:
+if ($item['image_url']) {
+    if ($item['image_type'] === 'upload') {
+        // OLD (WRONG): $image_path = '../admin/' . $item['image_url'];
+        // NEW (CORRECT):
+        $image_path = '../' . $item['image_url'];
+    } else {
+        $image_path = $item['image_url'];
+    }
+}
           ?>
           <div class="merch-card">
             <div class="merch-image">
-              <?php if ($item['image_url']): ?>
-                <img src="<?= htmlspecialchars($item['image_url']) ?>" alt="<?= htmlspecialchars($item['name']) ?>">
+              <?php if ($image_path): ?>
+                <img src="<?= htmlspecialchars($image_path) ?>" 
+                     alt="<?= htmlspecialchars($item['name']) ?>"
+                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                <i class="placeholder-icon fas fa-<?= 
+                  $item['category'] === 'clothing' ? 'tshirt' : 
+                  ($item['category'] === 'accessories' ? 'hat-cowboy' : 
+                  ($item['category'] === 'supplies' ? 'first-aid' : 
+                  ($item['category'] === 'books' ? 'book' : 
+                  ($item['category'] === 'collectibles' ? 'medal' : 'box')))) 
+                ?>" style="display: none;"></i>
               <?php else: ?>
                 <i class="placeholder-icon fas fa-<?= 
                   $item['category'] === 'clothing' ? 'tshirt' : 
@@ -304,7 +337,7 @@ $categories = [
               </div>
               
               <div class="merch-actions">
-                <button class="btn btn-primary" disabled>
+                <button class="btn btn-primary" disabled title="Visit your local PRC chapter to purchase">
                   <i class="fas fa-info-circle"></i>
                   Visit Chapter to Purchase
                 </button>
@@ -314,6 +347,7 @@ $categories = [
         <?php endforeach; ?>
       <?php endif; ?>
     </div>
+  </div>
   </div>
   <script src="js/notifications.js?v=<?php echo time(); ?>"></script>
   <script src="js/general-ui.js?v=<?php echo time(); ?>"></script>
@@ -387,33 +421,6 @@ $categories = [
         observer.observe(card);
       });
 
-      // Real-time stock update simulation (for demo purposes)
-      if (window.location.search.includes('demo=true')) {
-        setInterval(function() {
-          const stockElements = document.querySelectorAll('.merch-stock span');
-          stockElements.forEach(element => {
-            const currentStock = parseInt(element.textContent.match(/\d+/)[0]);
-            if (Math.random() < 0.1 && currentStock > 0) { // 10% chance to decrease stock
-              const newStock = Math.max(0, currentStock - Math.floor(Math.random() * 2));
-              element.textContent = newStock + ' available';
-              
-              // Update stock badge
-              const card = element.closest('.merch-card');
-              const badge = card.querySelector('.stock-badge');
-              
-              if (newStock === 0) {
-                badge.className = 'stock-badge out-of-stock';
-                badge.textContent = 'Out of Stock';
-                card.querySelector('.btn-primary').innerHTML = '<i class="fas fa-times"></i> Sold Out';
-              } else if (newStock <= 5) {
-                badge.className = 'stock-badge low-stock';
-                badge.textContent = 'Low Stock';
-              }
-            }
-          });
-        }, 5000); // Update every 5 seconds
-      }
-
       // Enhanced search functionality
       let searchTimeout;
       if (searchInput) {
@@ -440,6 +447,18 @@ $categories = [
           }
         });
       }
+
+      // Image loading error handling with smooth fallback
+      const merchImages = document.querySelectorAll('.merch-image img');
+      merchImages.forEach(img => {
+        img.addEventListener('error', function() {
+          this.style.display = 'none';
+          const placeholder = this.nextElementSibling;
+          if (placeholder && placeholder.classList.contains('placeholder-icon')) {
+            placeholder.style.display = 'flex';
+          }
+        });
+      });
 
       console.log('Merchandise store loaded successfully');
     });

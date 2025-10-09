@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../user/notifications_api.php';
 ensure_logged_in();
 ensure_admin();
 
@@ -28,11 +29,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
                 WHERE donation_id = ?
             ");
             
-            if ($stmt->execute([$newStatus, $notes, $_SESSION['user_id'], $donationId])) {
-                $successMessage = "Donation status updated to " . ucfirst($newStatus);
-            } else {
-                $errorMessage = "Failed to update donation status.";
-            }
+if ($stmt->execute([$newStatus, $notes, $_SESSION['user_id'], $donationId])) {
+    $successMessage = "Donation status updated to " . ucfirst($newStatus);
+    
+    // Enhanced logging
+    error_log("=== DONATION NOTIFICATION DEBUG ===");
+    error_log("Donation ID: $donationId");
+    error_log("Type: $donationType");
+    error_log("New Status: $newStatus");
+    
+    // Check if donor has user_id
+    $checkStmt = $pdo->prepare("
+        SELECT donor.donor_id, donor.name, donor.email, donor.user_id
+        FROM " . ($donationType === 'monetary' ? 'donations' : 'in_kind_donations') . " d
+        JOIN donors donor ON d.donor_id = donor.donor_id
+        WHERE d.donation_id = ?
+    ");
+    $checkStmt->execute([$donationId]);
+    $donorCheck = $checkStmt->fetch();
+    error_log("Donor Info: " . print_r($donorCheck, true));
+    
+    if (!$donorCheck['user_id']) {
+        error_log("WARNING: Donor has no user_id - notification will FAIL");
+        $errorMessage .= " (Note: Could not send notification - donor not linked to user account)";
+    }
+    
+    $notifyResult = notifyDonationStatus($pdo, $donationId, $donationType, $newStatus);
+    
+    error_log("Notification Result: " . ($notifyResult ? "SUCCESS" : "FAILED"));
+    error_log("=== END NOTIFICATION DEBUG ===");
+    
+    if (!$notifyResult && $donorCheck['user_id']) {
+        $errorMessage .= " (Note: Status updated but notification failed)";
+    }
+} else {
+    $errorMessage = "Failed to update donation status.";
+}
         } catch (Exception $e) {
             $errorMessage = "Error: " . $e->getMessage();
         }

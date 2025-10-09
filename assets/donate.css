@@ -858,7 +858,38 @@ textarea:focus {
   margin: 0;
   font-size: 0.875rem;
 }
+/* Blood Donation Message Styling */
+.blood-donation-message {
+  text-align: center;
+  padding: 40px 20px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin: 20px 0;
+}
 
+.blood-donation-message p {
+  font-size: 16px;
+  line-height: 1.8;
+  color: #333;
+  margin: 0;
+}
+
+/* Common fields visibility control */
+.common-fields.hidden {
+  display: none !important;
+}
+
+/* Blood Donation Tab specific styling */
+#blood-fields {
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#blood-fields.hidden {
+  display: none;
+}
 /* Responsive Design */
 @media (max-width: 768px) {
   .donation-container {

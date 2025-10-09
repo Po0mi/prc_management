@@ -190,6 +190,77 @@ function getNewNotifications($pdo, $user_id, $sinceDate) {
             ];
         }
 
+        // Donation status updates - Monetary donations
+        $stmt = $pdo->prepare("
+            SELECT d.donation_id, d.status, d.amount, d.approved_date, d.donation_date,
+                   donor.name as donor_name
+            FROM donations d
+            JOIN donors donor ON d.donor_id = donor.donor_id
+            WHERE donor.user_id = ? 
+            AND d.status IN ('approved', 'declined')
+            AND d.approved_date > ?
+            ORDER BY d.approved_date DESC LIMIT 5
+        ");
+        $stmt->execute([$user_id, $sinceDate]);
+        $monetaryDonations = $stmt->fetchAll();
+
+        foreach ($monetaryDonations as $donation) {
+            $notificationId = 'donation_monetary_' . $donation['donation_id'];
+            
+            if (in_array($notificationId, $readNotifications)) {
+                continue;
+            }
+            
+            $isApproved = $donation['status'] === 'approved';
+            $notifications[] = [
+                'id' => $notificationId,
+                'type' => $isApproved ? 'success' : 'error',
+                'title' => $isApproved ? 'Donation Approved ✓' : 'Donation Status Update',
+                'message' => $isApproved 
+                    ? "Your monetary donation of ₱" . number_format($donation['amount'], 2) . " has been approved!"
+                    : "Your monetary donation of ₱" . number_format($donation['amount'], 2) . " could not be approved.",
+                'icon' => $isApproved ? 'fas fa-check-circle' : 'fas fa-times-circle',
+                'url' => 'donations.php',
+                'created_at' => $donation['approved_date']
+            ];
+        }
+
+        // Donation status updates - In-kind donations
+        $stmt = $pdo->prepare("
+            SELECT d.donation_id, d.status, d.item_description, d.quantity, 
+                   d.estimated_value, d.approved_date, d.donation_date,
+                   donor.name as donor_name
+            FROM in_kind_donations d
+            JOIN donors donor ON d.donor_id = donor.donor_id
+            WHERE donor.user_id = ? 
+            AND d.status IN ('approved', 'declined')
+            AND d.approved_date > ?
+            ORDER BY d.approved_date DESC LIMIT 5
+        ");
+        $stmt->execute([$user_id, $sinceDate]);
+        $inkindDonations = $stmt->fetchAll();
+
+        foreach ($inkindDonations as $donation) {
+            $notificationId = 'donation_inkind_' . $donation['donation_id'];
+            
+            if (in_array($notificationId, $readNotifications)) {
+                continue;
+            }
+            
+            $isApproved = $donation['status'] === 'approved';
+            $notifications[] = [
+                'id' => $notificationId,
+                'type' => $isApproved ? 'success' : 'error',
+                'title' => $isApproved ? 'In-Kind Donation Approved ✓' : 'In-Kind Donation Status Update',
+                'message' => $isApproved 
+                    ? "Your donation of {$donation['item_description']} has been approved!"
+                    : "Your donation of {$donation['item_description']} could not be approved.",
+                'icon' => $isApproved ? 'fas fa-check-circle' : 'fas fa-times-circle',
+                'url' => 'donations.php',
+                'created_at' => $donation['approved_date']
+            ];
+        }
+
     } catch (PDOException $e) {
         error_log("Error getting notifications: " . $e->getMessage());
     }
@@ -301,6 +372,41 @@ function markAllAsRead($pdo, $user_id) {
             } catch (PDOException $e) {
                 continue;
             }
+        }
+        
+        // Add donation notifications to mark as read
+        try {
+            // Monetary donations
+            $stmt = $pdo->prepare("
+                SELECT d.donation_id 
+                FROM donations d
+                JOIN donors donor ON d.donor_id = donor.donor_id
+                WHERE donor.user_id = ? 
+                AND d.status IN ('approved', 'declined')
+                AND d.approved_date > ?
+            ");
+            $stmt->execute([$user_id, $sinceDate]);
+            $results = $stmt->fetchAll();
+            foreach ($results as $row) {
+                $allNotifications[] = 'donation_monetary_' . $row['donation_id'];
+            }
+            
+            // In-kind donations
+            $stmt = $pdo->prepare("
+                SELECT d.donation_id 
+                FROM in_kind_donations d
+                JOIN donors donor ON d.donor_id = donor.donor_id
+                WHERE donor.user_id = ? 
+                AND d.status IN ('approved', 'declined')
+                AND d.approved_date > ?
+            ");
+            $stmt->execute([$user_id, $sinceDate]);
+            $results = $stmt->fetchAll();
+            foreach ($results as $row) {
+                $allNotifications[] = 'donation_inkind_' . $row['donation_id'];
+            }
+        } catch (PDOException $e) {
+            error_log("Error getting donation notifications: " . $e->getMessage());
         }
         
         // Mark all as read
@@ -452,5 +558,52 @@ function notifyEventRegistration($pdo, $registration_id, $new_status) {
     
     $url = "registration.php";
     return createNotification($pdo, $reg['user_id'], $type, $title, $message, $url);
+}
+
+/**
+ * Notify user about donation status change
+ */
+function notifyDonationStatus($pdo, $donation_id, $donation_type, $new_status) {
+    try {
+        $table = $donation_type === 'monetary' ? 'donations' : 'in_kind_donations';
+        
+        // Get donation and donor info
+        $stmt = $pdo->prepare("
+            SELECT d.*, donor.user_id, donor.name as donor_name
+            FROM {$table} d
+            JOIN donors donor ON d.donor_id = donor.donor_id
+            WHERE d.donation_id = ?
+        ");
+        $stmt->execute([$donation_id]);
+        $donation = $stmt->fetch();
+        
+        if (!$donation || !$donation['user_id']) {
+            return false;
+        }
+        
+        $isApproved = $new_status === 'approved';
+        
+        if ($donation_type === 'monetary') {
+            $title = $isApproved ? "Donation Approved ✓" : "Donation Status Update";
+            $message = $isApproved 
+                ? "Your monetary donation of ₱" . number_format($donation['amount'], 2) . " has been approved! Thank you for your generosity."
+                : "Your monetary donation of ₱" . number_format($donation['amount'], 2) . " could not be approved at this time.";
+        } else {
+            $title = $isApproved ? "In-Kind Donation Approved ✓" : "In-Kind Donation Status Update";
+            $message = $isApproved 
+                ? "Your donation of {$donation['item_description']} has been approved! Thank you for your contribution."
+                : "Your donation of {$donation['item_description']} could not be approved at this time.";
+        }
+        
+        $type = $isApproved ? 'success' : 'error';
+        $icon = $isApproved ? 'fas fa-check-circle' : 'fas fa-info-circle';
+        $url = 'donations.php';
+        
+        return createNotification($pdo, $donation['user_id'], $type, $title, $message, $url, $icon);
+        
+    } catch (PDOException $e) {
+        error_log("Error notifying donation status: " . $e->getMessage());
+        return false;
+    }
 }
 ?>

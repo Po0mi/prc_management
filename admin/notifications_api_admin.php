@@ -1,6 +1,7 @@
 <?php
 /**
  * Fixed Admin Notifications API - Updated for new database schema
+ * Now includes donation notifications from user side
  */
 
 require_once __DIR__ . '/../config.php';
@@ -131,7 +132,7 @@ function getTrackedNotifications($pdo, $user_id) {
         $stmt->execute(['last_viewed' => $lastViewed['training_requests']]);
         $notifications['training_requests'] = (int)$stmt->fetchColumn();
         
-        // Donations - pending only
+        // Monetary Donations - pending only
         $stmt = $pdo->prepare("
             SELECT COUNT(*) as count 
             FROM donations 
@@ -140,6 +141,19 @@ function getTrackedNotifications($pdo, $user_id) {
         ");
         $stmt->execute(['last_viewed' => $lastViewed['donations']]);
         $notifications['donations'] = (int)$stmt->fetchColumn();
+        
+        // In-Kind Donations - pending only
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) as count 
+            FROM in_kind_donations 
+            WHERE status = 'pending' 
+            AND created_at > :last_viewed
+        ");
+        $stmt->execute(['last_viewed' => $lastViewed['inkind_donations']]);
+        $notifications['inkind_donations'] = (int)$stmt->fetchColumn();
+        
+        // Total donations (monetary + in-kind)
+        $notifications['total_donations'] = $notifications['donations'] + $notifications['inkind_donations'];
         
         // Users - new users
         $stmt = $pdo->prepare("
@@ -214,6 +228,7 @@ function getLastViewedTimestamps($pdo, $user_id) {
         'sessions' => $views['sessions'] ?? $defaultTime,
         'training_requests' => $views['training_requests'] ?? $defaultTime,
         'donations' => $views['donations'] ?? $defaultTime,
+        'inkind_donations' => $views['inkind_donations'] ?? $defaultTime,
         'users' => $views['users'] ?? $defaultTime,
         'inventory' => $views['inventory'] ?? $defaultTime,
         'merch' => $views['merch'] ?? $defaultTime,
@@ -282,14 +297,26 @@ function getSidebarNotificationCounts($pdo, $user_id, $user_role, $admin_role) {
         $counts['training_requests'] = (int)$stmt->fetchColumn();
         $counts['requests'] = $counts['training_requests'];
 
-        // Donations
+        // Monetary Donations
         $stmt = $pdo->query("
             SELECT COUNT(*) as count
             FROM donations 
             WHERE status = 'pending'
         ");
         $counts['donation'] = (int)$stmt->fetchColumn();
-        $counts['blood_donation'] = 0;
+        
+        // In-Kind Donations
+        $stmt = $pdo->query("
+            SELECT COUNT(*) as count
+            FROM in_kind_donations 
+            WHERE status = 'pending'
+        ");
+        $counts['inkind_donation'] = (int)$stmt->fetchColumn();
+        
+        // Total pending donations
+        $counts['total_donations'] = $counts['donation'] + $counts['inkind_donation'];
+        
+        $counts['blood_donation'] = 0; // Blood donations handled separately
 
         // Inventory
         $stmt = $pdo->prepare("
@@ -342,8 +369,9 @@ function getSidebarNotificationCounts($pdo, $user_id, $user_role, $admin_role) {
         $counts = [
             'urgent_action' => 0, 'registration' => 0, 'upcoming' => 0,
             'training_sessions' => 0, 'training_requests' => 0, 'requests' => 0,
-            'donation' => 0, 'blood_donation' => 0, 'inventory' => 0,
-            'critical_stock' => 0, 'volunteers' => 0, 'volunteer_applications' => 0,
+            'donation' => 0, 'inkind_donation' => 0, 'total_donations' => 0,
+            'blood_donation' => 0, 'inventory' => 0, 'critical_stock' => 0, 
+            'volunteers' => 0, 'volunteer_applications' => 0,
             'new_users' => 0, 'user_activity' => 0, 'announcements' => 0,
             'announcement' => 0
         ];
@@ -400,6 +428,50 @@ function getSimpleNotifications($pdo, $user_id, $user_role, $admin_role) {
                 'message' => "{$critical['count']} items critically low",
                 'icon' => 'fas fa-exclamation-triangle',
                 'url' => 'manage_inventory.php',
+                'created_at' => date('Y-m-d H:i:s')
+            ];
+        }
+
+        // HIGH: Pending monetary donations
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) as count 
+            FROM donations 
+            WHERE status = 'pending'
+        ");
+        $stmt->execute();
+        $pendingDonations = $stmt->fetch();
+        
+        if ($pendingDonations && $pendingDonations['count'] > 0) {
+            $notifications[] = [
+                'id' => 'pending_donations_' . time(),
+                'type' => 'donation',
+                'priority' => 'high',
+                'title' => 'Pending Monetary Donations',
+                'message' => "{$pendingDonations['count']} monetary donation(s) awaiting verification",
+                'icon' => 'fas fa-hand-holding-usd',
+                'url' => 'manage_donations.php',
+                'created_at' => date('Y-m-d H:i:s')
+            ];
+        }
+
+        // HIGH: Pending in-kind donations
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) as count 
+            FROM in_kind_donations 
+            WHERE status = 'pending'
+        ");
+        $stmt->execute();
+        $pendingInKind = $stmt->fetch();
+        
+        if ($pendingInKind && $pendingInKind['count'] > 0) {
+            $notifications[] = [
+                'id' => 'pending_inkind_' . time(),
+                'type' => 'inkind_donation',
+                'priority' => 'high',
+                'title' => 'Pending In-Kind Donations',
+                'message' => "{$pendingInKind['count']} in-kind donation(s) awaiting verification",
+                'icon' => 'fas fa-box-open',
+                'url' => 'manage_donations.php?tab=inkind',
                 'created_at' => date('Y-m-d H:i:s')
             ];
         }

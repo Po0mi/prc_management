@@ -151,23 +151,24 @@ if ($donation_type === 'monetary') {
                 error_log("Database transaction started");
                 
                 // Check if donor exists
-                $stmt = $pdo->prepare("SELECT donor_id FROM donors WHERE email = ?");
-                $stmt->execute([$donor_email]);
-                $existingDonorId = $stmt->fetchColumn();
-                
-                if ($existingDonorId) {
-                    // Update existing donor
-                    $stmt = $pdo->prepare("UPDATE donors SET name = ?, phone = ? WHERE donor_id = ?");
-                    $stmt->execute([$donor_name, $donor_phone, $existingDonorId]);
-                    $donorId = $existingDonorId;
-                    error_log("Updated existing donor ID: $donorId");
-                } else {
-                    // Insert new donor
-                    $stmt = $pdo->prepare("INSERT INTO donors (name, email, phone) VALUES (?, ?, ?)");
-                    $stmt->execute([$donor_name, $donor_email, $donor_phone]);
-                    $donorId = $pdo->lastInsertId();
-                    error_log("Created new donor ID: $donorId");
-                }
+             // Check if donor exists by email OR user_id
+$stmt = $pdo->prepare("SELECT donor_id FROM donors WHERE email = ? OR user_id = ?");
+$stmt->execute([$donor_email, $userId]);
+$existingDonorId = $stmt->fetchColumn();
+
+if ($existingDonorId) {
+    // Update existing donor - ensure user_id is always set
+    $stmt = $pdo->prepare("UPDATE donors SET name = ?, phone = ?, user_id = ? WHERE donor_id = ?");
+    $stmt->execute([$donor_name, $donor_phone, $userId, $existingDonorId]);
+    $donorId = $existingDonorId;
+    error_log("Updated existing donor ID: $donorId with user_id: $userId");
+} else {
+    // Insert new donor WITH user_id
+    $stmt = $pdo->prepare("INSERT INTO donors (name, email, phone, user_id) VALUES (?, ?, ?, ?)");
+    $stmt->execute([$donor_name, $donor_email, $donor_phone, $userId]);
+    $donorId = $pdo->lastInsertId();
+    error_log("Created new donor ID: $donorId with user_id: $userId");
+}
                 
                 if (!$donorId) {
                     throw new Exception("Failed to get donor ID");
@@ -338,6 +339,10 @@ error_log("=== DONATION FORM DEBUG END ===");
                 data-tab="inkind">
           <i class="fas fa-box-open"></i> In-Kind
         </button>
+        <button class="tab-button <?= $activeTab === 'blood' ? 'active' : '' ?>" 
+                data-tab="blood">
+          <i class="fas fa-tint"></i> Blood Donation
+        </button>
       </div>
 
       <div class="donation-form-container">
@@ -371,6 +376,22 @@ error_log("=== DONATION FORM DEBUG END ===");
                 <input type="tel" id="donor_phone" name="donor_phone" required
                        value="<?= htmlspecialchars($_POST['donor_phone'] ?? '') ?>">
               </div>
+            </div>
+          </div>
+          
+          <!-- Blood Donation Fields -->
+          <div id="blood-fields" class="donation-fields <?= $activeTab !== 'blood' ? 'hidden' : '' ?>">
+            <div class="blood-donation-message">
+              <div class="blood-icon">
+                <i class="fas fa-tint"></i>
+              </div>
+              <h3>Visit Your Nearest Philippine Red Cross Chapter</h3>
+              <div class="contact-info">
+                <p><i class="fas fa-phone"></i> <strong>Phone:</strong> (033) 503-3393 / 09171170066</p>
+                <p><i class="fas fa-envelope"></i> <strong>Email:</strong> iloilo@redcross.org.ph</p>
+                <p><i class="fas fa-map-marker-alt"></i> <strong>Address:</strong> Brgy. Danao, Bonifacio Drive, 5000</p>
+              </div>
+              <p class="note">Since the system cannot process blood donations online, please visit our chapter directly to donate blood.</p>
             </div>
           </div>
           
