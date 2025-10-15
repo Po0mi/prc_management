@@ -663,7 +663,12 @@ try {
                CASE 
                    WHEN e.created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR) THEN 1 
                    ELSE 0 
-               END as is_new_event
+                       END as is_new_event,
+               (SELECT COUNT(*) 
+                FROM registrations r2 
+                WHERE r2.event_id = e.event_id 
+                AND r2.registration_date > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+               ) as new_registrations_count
         FROM events e
         LEFT JOIN registrations r ON e.event_id = r.event_id
         LEFT JOIN users u ON e.created_by = u.user_id
@@ -1007,18 +1012,18 @@ if (!function_exists('get_role_color')) {
       </button>
     <?php endif; ?>
     
-    <?php if (!empty($reg['receipt_path'])): ?>
-      <button onclick="viewDocument('<?= htmlspecialchars($reg['receipt_path']) ?>')" 
+    <?php if (!empty($reg['payment_receipt_path'])): ?>
+      <button onclick="viewDocument('<?= htmlspecialchars($reg['payment_receipt_path']) ?>')" 
               class="doc-link" style="font-size: 0.7rem; padding: 0.2rem 0.4rem;">
         <i class="fas fa-receipt"></i> Receipt
       </button>
     <?php endif; ?>
     
-    <?php if (empty($reg['valid_id_path']) && empty($reg['requirements_path']) && empty($reg['documents_path']) && empty($reg['receipt_path'])): ?>
+    <?php if (empty($reg['valid_id_path']) && empty($reg['requirements_path']) && empty($reg['documents_path']) && empty($reg['payment_receipt_path'])): ?>
       <span style="color: var(--gray); font-size: 0.7rem;">No documents</span>
     <?php else: ?>
       <div style="font-size: 0.6rem; color: var(--gray); margin-top: 0.2rem;">
-        <?= (int)!empty($reg['valid_id_path']) + (int)!empty($reg['requirements_path']) + (int)!empty($reg['documents_path']) + (int)!empty($reg['receipt_path']) ?> file(s)
+        <?= (int)!empty($reg['valid_id_path']) + (int)!empty($reg['requirements_path']) + (int)!empty($reg['documents_path']) + (int)!empty($reg['payment_receipt_path']) ?> file(s)
       </div>
     <?php endif; ?>
   </div>
@@ -1240,9 +1245,17 @@ if (!function_exists('get_role_color')) {
                     
                     $isFull = $event['capacity'] > 0 && $event['registrations_count'] >= $event['capacity'];
                 ?>
-                 <tr class="event-row <?= $isNewEvent ? 'new-event' : '' ?>" data-event-id="<?= $event['event_id'] ?>">
+                 <tr class="event-row <?= $isNewEvent ? 'new-event' : '' ?> <?= ($event['new_registrations_count'] ?? 0) > 0 ? 'has-new-registrations' : '' ?>" data-event-id="<?= $event['event_id'] ?>">
                     <td>
-                        <div class="event-title"><?= htmlspecialchars($event['title']) ?></div>
+    <div class="event-title">
+        <?= htmlspecialchars($event['title']) ?>
+        <?php if (($event['new_registrations_count'] ?? 0) > 0): ?>
+            <span class="new-registrations-badge">
+                <i class="fas fa-bell"></i>
+                <?= $event['new_registrations_count'] ?> NEW
+            </span>
+        <?php endif; ?>
+    </div>
                         <!-- MODIFIED: Add data-event-id attribute -->
                         <div style="font-size: 0.75rem; color: var(--gray); margin-top: 0.2rem;" data-event-id="<?= $event['event_id'] ?>">
                             ID: #<?= $event['event_id'] ?>
@@ -1302,14 +1315,14 @@ if (!function_exists('get_role_color')) {
                             <?php endif; ?>
                         </div>
                     </td>
-                    <td>
-                        <a href="?view_event=<?= $event['event_id'] ?>&<?= http_build_query(array_filter(['search' => $search, 'service' => $serviceFilter, 'status' => $statusFilter, 'sort' => $sortParam])) ?>" 
-                           class="registrations-badge <?= $isFull ? 'full' : '' ?>">
-                            <i class="fas fa-users"></i>
-                            <?= $event['registrations_count'] ?> / <?= $event['capacity'] ?: '∞' ?>
-                            <?php if ($isFull): ?>
-                                <span style="font-size: 0.7rem; background: var(--prc-red); color: white; padding: 0.2rem 0.4rem; border-radius: 4px;">FULL</span>
-                            <?php endif; ?>
+                   <td>
+    <a href="?view_event=<?= $event['event_id'] ?>&<?= http_build_query(array_filter(['search' => $search, 'service' => $serviceFilter, 'status' => $statusFilter, 'sort' => $sortParam])) ?>" 
+       class="registrations-badge <?= $isFull ? 'full' : '' ?> <?= ($event['new_registrations_count'] ?? 0) > 0 ? 'has-new' : '' ?>">
+        <i class="fas fa-users"></i>
+        <?= $event['registrations_count'] ?> / <?= $event['capacity'] ?: '∞' ?>
+        <?php if (($event['new_registrations_count'] ?? 0) > 0): ?>
+            <span class="new-reg-count"><?= $event['new_registrations_count'] ?></span>
+        <?php endif; ?>
                         </a>
                     </td>
                     <td>

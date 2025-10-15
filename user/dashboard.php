@@ -320,6 +320,10 @@ $userNotifications = getUserNotifications($latestReg, $upcomingEvents, $isNewUse
                 <div class="action-icon-small events"><i class="fas fa-calendar-plus"></i></div>
                 <span>Register Events</span>
               </a>
+              <a href="blood_map.php" class="action-item-compact">
+                <div class="action-icon-small events" style="background: red;"><i class="fas fa-map-marked-alt"></i></div>
+                <span>Blood Map</span>
+              </a>
               <a href="schedule.php" class="action-item-compact">
                 <div class="action-icon-small training"><i class="fas fa-user-check"></i></div>
                 <span>Attendance</span>
@@ -572,7 +576,7 @@ $userNotifications = getUserNotifications($latestReg, $upcomingEvents, $isNewUse
             <h4>No Training Requests</h4>
             <p>You haven't submitted any training requests yet</p>
             <a href="schedule.php" class="btn-table primary" style="margin-top: 1rem;">
-                <i class="fas fa-plus"></i> Request Training
+                 Request Training
             </a>
         </div>
         <?php endif; ?>

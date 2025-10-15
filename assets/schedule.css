@@ -179,7 +179,14 @@ body {
   font-size: 0.7rem;
   text-transform: uppercase;
 }
+.receipt-upload-content {
+  transition: border-color 0.3s ease, background-color 0.3s ease;
+}
 
+.receipt-upload.has-file .receipt-upload-content {
+  border-color: #4caf50;
+  background-color: #e8f5e9;
+}
 .day-cell {
   background: var(--white);
   min-height: 45px;

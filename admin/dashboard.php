@@ -670,6 +670,10 @@ $role_display = $role_info['name'];
                 <div class="action-icon-small training"><i class="fas fa-graduation-cap"></i></div>
                 <span>Training</span>
               </a>
+                <a href="manage_bloodbank.php" class="action-item-compact">
+                <div class="action-icon-small events" style="background: red;"><i class="fas fa-tint"></i></div>
+                <span>Blood Map</span>
+              </a>
               <a href="manage_users.php" class="action-item-compact">
                 <div class="action-icon-small users"><i class="fas fa-users"></i></div>
                 <span>Users</span>

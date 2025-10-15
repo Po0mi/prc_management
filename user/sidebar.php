@@ -45,10 +45,13 @@
             <i class="fas fa-hand-holding-heart"></i>
             <span class="link-text">Donate</span>
         </a>
-        
-        <a href="announcements.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) == 'announcements.php' ? 'active' : '' ?>">
+             <a href="announcements.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) == 'announcements.php' ? 'active' : '' ?>">
             <i class="fas fa-bullhorn"></i>
             <span class="link-text">Announcements</span>
+        </a>
+        <a href="blood_map.php" class="nav-link <?= basename($_SERVER['PHP_SELF']) == 'blood_map.php' ? 'active' : '' ?>">
+              <i class="fas fa-map-marked-alt"></i>
+            <span class="link-text">Blood Map</span>
         </a>
         
         <a href="../logout.php" class="nav-link logout-link">

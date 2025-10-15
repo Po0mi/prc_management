@@ -639,7 +639,12 @@ try {
                WHEN ts.session_end_date < CURDATE() THEN 'past'
                WHEN ts.session_date <= CURDATE() AND ts.session_end_date >= CURDATE() THEN 'ongoing'
                ELSE 'upcoming'
-           END as session_status
+     END as session_status,
+           (SELECT COUNT(*) 
+            FROM session_registrations sr2 
+            WHERE sr2.session_id = ts.session_id 
+            AND sr2.registration_date > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+           ) as new_registrations_count
     FROM training_sessions ts
     LEFT JOIN session_registrations sr ON ts.session_id = sr.session_id
     LEFT JOIN users u ON ts.created_by = u.user_id
@@ -647,7 +652,7 @@ try {
     GROUP BY ts.session_id, ts.title, ts.major_service, ts.session_date, ts.session_end_date, ts.duration_days,
              ts.start_time, ts.end_time, ts.venue, ts.instructor, ts.instructor_bio, ts.instructor_credentials,
              ts.capacity, ts.fee, ts.created_at, ts.created_by, u.email
-    ORDER BY ts.session_date ASC, ts.start_time ASC
+    ORDER BY ts.created_at DESC, ts.session_date ASC
     LIMIT ? OFFSET ?
 ";
     
@@ -1122,38 +1127,38 @@ if (!function_exists('get_role_color')) {
                 <?php endif; ?>
               </div>
             </td>
-            <td>
-              <div class="document-links" style="display: flex; flex-direction: column; gap: 0.2rem;">
-                <?php if (!empty($reg['valid_id_path'])): ?>
-                  <button onclick="viewDocument('<?= htmlspecialchars($reg['valid_id_path']) ?>')" 
-                          class="doc-link" style="font-size: 0.7rem; padding: 0.2rem 0.4rem;">
-                    <i class="fas fa-id-card"></i> Valid ID
-                  </button>
-                <?php endif; ?>
-                
-                <?php if (!empty($reg['requirements_path'])): ?>
-                  <button onclick="viewDocument('<?= htmlspecialchars($reg['requirements_path']) ?>')" 
-                          class="doc-link" style="font-size: 0.7rem; padding: 0.2rem 0.4rem;">
-                    <i class="fas fa-file-alt"></i> Requirements
-                  </button>
-                <?php endif; ?>
-                
-                <?php if (!empty($reg['payment_receipt_path'])): ?>
-                  <button onclick="viewDocument('<?= htmlspecialchars($reg['payment_receipt_path']) ?>')" 
-                          class="doc-link" style="font-size: 0.7rem; padding: 0.2rem 0.4rem;">
-                    <i class="fas fa-receipt"></i> Receipt
-                  </button>
-                <?php endif; ?>
-                
-                <?php if (empty($reg['valid_id_path']) && empty($reg['requirements_path']) && empty($reg['payment_receipt_path'])): ?>
-                  <span style="color: var(--gray); font-size: 0.7rem;">No documents</span>
-                <?php else: ?>
-                  <div style="font-size: 0.6rem; color: var(--gray); margin-top: 0.2rem;">
-                    <?= $reg['document_count'] ?> file(s)
-                  </div>
-                <?php endif; ?>
-              </div>
-            </td>
+ <td>
+  <div class="document-links" style="display: flex; flex-direction: column; gap: 0.2rem;">
+    <?php if (!empty($reg['valid_id_path'])): ?>
+      <button onclick="viewDocument('<?= htmlspecialchars($reg['valid_id_path']) ?>')" 
+              class="doc-link" style="font-size: 0.7rem; padding: 0.2rem 0.4rem;">
+        <i class="fas fa-id-card"></i> Valid ID
+      </button>
+    <?php endif; ?>
+    
+    <?php if (!empty($reg['requirements_path'])): ?>
+      <button onclick="viewDocument('<?= htmlspecialchars($reg['requirements_path']) ?>')" 
+              class="doc-link" style="font-size: 0.7rem; padding: 0.2rem 0.4rem;">
+        <i class="fas fa-file-alt"></i> Requirements
+      </button>
+    <?php endif; ?>
+    
+    <?php if (!empty($reg['payment_receipt_path'])): ?>
+      <button onclick="viewDocument('<?= htmlspecialchars($reg['payment_receipt_path']) ?>')" 
+              class="doc-link" style="font-size: 0.7rem; padding: 0.2rem 0.4rem;">
+        <i class="fas fa-receipt"></i> Payment Receipt
+      </button>
+    <?php endif; ?>
+    
+    <?php if (empty($reg['valid_id_path']) && empty($reg['requirements_path']) && empty($reg['payment_receipt_path'])): ?>
+      <span style="color: var(--gray); font-size: 0.7rem;">No documents</span>
+    <?php else: ?>
+      <div style="font-size: 0.6rem; color: var(--gray); margin-top: 0.2rem;">
+        <?= (int)!empty($reg['valid_id_path']) + (int)!empty($reg['requirements_path']) + (int)!empty($reg['payment_receipt_path']) ?> file(s)
+      </div>
+    <?php endif; ?>
+  </div>
+</td>
             <td>
     <div class="reg-actions">
         <?php if ($reg['status'] !== 'approved'): ?>
@@ -1370,9 +1375,17 @@ if (!function_exists('get_role_color')) {
             
             $isFull = $session['capacity'] > 0 && $session['registrations_count'] >= $session['capacity'];
         ?>
-                <tr>
+                <tr class="session-row <?= ($session['new_registrations_count'] ?? 0) > 0 ? 'has-new-registrations' : '' ?>">
                 <td>
-                    <div class="session-title"><?= htmlspecialchars($session['title']) ?></div>
+    <div class="session-title">
+        <?= htmlspecialchars($session['title']) ?>
+        <?php if (($session['new_registrations_count'] ?? 0) > 0): ?>
+            <span class="new-registrations-badge">
+                <i class="fas fa-bell"></i>
+                <?= $session['new_registrations_count'] ?> NEW
+            </span>
+        <?php endif; ?>
+    </div>
                     <div style="font-size: 0.75rem; color: var(--gray); margin-top: 0.2rem;">ID: #<?= $session['session_id'] ?></div>
                 </td>
                 <td>
@@ -1433,14 +1446,14 @@ if (!function_exists('get_role_color')) {
                         <?php endif; ?>
                     </div>
                 </td>
-                <td>
-                     <a href="?view_session=<?= $session['session_id'] ?>&<?= http_build_query(array_filter(['search' => $search, 'service' => $serviceFilter, 'status' => $statusFilter])) ?>" 
-                       class="registrations-badge <?= $isFull ? 'full' : '' ?>">
-                        <i class="fas fa-users"></i>
-                        <?= $session['registrations_count'] ?> / <?= $session['capacity'] ?: '∞' ?>
-                        <?php if ($isFull): ?>
-                            <span style="font-size: 0.7rem; background: var(--prc-red); color: white; padding: 0.2rem 0.4rem; border-radius: 4px;">FULL</span>
-                        <?php endif; ?>
+              <td>
+     <a href="?view_session=<?= $session['session_id'] ?>&<?= http_build_query(array_filter(['search' => $search, 'service' => $serviceFilter, 'status' => $statusFilter])) ?>" 
+       class="registrations-badge <?= $isFull ? 'full' : '' ?> <?= ($session['new_registrations_count'] ?? 0) > 0 ? 'has-new' : '' ?>">
+        <i class="fas fa-users"></i>
+        <?= $session['registrations_count'] ?> / <?= $session['capacity'] ?: '∞' ?>
+        <?php if (($session['new_registrations_count'] ?? 0) > 0): ?>
+            <span class="new-reg-count"><?= $session['new_registrations_count'] ?></span>
+        <?php endif; ?>
                     </a>
                 </td>
                 <td>

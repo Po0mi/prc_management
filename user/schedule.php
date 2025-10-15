@@ -3143,44 +3143,7 @@ function showDayTrainings(date, trainings) {
         return `• ${t.title}${durationText} - ${t.venue}`;
     }).join('\n')}`);
 }
-function handleFileUpload(inputElement) {
-    const container = inputElement.closest('.file-upload-container');
-    const info = container.querySelector('.file-upload-info span');
-    
-    if (inputElement.files && inputElement.files.length > 0) {
-        if (inputElement.multiple) {
-            // Handle multiple files
-            handleMultipleFileUpload(inputElement);
-        } else {
-            // Handle single file
-            const file = inputElement.files[0];
-            const maxSize = getMaxFileSize(inputElement.name);
-            
-            if (file.size > maxSize) {
-                alert(`File size too large. Maximum allowed: ${maxSize / (1024 * 1024)}MB`);
-                inputElement.value = '';
-                return;
-            }
-            
-            if (!validateFileType(file, inputElement.accept)) {
-                alert('Invalid file type. Please upload a supported file format.');
-                inputElement.value = '';
-                return;
-            }
-            
-            container.classList.add('has-file');
-            info.textContent = `Selected: ${file.name}`;
-        }
-        
-        // Show participant list section for groups
-        if (inputElement.name === 'participant_count') {
-            toggleParticipantListSection();
-        }
-    } else {
-        container.classList.remove('has-file');
-        resetFileUploadInfo(inputElement);
-    }
-}
+
 
 function handleMultipleFileUpload(inputElement) {
     const files = Array.from(inputElement.files);

@@ -52,7 +52,11 @@
     <a href="manage_inventory.php" class="nav-link">       
       <i class="fas fa-warehouse"></i>       
       <span>Inventory</span>     
-    </a>     
+    </a>
+    <a href="manage_bloodbank.php" class="nav-link">
+    <i class="fas fa-tint"></i>
+    <span class="menu-text">Blood Bank</span>
+</a>
     <a href="manage_announcements.php" class="nav-link">       
       <i class="fas fa-bullhorn"></i>       
       <span>Announcements</span>     

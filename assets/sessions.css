@@ -1795,7 +1795,87 @@ form {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
 }
+/* New Registration Indicators */
+.new-registrations-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: linear-gradient(135deg, #ff6b6b 0%, #ff8e53 100%);
+  color: white;
+  padding: 0.25rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-left: 0.5rem;
+  animation: pulse-glow 2s ease-in-out infinite;
+  box-shadow: 0 2px 8px rgba(255, 107, 107, 0.3);
+}
 
+.new-registrations-badge i {
+  font-size: 0.7rem;
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 2px 8px rgba(255, 107, 107, 0.3);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 4px 16px rgba(255, 107, 107, 0.6);
+    transform: scale(1.05);
+  }
+}
+
+.registrations-badge.has-new {
+  position: relative;
+  animation: bounce-subtle 2s ease-in-out infinite;
+}
+
+@keyframes bounce-subtle {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+.new-reg-count {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: #ff3838;
+  color: white;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: bold;
+  border: 2px solid white;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.session-row.has-new-registrations {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 107, 107, 0.05) 0%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  border-left: 3px solid #ff6b6b;
+}
+
+.session-row.has-new-registrations:hover {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 107, 107, 0.08) 0%,
+    rgba(248, 249, 250, 1) 100%
+  );
+}
 /* Responsive Design */
 @media (max-width: 768px) {
   .sessions-container {
